@@ -773,8 +773,285 @@ Add final touches to complete the game.
 
 ---
 
+## Phase 7: Mobile Optimization
+
+### Objectives
+
+Adapt the game for mobile browsers with touch controls, responsive UI, and Progressive Web App (PWA) capabilities to enable installation and offline play.
+
+### Tasks
+
+#### 7.1 Touch Control System
+
+Implement a comprehensive touch control scheme that maps desktop controls to mobile-friendly interactions.
+
+**Virtual Joystick:**
+- Implement a floating virtual joystick for ship rotation (pitch/yaw)
+- Position in bottom-left corner of screen
+- Semi-transparent design that doesn't obstruct gameplay
+- Configurable dead zone and sensitivity
+- Use touch events: `touchstart`, `touchmove`, `touchend`
+
+```javascript
+// Touch control zones
+{
+  joystick: { x: 0-25%, y: 60-100% },      // Bottom-left quadrant
+  fireButton: { x: 75-100%, y: 60-100% },  // Bottom-right
+  actionBar: { x: 25-75%, y: 85-100% }     // Bottom-center
+}
+```
+
+**Action Buttons:**
+- Large, touch-friendly fire button (bottom-right)
+- Action bar with toggles: Shield (S), Chart (G), Scan (L)
+- Speed control: Vertical slider or tap-to-increment buttons
+- Minimum touch target size: 44x44 pixels (Apple HIG recommendation)
+
+**Gesture Controls:**
+- Swipe left/right: Switch between Front/Aft view
+- Two-finger tap: Open Galactic Chart
+- Pinch: Zoom on Galactic Chart (if applicable)
+- Long press on Galactic Chart sector: Select hyperwarp destination
+
+#### 7.2 Responsive UI Layout
+
+Adapt the user interface to work across different screen sizes and orientations.
+
+**Breakpoints:**
+
+| Device Type | Width | Layout Adjustments |
+|-------------|-------|-------------------|
+| Desktop | >1024px | Full layout, mouse controls |
+| Tablet Landscape | 768-1024px | Scaled HUD, touch optional |
+| Tablet Portrait | 600-768px | Stacked UI elements |
+| Mobile Landscape | <600px wide | Minimal HUD, touch required |
+| Mobile Portrait | <400px wide | Not recommended, show rotate prompt |
+
+**Orientation Handling:**
+- Prefer landscape mode for gameplay
+- Display "Please rotate device" overlay in portrait mode
+- Use `screen.orientation.lock('landscape')` where supported
+- Graceful fallback for browsers that don't support orientation lock
+
+**Adaptive HUD:**
+- Scale control panel based on viewport size
+- Use CSS `clamp()` for fluid typography
+- Hide non-essential UI elements on smaller screens
+- Collapsible panels for Galactic Chart info
+
+```css
+/* Example responsive scaling */
+.control-panel {
+  font-size: clamp(12px, 2vw, 18px);
+  padding: clamp(8px, 1.5vw, 16px);
+}
+```
+
+#### 7.3 Progressive Web App (PWA) Configuration
+
+Transform the game into an installable PWA for a native-like experience.
+
+**Web App Manifest (manifest.json):**
+```json
+{
+  "name": "Star Raiders",
+  "short_name": "StarRaiders",
+  "description": "A web recreation of the classic Atari space combat game",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#000000",
+  "theme_color": "#00FFFF",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
+```
+
+**Service Worker:**
+- Cache all game assets for offline play
+- Implement cache-first strategy for static assets
+- Network-first for any dynamic content (if applicable)
+- Handle updates gracefully with user notification
+
+```javascript
+// Service worker caching strategy
+const CACHE_NAME = 'star-raiders-v1';
+const ASSETS = [
+  '/',
+  '/index.html',
+  '/main.js',
+  '/style.css',
+  '/assets/sounds/*',
+  '/assets/fonts/*'
+];
+```
+
+**Offline Capability:**
+- Full game playable without internet connection
+- Local storage for high scores and settings
+- IndexedDB for larger data (saved game states)
+
+#### 7.4 Mobile Performance Optimization
+
+Ensure smooth gameplay on mobile devices with limited hardware.
+
+**Adaptive Quality Settings:**
+
+| Setting | Desktop | Mobile High | Mobile Low |
+|---------|---------|-------------|------------|
+| Star count | 5000 | 2000 | 1000 |
+| Particle effects | Full | Reduced | Minimal |
+| Shadow quality | High | None | None |
+| Anti-aliasing | MSAA 4x | FXAA | None |
+| Target FPS | 60 | 60 | 30 |
+
+**Automatic Quality Detection:**
+```javascript
+function detectDeviceCapability() {
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+  const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+  const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+
+  // Classify device based on GPU
+  if (renderer.includes('Mali-4') || renderer.includes('Adreno 3')) {
+    return 'low';
+  } else if (renderer.includes('Apple') || renderer.includes('Adreno 6')) {
+    return 'high';
+  }
+  return 'medium';
+}
+```
+
+**Memory Management:**
+- Aggressive texture compression (use KTX2 format)
+- Dispose of Three.js objects when switching views
+- Limit concurrent audio channels on mobile
+- Monitor memory usage and reduce quality if needed
+
+**Battery Considerations:**
+- Reduce frame rate when game is paused
+- Option to limit FPS to 30 for battery saving
+- Dim screen slightly during non-combat (optional)
+
+#### 7.5 Mobile-Specific Input Handling
+
+Handle the nuances of mobile input beyond basic touch.
+
+**Pointer Events API:**
+- Use unified Pointer Events instead of separate mouse/touch handlers
+- Provides consistent interface across input types
+- Better performance than touch events on some devices
+
+```javascript
+element.addEventListener('pointerdown', handleInput);
+element.addEventListener('pointermove', handleInput);
+element.addEventListener('pointerup', handleInput);
+element.addEventListener('pointercancel', handleInput);
+```
+
+**Prevent Default Browser Behaviors:**
+- Disable pull-to-refresh: `overscroll-behavior: none`
+- Disable pinch zoom on game canvas: `touch-action: none`
+- Prevent text selection: `user-select: none`
+- Disable context menu on long press
+
+**Haptic Feedback:**
+- Vibrate on torpedo fire: `navigator.vibrate(50)`
+- Vibrate on damage taken: `navigator.vibrate([100, 50, 100])`
+- Vibrate on shield toggle: `navigator.vibrate(25)`
+- Respect user preference (settings toggle)
+
+#### 7.6 Mobile Browser Compatibility
+
+Address specific issues with mobile browsers.
+
+**iOS Safari Considerations:**
+- Fullscreen API not supported; use `viewport-fit=cover` instead
+- Audio requires user interaction to start (handle in start screen)
+- WebGL memory limits more restrictive
+- Test on multiple iOS versions (Safari 15+)
+
+**Android Chrome:**
+- Better WebGL support than iOS
+- Fullscreen API works well
+- May need wake lock to prevent screen dim during gameplay
+
+**Common Issues and Solutions:**
+
+| Issue | Solution |
+|-------|----------|
+| Audio doesn't play | Unlock audio context on first user tap |
+| Game zooms unexpectedly | Set `touch-action: none` on canvas |
+| Soft keyboard appears | Use `inputmode="none"` on any input elements |
+| Screen dims during play | Request wake lock API |
+| Janky scrolling | Disable overscroll, position: fixed on game container |
+
+#### 7.7 App Store Distribution (Optional)
+
+Package the PWA for distribution on app stores.
+
+**Capacitor Integration:**
+```bash
+npm install @capacitor/core @capacitor/cli
+npx cap init "Star Raiders" com.starraiders.game
+npx cap add android
+npx cap add ios
+```
+
+**Platform-Specific Adjustments:**
+- Android: Configure `capacitor.config.ts` for proper WebView settings
+- iOS: Handle App Store review guidelines (no external links to bypass IAP, etc.)
+- Both: Add appropriate splash screens and icons
+
+**Alternative: TWA (Trusted Web Activity) for Android:**
+- Lighter weight than Capacitor
+- Uses Chrome Custom Tabs
+- Requires Digital Asset Links verification
+
+### Deliverables
+
+- Fully functional touch control system with virtual joystick
+- Responsive UI that adapts to all screen sizes
+- PWA configuration with offline support
+- Adaptive quality settings for mobile performance
+- Mobile browser compatibility across iOS and Android
+- Optional app store distribution package
+
+### Testing Checklist
+
+- [ ] Touch controls responsive and accurate
+- [ ] Virtual joystick doesn't drift
+- [ ] All game functions accessible via touch
+- [ ] UI readable on small screens (iPhone SE size)
+- [ ] Game plays smoothly on mid-range devices
+- [ ] Offline mode works after initial load
+- [ ] PWA installs correctly on home screen
+- [ ] No browser chrome interferes with gameplay
+- [ ] Audio works on iOS after user interaction
+- [ ] Battery drain is reasonable during gameplay
+- [ ] Orientation change handled gracefully
+
+---
+
 ## Summary
 
-This implementation guide provides a comprehensive, phase-by-phase approach to developing the Star Raiders web game. Each phase builds upon the previous one, ensuring a logical progression from basic setup to a fully polished game. By following this guide, a coding AI can systematically implement all the features and mechanics necessary to recreate the classic Star Raiders experience in a modern web environment using Three.js.
+This implementation guide provides a comprehensive, phase-by-phase approach to developing the Star Raiders web game. Each phase builds upon the previous one, ensuring a logical progression from basic setup to a fully polished game that runs on both desktop and mobile platforms.
+
+**Phase Overview:**
+
+| Phase | Focus | Key Outcome |
+|-------|-------|-------------|
+| 1 | Project Setup | Three.js scene, starfield, basic ship |
+| 2 | Core Mechanics | Weapons, energy, views, speed control |
+| 3 | Navigation | Galactic Chart, sectors, hyperwarp |
+| 4 | Combat | Enemy AI, Attack Computer, shields, damage |
+| 5 | Game Systems | Starbases, scoring, difficulty, meteors |
+| 6 | Polish | Audio, visual effects, UI refinement, testing |
+| 7 | Mobile | Touch controls, PWA, responsive UI, app store |
+
+By following this guide, a coding AI can systematically implement all the features and mechanics necessary to recreate the classic Star Raiders experience in a modern web environment using Three.js. The optional Phase 7 extends the game to mobile platforms, enabling a wider audience to experience this classic title.
 
 The key to success is to complete each phase thoroughly before moving to the next, ensuring that all systems are functional and integrated properly. This modular approach allows for easier debugging, testing, and iteration throughout the development process.
