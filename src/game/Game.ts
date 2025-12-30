@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import { GameLoop } from './GameLoop';
-import { GameState, ViewMode } from './GameState';
+import { GameState, ViewMode, DifficultyLevel } from './GameState';
 import { InputManager } from '../utils/InputManager';
 import { EnergySystem } from '../systems/EnergySystem';
+import { SectorSystem } from '../systems/SectorSystem';
 import { Starfield } from '../entities/Starfield';
 import { Player } from '../entities/Player';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
 import { ControlPanel } from '../ui/ControlPanel';
+import { GalacticChart } from '../views/GalacticChart';
+import { LongRangeScan } from '../views/LongRangeScan';
 
 /**
  * Game - Main game controller that manages scene, rendering, and game state
@@ -22,10 +25,13 @@ export class Game {
   private gameLoop: GameLoop;
   private inputManager: InputManager;
   private energySystem: EnergySystem;
+  private sectorSystem: SectorSystem;
   private gameState: GameState;
 
   // UI
   private controlPanel: ControlPanel;
+  private galacticChart: GalacticChart;
+  private longRangeScan: LongRangeScan;
 
   // Game entities
   private starfield: Starfield;
@@ -42,12 +48,17 @@ export class Game {
   private isViewTransitioning: boolean = false;
   private viewTransitionProgress: number = 0;
 
+  // Hyperwarp state
+  private isHyperwarping: boolean = false;
+  private hyperwarpProgress: number = 0;
+  private hyperwarpTarget: { x: number; y: number } | null = null;
+
   constructor(container: HTMLElement) {
     this.container = container;
 
     // Initialize game state
     this.gameState = new GameState();
-    this.gameState.reset();
+    this.gameState.reset(DifficultyLevel.NOVICE);
 
     // Initialize Three.js
     this.scene = new THREE.Scene();
@@ -74,6 +85,10 @@ export class Game {
     this.gameLoop = new GameLoop();
     this.inputManager = new InputManager(container);
     this.energySystem = new EnergySystem(this.gameState);
+    this.sectorSystem = new SectorSystem();
+
+    // Generate galaxy
+    this.sectorSystem.generateGalaxy(this.gameState.difficulty);
 
     // Initialize entities
     this.starfield = new Starfield(5000, 2000);
@@ -81,6 +96,13 @@ export class Game {
 
     // Initialize UI
     this.controlPanel = new ControlPanel(container, this.gameState);
+    this.galacticChart = new GalacticChart(
+      container,
+      this.sectorSystem,
+      this.gameState,
+      this.energySystem
+    );
+    this.longRangeScan = new LongRangeScan(container, this.sectorSystem, this.gameState);
 
     // Set up scene
     this.setupScene();
@@ -149,6 +171,12 @@ export class Game {
     // Update star date
     this.gameState.starDate += deltaTime * 0.1;
 
+    // Handle hyperwarp animation
+    if (this.isHyperwarping) {
+      this.updateHyperwarp(deltaTime);
+      return; // Don't process other inputs during hyperwarp
+    }
+
     // Handle input
     this.handleInput(deltaTime);
 
@@ -172,15 +200,36 @@ export class Game {
 
     // Update UI
     this.controlPanel.update();
+    this.galacticChart.update();
+    this.longRangeScan.update();
+
+    // Check victory/defeat conditions
+    this.checkGameState();
   };
+
+  /**
+   * Check victory/defeat conditions
+   */
+  private checkGameState(): void {
+    // Victory: all enemies destroyed
+    if (this.sectorSystem.getRemainingEnemies() <= 0) {
+      this.gameState.isVictory = true;
+      this.gameState.isGameOver = true;
+      this.controlPanel.showMessage('MISSION COMPLETE - ALL ZYLONS DESTROYED!');
+    }
+
+    // Defeat: all starbases destroyed
+    if (this.sectorSystem.getRemainingStarbases() <= 0) {
+      this.gameState.isGameOver = true;
+      this.controlPanel.showMessage('MISSION FAILED - ALL STARBASES DESTROYED!');
+    }
+  }
 
   /**
    * Update player movement based on engine speed
    */
   private updatePlayerMovement(deltaTime: number): void {
     if (this.gameState.engineSpeed > 0) {
-      // Move starfield to create illusion of movement
-      // In a real implementation, we'd move through sectors
       const moveSpeed = this.gameState.engineSpeed * 10;
       const direction = this.player.getForwardDirection();
 
@@ -188,7 +237,7 @@ export class Game {
       const starfieldObj = this.starfield.getObject();
       starfieldObj.position.add(direction.multiplyScalar(-moveSpeed * deltaTime));
 
-      // Wrap starfield position to prevent it from going too far
+      // Wrap starfield position
       const maxDist = 1000;
       if (starfieldObj.position.length() > maxDist) {
         starfieldObj.position.set(0, 0, 0);
@@ -205,7 +254,6 @@ export class Game {
       torpedo.update(deltaTime);
 
       if (!torpedo.isActive) {
-        // Remove from scene and array
         this.scene.remove(torpedo.getObject());
         torpedo.dispose();
         this.torpedoes.splice(i, 1);
@@ -217,6 +265,22 @@ export class Game {
    * Handle player input
    */
   private handleInput(_deltaTime: number): void {
+    // Check if viewing chart or scan - handle their inputs specially
+    if (this.galacticChart.visible) {
+      this.handleChartInput();
+      this.updateKeyStates();
+      return;
+    }
+
+    if (this.longRangeScan.visible) {
+      if (this.isKeyJustPressed('KeyL')) {
+        this.longRangeScan.hide();
+        this.gameState.currentView = ViewMode.FRONT;
+      }
+      this.updateKeyStates();
+      return;
+    }
+
     // Get mouse movement for ship rotation
     const mouseMovement = this.inputManager.getMouseMovement();
 
@@ -233,6 +297,18 @@ export class Game {
     }
     if (this.isKeyJustPressed('KeyA')) {
       this.switchView(ViewMode.AFT);
+    }
+    if (this.isKeyJustPressed('KeyG')) {
+      this.galacticChart.show();
+      this.gameState.currentView = ViewMode.GALACTIC_CHART;
+    }
+    if (this.isKeyJustPressed('KeyL')) {
+      if (this.gameState.damage.longRangeScan) {
+        this.controlPanel.showMessage('LONG RANGE SCAN DAMAGED');
+      } else {
+        this.longRangeScan.show();
+        this.gameState.currentView = ViewMode.LONG_RANGE_SCAN;
+      }
     }
 
     // Fire torpedo (Spacebar)
@@ -261,6 +337,116 @@ export class Game {
   }
 
   /**
+   * Handle input when galactic chart is open
+   */
+  private handleChartInput(): void {
+    // Arrow keys to move cursor
+    if (this.isKeyJustPressed('ArrowUp')) {
+      this.galacticChart.moveCursor(0, -1);
+    }
+    if (this.isKeyJustPressed('ArrowDown')) {
+      this.galacticChart.moveCursor(0, 1);
+    }
+    if (this.isKeyJustPressed('ArrowLeft')) {
+      this.galacticChart.moveCursor(-1, 0);
+    }
+    if (this.isKeyJustPressed('ArrowRight')) {
+      this.galacticChart.moveCursor(1, 0);
+    }
+
+    // H key to hyperwarp
+    if (this.isKeyJustPressed('KeyH')) {
+      this.initiateHyperwarp();
+    }
+
+    // G key to close chart
+    if (this.isKeyJustPressed('KeyG')) {
+      this.galacticChart.hide();
+      this.gameState.currentView = ViewMode.FRONT;
+    }
+  }
+
+  /**
+   * Initiate hyperwarp to cursor position
+   */
+  private initiateHyperwarp(): void {
+    const cursor = this.galacticChart.getCursorPosition();
+
+    // Already at this sector?
+    if (cursor.x === this.gameState.sectorX && cursor.y === this.gameState.sectorY) {
+      this.controlPanel.showMessage('ALREADY IN THIS SECTOR');
+      return;
+    }
+
+    // Calculate cost
+    const cost = this.energySystem.calculateHyperwarpCost(
+      this.gameState.sectorX,
+      this.gameState.sectorY,
+      cursor.x,
+      cursor.y
+    );
+
+    // Check energy
+    if (this.gameState.energy < cost) {
+      this.controlPanel.showMessage('INSUFFICIENT ENERGY FOR HYPERWARP');
+      return;
+    }
+
+    // Start hyperwarp
+    this.galacticChart.hide();
+    this.isHyperwarping = true;
+    this.hyperwarpProgress = 0;
+    this.hyperwarpTarget = { x: cursor.x, y: cursor.y };
+
+    // Consume energy
+    this.gameState.consumeEnergy(cost);
+
+    this.controlPanel.showMessage('HYPERWARP ENGAGED');
+    this.gameState.currentView = ViewMode.FRONT;
+  }
+
+  /**
+   * Update hyperwarp animation
+   */
+  private updateHyperwarp(deltaTime: number): void {
+    this.hyperwarpProgress += deltaTime * 0.5; // 2 seconds total
+
+    // Stretch starfield during warp
+    const starfieldObj = this.starfield.getObject();
+    const stretchFactor = 1 + this.hyperwarpProgress * 10;
+    starfieldObj.scale.z = stretchFactor;
+
+    // Move starfield rapidly
+    const direction = this.player.getForwardDirection();
+    starfieldObj.position.add(direction.multiplyScalar(-500 * deltaTime));
+
+    if (this.hyperwarpProgress >= 1 && this.hyperwarpTarget) {
+      // Complete hyperwarp
+      this.gameState.sectorX = this.hyperwarpTarget.x;
+      this.gameState.sectorY = this.hyperwarpTarget.y;
+      this.sectorSystem.visitSector(this.hyperwarpTarget.x, this.hyperwarpTarget.y);
+
+      // Reset starfield
+      starfieldObj.scale.z = 1;
+      starfieldObj.position.set(0, 0, 0);
+
+      this.isHyperwarping = false;
+      this.hyperwarpTarget = null;
+
+      const sector = this.sectorSystem.getSector(this.gameState.sectorX, this.gameState.sectorY);
+      if (sector) {
+        if (sector.enemies > 0) {
+          this.controlPanel.showMessage(`ARRIVED - ${sector.enemies} ZYLONS DETECTED`);
+        } else if (sector.hasStarbase && !sector.starbaseDestroyed) {
+          this.controlPanel.showMessage('ARRIVED - STARBASE IN SECTOR');
+        } else {
+          this.controlPanel.showMessage('ARRIVED - SECTOR CLEAR');
+        }
+      }
+    }
+  }
+
+  /**
    * Check if a key was just pressed (not held)
    */
   private isKeyJustPressed(code: string): boolean {
@@ -273,7 +459,10 @@ export class Game {
    * Update key states for tracking single presses
    */
   private updateKeyStates(): void {
-    const keysToTrack = ['KeyF', 'KeyA', 'KeyS', 'Space', 'KeyG', 'KeyL', 'KeyH', 'KeyT', 'KeyM'];
+    const keysToTrack = [
+      'KeyF', 'KeyA', 'KeyS', 'Space', 'KeyG', 'KeyL', 'KeyH', 'KeyT', 'KeyM',
+      'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'
+    ];
     for (let i = 0; i <= 9; i++) {
       keysToTrack.push(i === 0 ? 'Digit0' : `Digit${i}`);
     }
@@ -289,6 +478,10 @@ export class Game {
   private switchView(view: ViewMode): void {
     if (this.gameState.currentView === view) return;
     if (this.isViewTransitioning) return;
+
+    // Close any open overlays
+    this.galacticChart.hide();
+    this.longRangeScan.hide();
 
     const previousView = this.gameState.currentView;
     this.gameState.currentView = view;
@@ -307,20 +500,18 @@ export class Game {
    * Update view transition animation
    */
   private updateViewTransition(deltaTime: number): void {
-    this.viewTransitionProgress += deltaTime * 3; // Complete in ~0.33 seconds
+    this.viewTransitionProgress += deltaTime * 3;
 
     if (this.viewTransitionProgress >= 1) {
       this.viewTransitionProgress = 1;
       this.isViewTransitioning = false;
 
-      // Finalize camera rotation
       if (this.gameState.currentView === ViewMode.AFT) {
         this.camera.rotation.y = Math.PI;
       } else {
         this.camera.rotation.y = 0;
       }
     } else {
-      // Animate camera rotation
       const targetRotation = this.gameState.currentView === ViewMode.AFT ? Math.PI : 0;
       const startRotation = this.gameState.currentView === ViewMode.AFT ? 0 : Math.PI;
       this.camera.rotation.y = startRotation + (targetRotation - startRotation) * this.viewTransitionProgress;
@@ -331,7 +522,6 @@ export class Game {
    * Fire a photon torpedo
    */
   private fireTorpedo(): void {
-    // Check if we can fire (not in non-combat views, have energy, weapons not damaged)
     if (
       this.gameState.currentView !== ViewMode.FRONT &&
       this.gameState.currentView !== ViewMode.AFT
@@ -339,8 +529,7 @@ export class Game {
       return;
     }
 
-    // Check shields - in higher difficulties, can't fire with shields up
-    if (this.gameState.shieldsActive && this.gameState.difficulty !== 'NOVICE') {
+    if (this.gameState.shieldsActive && this.gameState.difficulty !== DifficultyLevel.NOVICE) {
       this.controlPanel.showMessage('LOWER SHIELDS TO FIRE');
       return;
     }
@@ -354,16 +543,13 @@ export class Game {
       return;
     }
 
-    // Create torpedo
     const position = this.player.getObject().position.clone();
     let direction = this.player.getForwardDirection();
 
-    // In Aft view, fire backwards
     if (this.gameState.currentView === ViewMode.AFT) {
       direction.negate();
     }
 
-    // Offset torpedo spawn position slightly forward
     position.add(direction.clone().multiplyScalar(2));
 
     const torpedo = new PhotonTorpedo(position, direction);
@@ -412,8 +598,9 @@ export class Game {
     this.starfield.dispose();
     this.player.dispose();
     this.controlPanel.dispose();
+    this.galacticChart.dispose();
+    this.longRangeScan.dispose();
 
-    // Dispose torpedoes
     for (const torpedo of this.torpedoes) {
       this.scene.remove(torpedo.getObject());
       torpedo.dispose();
