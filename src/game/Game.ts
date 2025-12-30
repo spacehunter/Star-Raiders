@@ -5,13 +5,27 @@ import { InputManager } from '../utils/InputManager';
 import { EnergySystem } from '../systems/EnergySystem';
 import { SectorSystem } from '../systems/SectorSystem';
 import { CombatSystem } from '../systems/CombatSystem';
+import { ScoringSystem } from '../systems/ScoringSystem';
 import { Starfield } from '../entities/Starfield';
 import { Player } from '../entities/Player';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
+import { Starbase } from '../entities/Starbase';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GalacticChart } from '../views/GalacticChart';
 import { LongRangeScan } from '../views/LongRangeScan';
 import { AttackComputer } from '../views/AttackComputer';
+
+type GameOverCallback = (
+  victory: boolean,
+  score: number,
+  rank: string,
+  breakdown: {
+    enemyScore: number;
+    timeBonus: number;
+    energyBonus: number;
+    starbasePenalty: number;
+  }
+) => void;
 
 /**
  * Game - Main game controller that manages scene, rendering, and game state
@@ -29,6 +43,7 @@ export class Game {
   private energySystem: EnergySystem;
   private sectorSystem: SectorSystem;
   private combatSystem: CombatSystem;
+  private scoringSystem: ScoringSystem;
   private gameState: GameState;
 
   // UI
@@ -41,10 +56,13 @@ export class Game {
   private starfield: Starfield;
   private player: Player;
   private torpedoes: PhotonTorpedo[] = [];
+  private currentStarbase: Starbase | null = null;
 
   // State
   private isInitialized: boolean = false;
   private gameTime: number = 0;
+  private gameOverCallback: GameOverCallback | null;
+  private hasTriggeredGameOver: boolean = false;
 
   // Key state tracking for single-press actions
   private keyStates: Map<string, boolean> = new Map();
@@ -58,12 +76,21 @@ export class Game {
   private hyperwarpProgress: number = 0;
   private hyperwarpTarget: { x: number; y: number } | null = null;
 
-  constructor(container: HTMLElement) {
+  // Docking state
+  private isDocking: boolean = false;
+  private dockingProgress: number = 0;
+
+  constructor(
+    container: HTMLElement,
+    difficulty: DifficultyLevel = DifficultyLevel.NOVICE,
+    onGameOver?: GameOverCallback
+  ) {
     this.container = container;
+    this.gameOverCallback = onGameOver || null;
 
     // Initialize game state
     this.gameState = new GameState();
-    this.gameState.reset(DifficultyLevel.NOVICE);
+    this.gameState.reset(difficulty);
 
     // Initialize Three.js
     this.scene = new THREE.Scene();
@@ -91,6 +118,7 @@ export class Game {
     this.inputManager = new InputManager(container);
     this.energySystem = new EnergySystem(this.gameState);
     this.sectorSystem = new SectorSystem();
+    this.scoringSystem = new ScoringSystem(this.gameState);
 
     // Generate galaxy
     this.sectorSystem.generateGalaxy(this.gameState.difficulty);
@@ -148,8 +176,45 @@ export class Game {
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     this.scene.add(ambientLight);
 
-    // Spawn enemies for starting sector
+    // Spawn enemies and starbase for starting sector
+    this.spawnSectorContents();
+  }
+
+  /**
+   * Spawn enemies and starbase for current sector
+   */
+  private spawnSectorContents(): void {
+    // Spawn enemies
     this.combatSystem.spawnEnemiesForSector();
+
+    // Spawn starbase if present
+    const sector = this.sectorSystem.getSector(
+      this.gameState.sectorX,
+      this.gameState.sectorY
+    );
+
+    if (sector?.hasStarbase && !sector.starbaseDestroyed) {
+      const starbasePos = new THREE.Vector3(
+        (Math.random() - 0.5) * 100,
+        (Math.random() - 0.5) * 30,
+        -100 + Math.random() * 50
+      );
+      this.currentStarbase = new Starbase(starbasePos);
+      this.scene.add(this.currentStarbase.getObject());
+    }
+  }
+
+  /**
+   * Clear sector contents
+   */
+  private clearSectorContents(): void {
+    this.combatSystem.clearEnemies();
+
+    if (this.currentStarbase) {
+      this.scene.remove(this.currentStarbase.getObject());
+      this.currentStarbase.dispose();
+      this.currentStarbase = null;
+    }
   }
 
   /**
@@ -178,12 +243,23 @@ export class Game {
    * Update game state (called each frame)
    */
   private update = (deltaTime: number): void => {
-    if (this.gameState.isGameOver) return;
+    if (this.gameState.isGameOver) {
+      if (!this.hasTriggeredGameOver) {
+        this.triggerGameOver();
+      }
+      return;
+    }
 
     this.gameTime += deltaTime;
 
     // Update star date
     this.gameState.starDate += deltaTime * 0.1;
+
+    // Handle docking sequence
+    if (this.isDocking) {
+      this.updateDocking(deltaTime);
+      return;
+    }
 
     // Handle hyperwarp animation
     if (this.isHyperwarping) {
@@ -203,6 +279,12 @@ export class Game {
     // Update entities
     this.player.update(deltaTime);
     this.starfield.update(deltaTime);
+
+    // Update starbase
+    if (this.currentStarbase) {
+      this.currentStarbase.update(deltaTime);
+      this.checkDocking();
+    }
 
     // Update torpedoes and check collisions
     this.updateTorpedoes(deltaTime);
@@ -237,6 +319,69 @@ export class Game {
   };
 
   /**
+   * Check for docking opportunity
+   */
+  private checkDocking(): void {
+    if (!this.currentStarbase) return;
+
+    const playerPos = this.player.getObject().position.clone();
+
+    if (this.currentStarbase.canDock(playerPos, this.gameState.engineSpeed)) {
+      if (!this.isDocking) {
+        this.isDocking = true;
+        this.dockingProgress = 0;
+        this.controlPanel.showMessage('ORBIT ESTABLISHED - DOCKING...');
+      }
+    }
+  }
+
+  /**
+   * Update docking sequence
+   */
+  private updateDocking(deltaTime: number): void {
+    this.dockingProgress += deltaTime * 0.5; // 2 seconds to dock
+
+    if (this.dockingProgress >= 1) {
+      // Docking complete - repair and refuel
+      this.gameState.energy = this.gameState.maxEnergy;
+      this.gameState.damage = {
+        engines: false,
+        shields: false,
+        photonTorpedoes: false,
+        subSpaceRadio: false,
+        longRangeScan: false,
+        attackComputer: false,
+      };
+
+      this.isDocking = false;
+      this.controlPanel.showMessage('DOCKING COMPLETE - FULLY REPAIRED');
+    }
+  }
+
+  /**
+   * Trigger game over
+   */
+  private triggerGameOver(): void {
+    this.hasTriggeredGameOver = true;
+    this.gameLoop.stop();
+
+    if (this.gameOverCallback) {
+      const breakdown = this.scoringSystem.getScoreBreakdown();
+      this.gameOverCallback(
+        this.gameState.isVictory,
+        breakdown.totalScore,
+        breakdown.rank,
+        {
+          enemyScore: breakdown.enemyScore,
+          timeBonus: breakdown.timeBonus,
+          energyBonus: breakdown.energyBonus,
+          starbasePenalty: breakdown.starbasePenalty,
+        }
+      );
+    }
+  }
+
+  /**
    * Check victory/defeat conditions
    */
   private checkGameState(): void {
@@ -251,6 +396,12 @@ export class Game {
     if (this.sectorSystem.getRemainingStarbases() <= 0) {
       this.gameState.isGameOver = true;
       this.controlPanel.showMessage('MISSION FAILED - ALL STARBASES DESTROYED!');
+    }
+
+    // Defeat: out of energy
+    if (this.gameState.energy <= 0) {
+      this.gameState.isGameOver = true;
+      this.controlPanel.showMessage('MISSION FAILED - OUT OF ENERGY!');
     }
   }
 
@@ -439,8 +590,8 @@ export class Game {
       return;
     }
 
-    // Clear current sector enemies
-    this.combatSystem.clearEnemies();
+    // Clear current sector contents
+    this.clearSectorContents();
 
     // Start hyperwarp
     this.galacticChart.hide();
@@ -483,8 +634,8 @@ export class Game {
       this.isHyperwarping = false;
       this.hyperwarpTarget = null;
 
-      // Spawn enemies in new sector
-      this.combatSystem.spawnEnemiesForSector();
+      // Spawn contents for new sector
+      this.spawnSectorContents();
 
       const sector = this.sectorSystem.getSector(this.gameState.sectorX, this.gameState.sectorY);
       if (sector) {
@@ -655,6 +806,11 @@ export class Game {
     this.longRangeScan.dispose();
     this.attackComputer.dispose();
     this.combatSystem.dispose();
+
+    if (this.currentStarbase) {
+      this.scene.remove(this.currentStarbase.getObject());
+      this.currentStarbase.dispose();
+    }
 
     for (const torpedo of this.torpedoes) {
       this.scene.remove(torpedo.getObject());

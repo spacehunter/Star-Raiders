@@ -233,15 +233,64 @@
 
 ---
 
-## Future Phases (Not Started)
+## Phase 5: Game Systems and UI - COMPLETE
 
-### Phase 5: Game Systems and UI
-- Starbase System
-- Sub-Space Radio
-- Scoring and Rating
-- Difficulty Levels
-- Meteor System
-- Mission Timer
+### 5.1 Main Menu
+- [x] Title screen with Star Raiders branding
+- [x] Difficulty selection (Novice/Pilot/Warrior/Commander)
+- [x] Controls reference display
+- [x] Start mission button
+
+### 5.2 Starbase System
+- [x] Starbase entity with rotating ring
+- [x] Docking detection (speed ≤2, in range)
+- [x] Full repair and refuel on dock
+- [x] Starbases spawn in sectors with starbase flag
+
+### 5.3 Scoring System
+- [x] Points for enemies destroyed
+- [x] Time bonus for fast completion
+- [x] Energy efficiency bonus
+- [x] Starbase loss penalty
+- [x] Difficulty multiplier
+- [x] Rank calculation
+
+### 5.4 Game Over Screen
+- [x] Victory/defeat message
+- [x] Score breakdown display
+- [x] Final rank display
+- [x] Play again button
+
+### 5.5 Additional Features
+- [x] Meteor entity (for future use)
+- [x] GameManager for lifecycle control
+- [x] Proper cleanup and restart
+
+---
+
+## Iteration Log (continued)
+
+### Iteration 5 - Phase 5 Complete
+**Date:** 2025-12-30
+**Status:** Complete
+**Notes:**
+- Implemented `MainMenu.ts` with title screen and difficulty selection
+- Implemented `Starbase.ts` entity with rotating ring and docking lights
+- Implemented `ScoringSystem.ts` for score calculation and ranking
+- Implemented `Meteor.ts` entity for environmental hazards
+- Updated `main.ts` with GameManager for proper lifecycle
+- Updated `Game.ts` to support game over callback and starbase docking
+- Full game loop: Menu → Game → Score → Menu
+
+**Files Created:**
+- `src/ui/MainMenu.ts` - Title screen and game over
+- `src/entities/Starbase.ts` - Space station entity
+- `src/entities/Meteor.ts` - Meteor hazard entity
+- `src/systems/ScoringSystem.ts` - Score and rank calculation
+
+---
+
+## Future Phases (Not Started)
 
 ### Phase 6: Polishing and Finalization
 - Sound Effects
