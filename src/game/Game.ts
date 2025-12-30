@@ -4,12 +4,14 @@ import { GameState, ViewMode, DifficultyLevel } from './GameState';
 import { InputManager } from '../utils/InputManager';
 import { EnergySystem } from '../systems/EnergySystem';
 import { SectorSystem } from '../systems/SectorSystem';
+import { CombatSystem } from '../systems/CombatSystem';
 import { Starfield } from '../entities/Starfield';
 import { Player } from '../entities/Player';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GalacticChart } from '../views/GalacticChart';
 import { LongRangeScan } from '../views/LongRangeScan';
+import { AttackComputer } from '../views/AttackComputer';
 
 /**
  * Game - Main game controller that manages scene, rendering, and game state
@@ -26,12 +28,14 @@ export class Game {
   private inputManager: InputManager;
   private energySystem: EnergySystem;
   private sectorSystem: SectorSystem;
+  private combatSystem: CombatSystem;
   private gameState: GameState;
 
   // UI
   private controlPanel: ControlPanel;
   private galacticChart: GalacticChart;
   private longRangeScan: LongRangeScan;
+  private attackComputer: AttackComputer;
 
   // Game entities
   private starfield: Starfield;
@@ -40,6 +44,7 @@ export class Game {
 
   // State
   private isInitialized: boolean = false;
+  private gameTime: number = 0;
 
   // Key state tracking for single-press actions
   private keyStates: Map<string, boolean> = new Map();
@@ -94,6 +99,9 @@ export class Game {
     this.starfield = new Starfield(5000, 2000);
     this.player = new Player();
 
+    // Initialize combat system (needs scene)
+    this.combatSystem = new CombatSystem(this.scene, this.gameState, this.sectorSystem);
+
     // Initialize UI
     this.controlPanel = new ControlPanel(container, this.gameState);
     this.galacticChart = new GalacticChart(
@@ -103,6 +111,7 @@ export class Game {
       this.energySystem
     );
     this.longRangeScan = new LongRangeScan(container, this.sectorSystem, this.gameState);
+    this.attackComputer = new AttackComputer(container, this.gameState);
 
     // Set up scene
     this.setupScene();
@@ -138,6 +147,9 @@ export class Game {
     // Add some ambient light
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     this.scene.add(ambientLight);
+
+    // Spawn enemies for starting sector
+    this.combatSystem.spawnEnemiesForSector();
   }
 
   /**
@@ -168,13 +180,15 @@ export class Game {
   private update = (deltaTime: number): void => {
     if (this.gameState.isGameOver) return;
 
+    this.gameTime += deltaTime;
+
     // Update star date
     this.gameState.starDate += deltaTime * 0.1;
 
     // Handle hyperwarp animation
     if (this.isHyperwarping) {
       this.updateHyperwarp(deltaTime);
-      return; // Don't process other inputs during hyperwarp
+      return;
     }
 
     // Handle input
@@ -190,8 +204,23 @@ export class Game {
     this.player.update(deltaTime);
     this.starfield.update(deltaTime);
 
-    // Update torpedoes
+    // Update torpedoes and check collisions
     this.updateTorpedoes(deltaTime);
+
+    // Update combat system
+    const playerPos = this.player.getObject().position.clone();
+    this.combatSystem.update(deltaTime, playerPos);
+
+    // Check torpedo collisions
+    const destroyed = this.combatSystem.checkTorpedoCollisions(this.torpedoes);
+    if (destroyed.length > 0) {
+      this.controlPanel.showMessage(`ZYLON DESTROYED! (${this.sectorSystem.getRemainingEnemies()} remaining)`);
+    }
+
+    // Update attack computer
+    const target = this.combatSystem.getCurrentTarget();
+    this.attackComputer.setTarget(target);
+    this.attackComputer.update(playerPos, this.player.getForwardDirection());
 
     // Handle view transition
     if (this.isViewTransitioning) {
@@ -324,6 +353,24 @@ export class Game {
       }
     }
 
+    // Targeting - T key for nearest, M key for next
+    if (this.isKeyJustPressed('KeyT')) {
+      const playerPos = this.player.getObject().position.clone();
+      const target = this.combatSystem.selectNearestTarget(playerPos);
+      if (target) {
+        this.controlPanel.showMessage(`TRACKING: ZYLON ${target.getType()}`);
+      } else {
+        this.controlPanel.showMessage('NO TARGETS IN RANGE');
+      }
+    }
+
+    if (this.isKeyJustPressed('KeyM')) {
+      const target = this.combatSystem.selectNextTarget();
+      if (target) {
+        this.controlPanel.showMessage(`TARGET: ZYLON ${target.getType()}`);
+      }
+    }
+
     // Speed control (0-9 keys)
     for (let i = 0; i <= 9; i++) {
       const key = i === 0 ? 'Digit0' : `Digit${i}`;
@@ -392,6 +439,9 @@ export class Game {
       return;
     }
 
+    // Clear current sector enemies
+    this.combatSystem.clearEnemies();
+
     // Start hyperwarp
     this.galacticChart.hide();
     this.isHyperwarping = true;
@@ -409,7 +459,7 @@ export class Game {
    * Update hyperwarp animation
    */
   private updateHyperwarp(deltaTime: number): void {
-    this.hyperwarpProgress += deltaTime * 0.5; // 2 seconds total
+    this.hyperwarpProgress += deltaTime * 0.5;
 
     // Stretch starfield during warp
     const starfieldObj = this.starfield.getObject();
@@ -432,6 +482,9 @@ export class Game {
 
       this.isHyperwarping = false;
       this.hyperwarpTarget = null;
+
+      // Spawn enemies in new sector
+      this.combatSystem.spawnEnemiesForSector();
 
       const sector = this.sectorSystem.getSector(this.gameState.sectorX, this.gameState.sectorY);
       if (sector) {
@@ -600,6 +653,8 @@ export class Game {
     this.controlPanel.dispose();
     this.galacticChart.dispose();
     this.longRangeScan.dispose();
+    this.attackComputer.dispose();
+    this.combatSystem.dispose();
 
     for (const torpedo of this.torpedoes) {
       this.scene.remove(torpedo.getObject());

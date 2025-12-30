@@ -177,15 +177,63 @@
 
 ---
 
-## Future Phases (Not Started)
+## Phase 4: Enemy AI and Combat - COMPLETE
 
-### Phase 4: Enemy AI and Combat
-- Enemy Ship Models (Fighter, Cruiser, Basestar)
-- Enemy AI Behaviors
-- Attack Computer Display
-- Shields System
-- Damage System
-- Targeting Systems
+### 4.1 Enemy Ship Models
+- [x] Zylon Fighter - cyan, fast, diamond-shaped
+- [x] Zylon Cruiser - magenta, medium, with engine pods
+- [x] Zylon Basestar - gold pyramid, stationary, shielded
+
+### 4.2 Enemy AI Behaviors
+- [x] Idle state - gentle bobbing
+- [x] Patrol state - random movement
+- [x] Attack state - pursue player, evasive maneuvers
+- [x] State transitions based on distance
+
+### 4.3 Attack Computer Display
+- [x] A indicators - horizontal alignment
+- [x] B indicators - horizontal + vertical alignment
+- [x] C indicator - full lock (optimal range)
+- [x] Target info display (type, range)
+- [x] Targeting reticle
+
+### 4.4 Combat Integration
+- [x] Enemies spawn based on sector data
+- [x] Torpedo collision detection
+- [x] Enemy destruction with counter update
+- [x] Basestar shields mechanic
+
+### 4.5 Targeting Systems
+- [x] T key - select nearest target
+- [x] M key - cycle through targets
+- [x] Auto-select first target in sector
+- [x] Target tracking messages
+
+---
+
+## Iteration Log (continued)
+
+### Iteration 4 - Phase 4 Complete
+**Date:** 2025-12-30
+**Status:** Complete
+**Notes:**
+- Implemented `Enemy.ts` with three ship types (Fighter, Cruiser, Basestar)
+- Each type has unique model, stats, and behavior
+- Implemented `CombatSystem.ts` for enemy spawning and combat management
+- Implemented `AttackComputer.ts` with A/B/C lock-on indicators
+- Torpedo collision detection with enemies
+- Targeting system with T (nearest) and M (cycle) keys
+- Enemies appear when hyperwarping to sectors with enemies
+- Destruction counter updates sector data and shows messages
+
+**Files Created:**
+- `src/entities/Enemy.ts` - Enemy ship models and AI
+- `src/systems/CombatSystem.ts` - Combat and targeting management
+- `src/views/AttackComputer.ts` - Lock-on targeting display
+
+---
+
+## Future Phases (Not Started)
 
 ### Phase 5: Game Systems and UI
 - Starbase System
