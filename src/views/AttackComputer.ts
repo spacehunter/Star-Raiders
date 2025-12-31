@@ -44,20 +44,22 @@ export class AttackComputer {
   }
 
   /**
-   * Create the attack computer HTML
+   * Create the attack computer HTML - matches original Atari 800 display
+   * Layout:  A       A
+   *          B       B
+   *              C
    */
   private createDisplay(): HTMLElement {
     const display = document.createElement('div');
     display.className = 'attack-computer';
     display.innerHTML = `
       <div class="computer-frame">
-        <div class="indicator indicator-a-left"></div>
-        <div class="indicator indicator-a-right"></div>
-        <div class="indicator indicator-b-left"></div>
-        <div class="indicator indicator-b-right"></div>
-        <div class="indicator indicator-c"></div>
+        <div class="indicator indicator-a-left">A</div>
+        <div class="indicator indicator-a-right">A</div>
+        <div class="indicator indicator-b-left">B</div>
+        <div class="indicator indicator-b-right">B</div>
+        <div class="indicator indicator-c">C</div>
         <div class="targeting-reticle">
-          <div class="reticle-ring"></div>
           <div class="reticle-cross-h"></div>
           <div class="reticle-cross-v"></div>
         </div>
@@ -72,7 +74,7 @@ export class AttackComputer {
   }
 
   /**
-   * Add CSS styles
+   * Add CSS styles - Atari 800 pixel-style display
    */
   private addStyles(): void {
     if (document.getElementById('attack-computer-styles')) return;
@@ -92,71 +94,67 @@ export class AttackComputer {
       .computer-frame {
         width: 100%;
         height: 100%;
-        border: 2px solid #00ffff;
-        background: rgba(0, 20, 40, 0.6);
+        border: 3px solid #00ffff;
+        background: rgba(0, 0, 0, 0.85);
         position: relative;
       }
 
       .indicator {
         position: absolute;
-        background: #00ff00;
-        opacity: 0;
-        transition: opacity 0.1s;
+        font-family: 'Courier New', monospace;
+        font-size: 24px;
+        font-weight: bold;
+        color: #004400;
+        text-shadow: none;
+        transition: color 0.1s, text-shadow 0.1s;
       }
 
       .indicator.active {
-        opacity: 1;
+        color: #00ff00;
+        text-shadow: 0 0 8px #00ff00;
       }
 
       /* A indicators - top corners (horizontal lock) */
       .indicator-a-left {
-        top: 10px;
-        left: 10px;
-        width: 20px;
-        height: 4px;
+        top: 15px;
+        left: 20px;
       }
 
       .indicator-a-right {
-        top: 10px;
-        right: 10px;
-        width: 20px;
-        height: 4px;
+        top: 15px;
+        right: 20px;
       }
 
       /* B indicators - middle sides (horizontal + vertical) */
       .indicator-b-left {
         top: 50%;
-        left: 10px;
-        width: 4px;
-        height: 20px;
+        left: 20px;
         transform: translateY(-50%);
       }
 
       .indicator-b-right {
         top: 50%;
-        right: 10px;
-        width: 4px;
-        height: 20px;
+        right: 20px;
         transform: translateY(-50%);
       }
 
       /* C indicator - bottom center (full lock) */
       .indicator-c {
-        bottom: 10px;
+        bottom: 15px;
         left: 50%;
-        width: 30px;
-        height: 4px;
         transform: translateX(-50%);
-        background: #ff0000;
+        color: #440000;
       }
 
       .indicator-c.active {
-        animation: pulse 0.3s infinite;
+        color: #ff0000;
+        text-shadow: 0 0 10px #ff0000;
+        animation: pulse-c 0.3s infinite;
       }
 
-      @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
+      @keyframes pulse-c {
+        0%, 100% { opacity: 1; text-shadow: 0 0 10px #ff0000; }
+        50% { opacity: 0.7; text-shadow: 0 0 15px #ff0000; }
       }
 
       .targeting-reticle {
@@ -164,16 +162,8 @@ export class AttackComputer {
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        width: 40px;
-        height: 40px;
-      }
-
-      .reticle-ring {
-        position: absolute;
-        width: 100%;
-        height: 100%;
-        border: 2px solid #00ffff;
-        border-radius: 50%;
+        width: 30px;
+        height: 30px;
       }
 
       .reticle-cross-h,
@@ -198,12 +188,12 @@ export class AttackComputer {
 
       .target-info {
         position: absolute;
-        bottom: -25px;
+        bottom: -30px;
         left: 0;
         right: 0;
         text-align: center;
         font-family: 'Courier New', monospace;
-        font-size: 10px;
+        font-size: 11px;
         color: #00ffff;
       }
 
@@ -211,6 +201,7 @@ export class AttackComputer {
         display: block;
         color: #ff0000;
         font-weight: bold;
+        text-transform: uppercase;
       }
 
       .target-range {

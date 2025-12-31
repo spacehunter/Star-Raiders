@@ -100,7 +100,7 @@ export class Starbase {
    * Get docking radius
    */
   public getDockingRadius(): number {
-    return 15;
+    return 50; // Increased from 15 for easier docking
   }
 
   /**

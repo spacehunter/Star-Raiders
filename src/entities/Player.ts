@@ -33,7 +33,8 @@ export class Player {
   }
 
   /**
-   * Create the geometric player ship model
+   * Create the geometric player ship model - pixel art style
+   * Based on original Atari 800 aesthetic
    */
   private createShipModel(): THREE.Group {
     const group = new THREE.Group();
@@ -41,74 +42,89 @@ export class Player {
     // Color definitions
     const blueColor = 0x4488ff;
     const whiteColor = 0xffffff;
+    const cyanColor = 0x00ffff;
 
     // Materials
     const blueMaterial = new THREE.MeshBasicMaterial({ color: blueColor });
     const whiteMaterial = new THREE.MeshBasicMaterial({ color: whiteColor });
 
-    // Main body - elongated box
-    const bodyGeometry = new THREE.BoxGeometry(0.8, 0.3, 2.0);
-    const body = new THREE.Mesh(bodyGeometry, blueMaterial);
-    body.position.z = 0;
-    group.add(body);
+    const pixelSize = 0.25;
+    const pixelGeometry = new THREE.BoxGeometry(pixelSize, pixelSize * 0.5, pixelSize);
 
-    // Nose cone - pyramid pointing forward (-Z)
-    const noseGeometry = new THREE.ConeGeometry(0.3, 1.2, 4);
-    const nose = new THREE.Mesh(noseGeometry, whiteMaterial);
-    nose.rotation.x = -Math.PI / 2; // Point forward
-    nose.rotation.y = Math.PI / 4; // Rotate to align edges
-    nose.position.z = -1.5;
-    group.add(nose);
+    // Create pixel art ship from top view:
+    //       XX        (nose - white)
+    //      XXXX       (front body - blue)
+    //  XX XXXXXX XX   (main body + wings - blue/white tips)
+    //  XX XXXXXX XX
+    //     XXXX        (body - blue)
+    //      XX         (engine - white)
+    //      OO         (engine glow - cyan)
 
-    // Left wing - angled box
-    const wingGeometry = new THREE.BoxGeometry(1.5, 0.1, 0.8);
-    const leftWing = new THREE.Mesh(wingGeometry, blueMaterial);
-    leftWing.position.set(-0.8, 0, 0.3);
-    leftWing.rotation.z = 0.15;
-    group.add(leftWing);
-
-    // Right wing - angled box
-    const rightWing = new THREE.Mesh(wingGeometry, blueMaterial);
-    rightWing.position.set(0.8, 0, 0.3);
-    rightWing.rotation.z = -0.15;
-    group.add(rightWing);
-
-    // Left wing tip
-    const wingTipGeometry = new THREE.BoxGeometry(0.2, 0.15, 0.4);
-    const leftWingTip = new THREE.Mesh(wingTipGeometry, whiteMaterial);
-    leftWingTip.position.set(-1.5, 0.05, 0.3);
-    group.add(leftWingTip);
-
-    // Right wing tip
-    const rightWingTip = new THREE.Mesh(wingTipGeometry, whiteMaterial);
-    rightWingTip.position.set(1.5, 0.05, 0.3);
-    group.add(rightWingTip);
-
-    // Cockpit - small raised section
-    const cockpitGeometry = new THREE.BoxGeometry(0.4, 0.2, 0.6);
-    const cockpit = new THREE.Mesh(cockpitGeometry, whiteMaterial);
-    cockpit.position.set(0, 0.25, -0.4);
-    group.add(cockpit);
-
-    // Engine section - back of ship
-    const engineGeometry = new THREE.BoxGeometry(0.6, 0.4, 0.5);
-    const engine = new THREE.Mesh(engineGeometry, whiteMaterial);
-    engine.position.z = 1.1;
-    group.add(engine);
-
-    // Engine glow (emissive)
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
-      transparent: true,
-      opacity: 0.8,
+    // Nose (white) - rows 0-1
+    [[-0.5, 0.5], [-1, 0, 1]].forEach((row, rowIdx) => {
+      row.forEach((x) => {
+        const pixel = new THREE.Mesh(pixelGeometry, whiteMaterial);
+        pixel.position.set(x * pixelSize, 0, (-3 + rowIdx) * pixelSize);
+        group.add(pixel);
+      });
     });
-    const glowGeometry = new THREE.BoxGeometry(0.4, 0.3, 0.1);
-    const engineGlow = new THREE.Mesh(glowGeometry, glowMaterial);
-    engineGlow.position.z = 1.4;
-    group.add(engineGlow);
+
+    // Front body (blue) - row 2
+    [-1.5, -0.5, 0.5, 1.5].forEach((x) => {
+      const pixel = new THREE.Mesh(pixelGeometry, blueMaterial);
+      pixel.position.set(x * pixelSize, 0, -1 * pixelSize);
+      group.add(pixel);
+    });
+
+    // Main body + wings - rows 3-4
+    for (let row = 0; row < 2; row++) {
+      // Wings (blue with white tips)
+      [-4, -3].forEach((x) => {
+        const pixel = new THREE.Mesh(pixelGeometry, x === -4 ? whiteMaterial : blueMaterial);
+        pixel.position.set(x * pixelSize, 0, row * pixelSize);
+        group.add(pixel);
+      });
+      [3, 4].forEach((x) => {
+        const pixel = new THREE.Mesh(pixelGeometry, x === 4 ? whiteMaterial : blueMaterial);
+        pixel.position.set(x * pixelSize, 0, row * pixelSize);
+        group.add(pixel);
+      });
+      // Center body (blue)
+      [-1.5, -0.5, 0.5, 1.5].forEach((x) => {
+        const pixel = new THREE.Mesh(pixelGeometry, blueMaterial);
+        pixel.position.set(x * pixelSize, 0, row * pixelSize);
+        group.add(pixel);
+      });
+    }
+
+    // Rear body (blue) - row 5
+    [-1, 0, 1].forEach((x) => {
+      const pixel = new THREE.Mesh(pixelGeometry, blueMaterial);
+      pixel.position.set(x * pixelSize, 0, 2 * pixelSize);
+      group.add(pixel);
+    });
+
+    // Engine (white) - row 6
+    [-0.5, 0.5].forEach((x) => {
+      const pixel = new THREE.Mesh(pixelGeometry, whiteMaterial);
+      pixel.position.set(x * pixelSize, 0, 3 * pixelSize);
+      group.add(pixel);
+    });
+
+    // Engine glow (cyan)
+    const glowMaterial = new THREE.MeshBasicMaterial({
+      color: cyanColor,
+      transparent: true,
+      opacity: 0.9,
+    });
+    [-0.5, 0.5].forEach((x) => {
+      const pixel = new THREE.Mesh(pixelGeometry, glowMaterial);
+      pixel.position.set(x * pixelSize, 0, 3.5 * pixelSize);
+      group.add(pixel);
+    });
 
     // Scale the entire ship
-    group.scale.set(0.5, 0.5, 0.5);
+    group.scale.set(0.6, 0.6, 0.6);
 
     return group;
   }

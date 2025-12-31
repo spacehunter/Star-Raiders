@@ -4,6 +4,7 @@ import { EnergySystem } from '../systems/EnergySystem';
 
 /**
  * GalacticChart - 2D overlay displaying the 8x8 sector grid
+ *authentic Atari 800 style
  */
 export class GalacticChart {
   private container: HTMLElement;
@@ -49,32 +50,40 @@ export class GalacticChart {
       <div class="chart-header">
         <span class="chart-title">GALACTIC CHART</span>
       </div>
-      <div class="chart-grid"></div>
-      <div class="chart-info">
-        <div class="info-row">
-          <span class="info-label">CURSOR:</span>
-          <span class="info-value cursor-pos">4,4</span>
-        </div>
-        <div class="info-row">
-          <span class="info-label">ENEMIES:</span>
-          <span class="info-value sector-enemies">0</span>
-        </div>
-        <div class="info-row">
-          <span class="info-label">HYPERWARP COST:</span>
-          <span class="info-value warp-cost">0</span>
-        </div>
+      <div class="chart-container">
+        <div class="chart-grid"></div>
       </div>
-      <div class="chart-legend">
-        <span>* STARBASE</span>
-        <span>&lt; 1 ENEMY</span>
-        <span>= 2 ENEMIES</span>
-        <span>&gt; 3 ENEMIES</span>
-        <span>\u2265 FLEET</span>
-      </div>
-      <div class="chart-controls">
-        <span>ARROWS: MOVE CURSOR</span>
-        <span>H: HYPERWARP</span>
-        <span>G: CLOSE</span>
+      <div class="chart-footer">
+        <div class="footer-row">
+          <div class="footer-col">
+             <span class="label">WARP ENERGY:</span>
+             <span class="value warp-cost">0000</span>
+          </div>
+          <div class="footer-col" style="flex: 2; text-align: center;">
+             <span class="label">TARGETS:</span>
+             <span class="value total-enemies">00</span>
+          </div>
+          <div class="footer-col dc-col">
+             <span class="label">DC:</span>
+             <span class="dc-indicators">
+                <span class="dc-char" data-sys="P">P</span>
+                <span class="dc-char" data-sys="E">E</span>
+                <span class="dc-char" data-sys="S">S</span>
+                <span class="dc-char" data-sys="C">C</span>
+                <span class="dc-char" data-sys="L">L</span>
+                <span class="dc-char" data-sys="R">R</span>
+             </span>
+          </div>
+        </div>
+        <div class="footer-row">
+           <div class="footer-col">
+              <span class="label">STAR DATE:</span>
+              <span class="value star-date">00.00</span>
+           </div>
+           <div class="footer-col" style="text-align: right;">
+              <!-- Empty or extra info -->
+           </div>
+        </div>
       </div>
     `;
 
@@ -102,127 +111,218 @@ export class GalacticChart {
     const style = document.createElement('style');
     style.id = 'galactic-chart-styles';
     style.textContent = `
+      @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
       .galactic-chart {
         position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(0, 20, 40, 0.95);
-        border: 3px solid #00ffff;
-        padding: 20px;
-        font-family: 'Courier New', monospace;
-        color: #00ffff;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: #2B608A;
         z-index: 200;
-        min-width: 400px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding-top: 2vh;
+        box-sizing: border-box;
+        image-rendering: pixelated;
       }
 
       .chart-header {
+        margin-bottom: 1vh;
+        width: 100%;
         text-align: center;
-        margin-bottom: 15px;
       }
 
       .chart-title {
-        font-size: 18px;
-        font-weight: bold;
-        color: #ffffff;
+        font-family: 'Press Start 2P', monospace;
+        font-size: 3vh;
+        color: #CEFFFF;
+        text-shadow: 0.5vh 0.5vh 0 #000;
         text-transform: uppercase;
-        letter-spacing: 4px;
+      }
+
+      .chart-container {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        max-height: 70vh;
       }
 
       .chart-grid {
         display: grid;
-        grid-template-columns: repeat(8, 40px);
-        grid-template-rows: repeat(8, 40px);
-        gap: 2px;
-        background: #001a1a;
-        padding: 5px;
-        border: 1px solid #008888;
-        margin-bottom: 15px;
+        grid-template-columns: repeat(8, 1fr);
+        grid-template-rows: repeat(8, 1fr);
+        height: 60vh;
+        width: 60vh; 
+        gap: 0;
+        border: 0.5vh solid #CEFFFF;
+        background: transparent;
       }
 
       .chart-cell {
-        background: #002030;
-        border: 1px solid #004040;
+        border: 0.25vh solid #55AAFF;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 16px;
-        font-weight: bold;
-        color: #00ffff;
+        font-family: 'Press Start 2P', monospace;
+        font-size: 2vh;
+        color: #CEFFFF;
         position: relative;
-      }
-
-      .chart-cell.current-sector {
-        background: #004060;
-        border-color: #00ffff;
+        text-shadow: 0.25vh 0.25vh 0 #000;
       }
 
       .chart-cell.cursor {
-        box-shadow: inset 0 0 0 2px #ffff00;
-        animation: cursor-blink 0.5s infinite;
-      }
-
-      @keyframes cursor-blink {
-        0%, 100% { box-shadow: inset 0 0 0 2px #ffff00; }
-        50% { box-shadow: inset 0 0 0 2px #888800; }
+        background-color: rgba(206, 255, 255, 0.3);
+        box-shadow: inset 0 0 0 4px #FFFF00;
       }
 
       .chart-cell.has-starbase {
-        color: #00ff00;
+        color: #BAFF00; /* Green/Yellow for starbase */
+        font-size: 32px;
       }
-
+      
       .chart-cell.starbase-attacked {
-        color: #ff0000;
-        animation: attack-blink 0.3s infinite;
+        color: #FF0000;
+        animation: blink 0.5s infinite;
       }
 
-      @keyframes attack-blink {
-        0%, 100% { color: #ff0000; }
-        50% { color: #ff8800; }
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0; }
       }
 
-      .chart-info {
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-        margin-bottom: 15px;
-        padding: 10px;
-        background: #001520;
-        border: 1px solid #004040;
+      .chart-footer {
+        width: 80%;
+        max-width: 800px;
+        margin-bottom: 40px;
+        font-family: 'Press Start 2P', monospace;
+        color: #CEFFFF;
       }
 
-      .info-row {
+      .footer-row {
         display: flex;
         justify-content: space-between;
+        margin-bottom: 20px;
+        font-size: 20px;
       }
 
-      .info-label {
-        color: #008888;
-        font-size: 12px;
-      }
-
-      .info-value {
-        color: #00ff00;
-        font-size: 14px;
-        font-weight: bold;
-      }
-
-      .chart-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        font-size: 10px;
-        color: #008888;
-        margin-bottom: 10px;
-      }
-
-      .chart-controls {
+      .footer-col {
         display: flex;
         gap: 15px;
-        font-size: 10px;
-        color: #ffff00;
-        justify-content: center;
+        align-items: center;
       }
+
+      .label {
+        color: #CEFFFF;
+      }
+
+      .value {
+        color: #BAFF00;
+      }
+      
+      .dc-indicators {
+        display: flex;
+        gap: 8px;
+        background: #000; /* DC usually has black back? Or transparent */
+        padding: 0 5px;
+      }
+      
+      .dc-char {
+        color: #BAFF00; /* Green = OK */
+      }
+      
+      .dc-char.damaged {
+        color: #FF5555; /* Red = Damaged */
+      }
+      
+      .dc-char.destroyed {
+        color: #000000;
+        text-shadow: none;
+        opacity: 0.2;
+      }
+      
+      /* Sprites */
+      .sprite {
+        width: 1px;
+        height: 1px;
+        position: absolute;
+      }
+      
+      /* Starbase Sprite - Authentic 8-point star */
+      /* Pattern from screenshot: 3x3 core with 1px tips ? */
+      /* Looks like a 5x5 grid:
+         . . X . .
+         . X X X .
+         X X X X X
+         . X X X .
+         . . X . .
+         Color appears light blue/white in screenshot, not yellow.
+      */
+      .starbase-sprite {
+        background: transparent;
+        color: #CEFFFF; /* Light Cyan/White */
+        transform: scale(4); /* Larger scale */
+        box-shadow: 
+          0 0 0 1px, /* Center */
+          0 -2px 0 0, /* Top tip */
+          0 2px 0 0, /* Bot tip */
+          -2px 0 0 0, /* Left tip */
+          2px 0 0 0, /* Right tip */
+          -1px -1px 0 0, 0px -1px 0 0, 1px -1px 0 0,
+          -1px 0 0 0, 1px 0 0 0,
+          -1px 1px 0 0, 0px 1px 0 0, 1px 1px 0 0;
+      }
+      
+      /* Enemy Sprite (Zylon Fighter) */
+      .enemy-sprite {
+         color: #FFFFFF;
+         transform: scale(4);
+      }
+      
+      /* 1 Enemy: Left-facing fighter shape */
+      /*
+        . X .
+        X X .
+        X X X  <-- Wing back?
+        X X .
+        . X .
+      */
+      .enemy-sprite.count-1 {
+         box-shadow:
+           0 0 0 1px,
+           -1px 0 0 0, 
+           0 -1px 0 0, -1px -1px 0 0,
+           0 1px 0 0, -1px 1px 0 0,
+           1px 0 0 0; /* Nose */
+      }
+      
+      /* 2 Enemies: Two small blips */
+      .enemy-sprite.count-2 {
+         box-shadow:
+           -2px -2px 0 1px,
+           2px 2px 0 1px;
+      }
+      
+      /* 3 Enemies: Three blips */
+      .enemy-sprite.count-3 {
+        box-shadow:
+           -2px -3px 0 1px,
+           2px -3px 0 1px,
+           0px 2px 0 1px;
+      }
+      
+      /* Fleet (4+): Four blips block */
+      .enemy-sprite.count-4 {
+         box-shadow:
+            -2px -2px 0 1px, 2px -2px 0 1px,
+            -2px 2px 0 1px, 2px 2px 0 1px;
+      }
+
     `;
     document.head.appendChild(style);
   }
@@ -232,7 +332,7 @@ export class GalacticChart {
    */
   public show(): void {
     this.isVisible = true;
-    this.chartElement.style.display = 'block';
+    this.chartElement.style.display = 'flex';
     this.cursorX = this.gameState.sectorX;
     this.cursorY = this.gameState.sectorY;
     this.update();
@@ -297,11 +397,10 @@ export class GalacticChart {
 
       // Reset classes
       cellEl.classList.remove('current-sector', 'cursor', 'has-starbase', 'starbase-attacked');
+      cellEl.textContent = '';
 
-      // Current player sector
-      if (x === this.gameState.sectorX && y === this.gameState.sectorY) {
-        cellEl.classList.add('current-sector');
-      }
+      // Clear any existing sprites
+      cellEl.querySelectorAll('.sprite').forEach(sprite => sprite.remove());
 
       // Cursor position
       if (x === this.cursorX && y === this.cursorY) {
@@ -309,42 +408,82 @@ export class GalacticChart {
       }
 
       // Sector content
+      // Original uses symbols: < (enemy), * (base), . (visited?), etc.
+      // We will match the logic but use authentic styling.
       if (sector) {
-        const symbol = this.sectorSystem.getSectorSymbol(x, y);
-        cellEl.textContent = symbol;
-
+        // Starbase
         if (sector.hasStarbase && !sector.starbaseDestroyed) {
+          this.renderSprite(cellEl, 'starbase');
           cellEl.classList.add('has-starbase');
           if (sector.enemies > 0) {
             cellEl.classList.add('starbase-attacked');
           }
+        } else if (sector.enemies > 0) {
+          // 1-3 enemies or fleet
+          // Render specific enemy count sprite
+          const count = Math.min(sector.enemies, 4); // Cap at 4 for sprite logic
+          this.renderSprite(cellEl, 'enemy', count);
         }
       }
     });
 
-    // Update info panel
-    const cursorPos = this.chartElement.querySelector('.cursor-pos');
-    const sectorEnemies = this.chartElement.querySelector('.sector-enemies');
-    const warpCost = this.chartElement.querySelector('.warp-cost');
+    // Update Footer Info
+    const warpCostEl = this.chartElement.querySelector('.warp-cost');
+    const totalEnemiesEl = this.chartElement.querySelector('.total-enemies');
+    const starDateEl = this.chartElement.querySelector('.star-date');
 
-    if (cursorPos) {
-      cursorPos.textContent = `${this.cursorX},${this.cursorY}`;
-    }
-
-    const sector = this.sectorSystem.getSector(this.cursorX, this.cursorY);
-    if (sectorEnemies && sector) {
-      sectorEnemies.textContent = sector.enemies.toString();
-    }
-
-    if (warpCost) {
+    // Warp Cost
+    if (warpCostEl) {
       const cost = this.energySystem.calculateHyperwarpCost(
         this.gameState.sectorX,
         this.gameState.sectorY,
         this.cursorX,
         this.cursorY
       );
-      warpCost.textContent = cost.toString();
+      warpCostEl.textContent = cost.toString().padStart(4, '0');
     }
+
+    // Targets (Total Enemies Remaining in Galaxy)
+    if (totalEnemiesEl) {
+      // Assume totalRemaining = total - destroyed
+      const remaining = this.gameState.totalEnemies - this.gameState.enemiesDestroyed;
+      totalEnemiesEl.textContent = remaining.toString().padStart(2, '0');
+    }
+
+    // Star Date
+    if (starDateEl) {
+      starDateEl.textContent = this.gameState.starDate.toFixed(2);
+    }
+
+    // Damage Control (DC) Indicators
+    const dcMap: Record<string, boolean> = {
+      'P': this.gameState.damage.photonTorpedoes,
+      'E': this.gameState.damage.engines,
+      'S': this.gameState.damage.shields,
+      'C': this.gameState.damage.attackComputer,
+      'L': this.gameState.damage.longRangeScan,
+      'R': this.gameState.damage.subSpaceRadio
+    };
+
+    const dcChars = this.chartElement.querySelectorAll('.dc-char');
+    dcChars.forEach((el) => {
+      const char = (el as HTMLElement).dataset.sys!;
+      const isDamaged = dcMap[char];
+
+      el.classList.remove('damaged', 'destroyed');
+      if (isDamaged) {
+        el.classList.add('damaged');
+      }
+    });
+  }
+
+  /**
+   * Render a pixel art sprite into a cell
+   */
+  private renderSprite(container: HTMLElement, type: 'starbase' | 'enemy', count: number = 1): void {
+    const sprite = document.createElement('div');
+    sprite.className = `sprite ${type}-sprite count-${count}`;
+    container.appendChild(sprite);
   }
 
   /**

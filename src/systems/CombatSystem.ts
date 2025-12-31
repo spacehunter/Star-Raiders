@@ -111,9 +111,8 @@ export class CombatSystem {
         return target;
       }
     }
-    // Find next active target
-    this.selectNextTarget();
-    return this.getCurrentTarget();
+    // Find next active target (no recursive call to avoid stack overflow)
+    return this.selectNextTarget();
   }
 
   /**
@@ -249,6 +248,17 @@ export class CombatSystem {
    */
   public getEnemies(): Enemy[] {
     return this.enemies;
+  }
+
+  /**
+   * Apply player movement to all enemies (relative motion)
+   */
+  public applyPlayerMovement(displacement: THREE.Vector3): void {
+    for (const enemy of this.enemies) {
+      if (enemy.isActive) {
+        enemy.getObject().position.add(displacement);
+      }
+    }
   }
 
   /**

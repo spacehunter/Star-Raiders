@@ -104,89 +104,147 @@ export class Enemy {
   }
 
   /**
-   * Create Zylon Fighter model - small, agile, cyan
+   * Create Zylon Fighter model - pixel art style diamond shape
+   * Based on original Atari 800 sprite
    */
   private createFighterModel(group: THREE.Group): void {
     const material = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+    const pixelSize = 0.4;
 
-    // Main body - diamond shape
-    const bodyGeometry = new THREE.OctahedronGeometry(1, 0);
-    bodyGeometry.scale(1, 0.3, 1.5);
-    const body = new THREE.Mesh(bodyGeometry, material);
-    group.add(body);
+    // Create pixel art diamond shape (like original)
+    // Row pattern from top to bottom:
+    //     X       (row 0)
+    //    XXX      (row 1)
+    //   XXXXX     (row 2) - widest
+    //    XXX      (row 3)
+    //     X       (row 4)
+    const pattern = [
+      [0],                    // row 0
+      [-1, 0, 1],            // row 1
+      [-2, -1, 0, 1, 2],     // row 2
+      [-1, 0, 1],            // row 3
+      [0],                    // row 4
+    ];
 
-    // Wings
-    const wingGeometry = new THREE.BoxGeometry(2.5, 0.1, 0.5);
-    const wings = new THREE.Mesh(wingGeometry, material);
-    group.add(wings);
+    const pixelGeometry = new THREE.BoxGeometry(pixelSize, pixelSize * 0.5, pixelSize);
 
-    group.scale.set(0.8, 0.8, 0.8);
+    pattern.forEach((row, rowIndex) => {
+      const y = (2 - rowIndex) * pixelSize * 0.6;
+      row.forEach((x) => {
+        const pixel = new THREE.Mesh(pixelGeometry, material);
+        pixel.position.set(x * pixelSize, y, 0);
+        group.add(pixel);
+      });
+    });
+
+    // Add small engine pixels at back
+    const enginePixel1 = new THREE.Mesh(pixelGeometry, material);
+    enginePixel1.position.set(0, 0, pixelSize);
+    group.add(enginePixel1);
+
+    group.scale.set(1.5, 1.5, 1.5);
   }
 
   /**
-   * Create Zylon Cruiser model - medium, magenta
+   * Create Zylon Cruiser model - pixel art H-shape style
+   * Based on original Atari 800 sprite
    */
   private createCruiserModel(group: THREE.Group): void {
     const material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+    const pixelSize = 0.5;
 
-    // Main hull
-    const hullGeometry = new THREE.BoxGeometry(1.5, 0.6, 3);
-    const hull = new THREE.Mesh(hullGeometry, material);
-    group.add(hull);
+    // Create pixel art H-shape cruiser (like original manual shows)
+    // Pattern:
+    //  XX   XX    (row 0) - engine pods
+    //  XX   XX    (row 1)
+    //  XXXXXXX    (row 2) - center hull
+    //  XXXXXXX    (row 3)
+    //  XX   XX    (row 4)
+    //  XX   XX    (row 5) - engine pods
+    const pattern = [
+      [-3, -2, 2, 3],           // row 0 - outer pods
+      [-3, -2, 2, 3],           // row 1
+      [-3, -2, -1, 0, 1, 2, 3], // row 2 - full center
+      [-3, -2, -1, 0, 1, 2, 3], // row 3
+      [-3, -2, 2, 3],           // row 4
+      [-3, -2, 2, 3],           // row 5 - outer pods
+    ];
 
-    // Command section
-    const commandGeometry = new THREE.ConeGeometry(0.5, 1, 4);
-    const command = new THREE.Mesh(commandGeometry, material);
-    command.rotation.x = -Math.PI / 2;
-    command.position.z = -2;
-    group.add(command);
+    const pixelGeometry = new THREE.BoxGeometry(pixelSize, pixelSize * 0.4, pixelSize);
 
-    // Engine pods
-    const podGeometry = new THREE.CylinderGeometry(0.3, 0.3, 1.5, 6);
-    const leftPod = new THREE.Mesh(podGeometry, material);
-    leftPod.rotation.x = Math.PI / 2;
-    leftPod.position.set(-1, 0, 0.5);
-    group.add(leftPod);
+    pattern.forEach((row, rowIndex) => {
+      const z = (2.5 - rowIndex) * pixelSize;
+      row.forEach((x) => {
+        const pixel = new THREE.Mesh(pixelGeometry, material);
+        pixel.position.set(x * pixelSize * 0.5, 0, z);
+        group.add(pixel);
+      });
+    });
 
-    const rightPod = new THREE.Mesh(podGeometry, material);
-    rightPod.rotation.x = Math.PI / 2;
-    rightPod.position.set(1, 0, 0.5);
-    group.add(rightPod);
+    // Add command bridge on top
+    const bridgeGeometry = new THREE.BoxGeometry(pixelSize, pixelSize * 0.6, pixelSize);
+    const bridge = new THREE.Mesh(bridgeGeometry, material);
+    bridge.position.set(0, pixelSize * 0.4, 0);
+    group.add(bridge);
 
     group.scale.set(1.2, 1.2, 1.2);
   }
 
   /**
-   * Create Zylon Basestar model - large pyramid, gold
+   * Create Zylon Basestar model - pixel art pyramid style
+   * Based on original Atari 800 sprite (gold pyramid)
    */
   private createBasestarModel(group: THREE.Group): void {
     const material = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+    const pixelSize = 0.6;
 
-    // Main pyramid structure
-    const pyramidGeometry = new THREE.ConeGeometry(2, 3, 4);
-    const pyramid = new THREE.Mesh(pyramidGeometry, material);
-    pyramid.rotation.y = Math.PI / 4;
-    group.add(pyramid);
+    // Create pixel art stepped pyramid (like original)
+    // Layers from bottom to top, each smaller than the last
+    const layers = [
+      { size: 5, y: 0 },      // Bottom layer - 5x5
+      { size: 4, y: 1 },      // Layer 2 - 4x4
+      { size: 3, y: 2 },      // Layer 3 - 3x3
+      { size: 2, y: 3 },      // Layer 4 - 2x2
+      { size: 1, y: 4 },      // Top - 1x1
+    ];
 
-    // Base platform
-    const baseGeometry = new THREE.BoxGeometry(3.5, 0.3, 3.5);
-    const base = new THREE.Mesh(baseGeometry, material);
-    base.position.y = -1.5;
-    group.add(base);
+    const pixelGeometry = new THREE.BoxGeometry(pixelSize, pixelSize * 0.6, pixelSize);
 
-    // Shield glow (when shields are active)
-    const shieldGeometry = new THREE.SphereGeometry(3, 16, 16);
+    layers.forEach((layer) => {
+      const halfSize = Math.floor(layer.size / 2);
+      for (let x = -halfSize; x <= halfSize; x++) {
+        for (let z = -halfSize; z <= halfSize; z++) {
+          // For odd sizes, include center; for even, offset
+          if (layer.size % 2 === 0 && (x === 0 || z === 0)) continue;
+          const pixel = new THREE.Mesh(pixelGeometry, material);
+          pixel.position.set(
+            x * pixelSize,
+            layer.y * pixelSize * 0.5 - 1,
+            z * pixelSize
+          );
+          group.add(pixel);
+        }
+      }
+    });
+
+    // Shield effect - pixelated cube outline
     const shieldMaterial = new THREE.MeshBasicMaterial({
       color: 0xffff00,
       transparent: true,
-      opacity: 0.2,
-      side: THREE.DoubleSide,
+      opacity: 0.25,
+      wireframe: true,
     });
+    const shieldGeometry = new THREE.BoxGeometry(
+      pixelSize * 6,
+      pixelSize * 4,
+      pixelSize * 6
+    );
     const shield = new THREE.Mesh(shieldGeometry, shieldMaterial);
+    shield.position.y = 0.5;
     shield.name = 'shield';
     group.add(shield);
 
-    group.scale.set(1.5, 1.5, 1.5);
+    group.scale.set(1.3, 1.3, 1.3);
   }
 
   /**

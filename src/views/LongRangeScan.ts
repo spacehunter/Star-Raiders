@@ -1,8 +1,11 @@
 import { SectorSystem } from '../systems/SectorSystem';
 import { GameState } from '../game/GameState';
+import { CombatSystem } from '../systems/CombatSystem';
+import { Starbase } from '../entities/Starbase';
 
 /**
  * LongRangeScan - Tactical view of current sector showing object positions
+ * Authentic Atari 800 Style
  */
 export class LongRangeScan {
   private container: HTMLElement;
@@ -10,23 +13,39 @@ export class LongRangeScan {
   private sectorSystem: SectorSystem;
   private gameState: GameState;
 
-  private isVisible: boolean = false;
+  // Real world data access
+  private combatSystem: CombatSystem;
+  private getStarbase: () => Starbase | null;
+  private getPlayerRotation: () => number;
 
-  // Simulated object positions within sector
-  private objectPositions: Array<{ type: 'enemy' | 'starbase'; x: number; y: number }> = [];
+  private isVisible: boolean = false;
+  private animationId: number | null = null;
+  private lastTime: number = 0;
+
+  // Starfield
+  private stars: Array<{ x: number; y: number; brightness: number }> = [];
+  private readonly NUM_STARS = 40;
 
   constructor(
     container: HTMLElement,
     sectorSystem: SectorSystem,
-    gameState: GameState
+    gameState: GameState,
+    combatSystem: CombatSystem,
+    getStarbase: () => Starbase | null,
+    getPlayerRotation: () => number
   ) {
     this.container = container;
     this.sectorSystem = sectorSystem;
     this.gameState = gameState;
+    this.combatSystem = combatSystem;
+    this.getStarbase = getStarbase;
+    this.getPlayerRotation = getPlayerRotation;
 
     this.scanElement = this.createScan();
     this.container.appendChild(this.scanElement);
     this.addStyles();
+
+    this.initStars();
 
     this.hide();
   }
@@ -40,25 +59,47 @@ export class LongRangeScan {
     scan.innerHTML = `
       <div class="scan-header">
         <span class="scan-title">LONG RANGE SCAN</span>
-        <span class="scan-sector">SECTOR 4,4</span>
       </div>
-      <div class="scan-grid">
-        <div class="scan-player"></div>
+      <div class="scan-viewport">
+        <!-- Starfield Layer -->
+        <div class="scan-starfield"></div>
+        <!-- Central Player Ship -->
+        <div class="scan-player-sprite"></div>
+        <!-- Changing grid/objects will be injected here -->
+        <div class="scan-objects-layer"></div>
       </div>
-      <div class="scan-legend">
-        <span class="legend-item"><span class="player-dot"></span> YOUR SHIP</span>
-        <span class="legend-item"><span class="enemy-dot"></span> ZYLON</span>
-        <span class="legend-item"><span class="starbase-dot"></span> STARBASE</span>
-      </div>
-      <div class="scan-info">
-        <span>ENEMIES IN SECTOR: <span class="enemy-count">0</span></span>
-      </div>
-      <div class="scan-controls">
-        <span>L: CLOSE SCAN</span>
-      </div>
+      <!-- Note: No footer here. The global ControlPanel provides the stats at the bottom. -->
     `;
 
     return scan;
+  }
+
+  /**
+   * Initialize random stars in World Space
+   */
+  private initStars(): void {
+    this.stars = [];
+    const RANGE = 500;
+    for (let i = 0; i < this.NUM_STARS; i++) {
+      this.stars.push({
+        x: (Math.random() - 0.5) * 2 * RANGE, // -500 to 500
+        y: (Math.random() - 0.5) * 2 * RANGE, // Actually Z in world space
+        brightness: Math.random() * 0.5 + 0.5
+      });
+    }
+
+    // Create DOM elements once
+    const starfield = this.scanElement.querySelector('.scan-starfield');
+    if (starfield) {
+      starfield.innerHTML = '';
+      this.stars.forEach(() => {
+        const el = document.createElement('div');
+        el.className = 'scan-star';
+        // Initial position hidden until update
+        el.style.opacity = '0';
+        starfield.appendChild(el);
+      });
+    }
   }
 
   /**
@@ -70,152 +111,143 @@ export class LongRangeScan {
     const style = document.createElement('style');
     style.id = 'long-range-scan-styles';
     style.textContent = `
+      @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
       .long-range-scan {
         position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(0, 20, 40, 0.95);
-        border: 3px solid #00ffff;
-        padding: 20px;
-        font-family: 'Courier New', monospace;
-        color: #00ffff;
-        z-index: 200;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: #2B608A;
+        z-index: 50;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 2vh;
+        box-sizing: border-box;
+        image-rendering: pixelated;
+        font-family: 'Press Start 2P', monospace;
       }
 
       .scan-header {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 15px;
+        width: 100%;
+        text-align: center;
+        margin-bottom: 2vh;
+        color: #FFFFFF;
+        font-size: 3vh;
+        text-shadow: 0.5vh 0.5vh 0 #000;
+        text-transform: uppercase;
       }
-
+      
       .scan-title {
-        font-size: 16px;
-        font-weight: bold;
-        color: #ffffff;
+        color: #CEFFFF;
       }
 
-      .scan-sector {
-        font-size: 14px;
-        color: #00ff00;
-      }
-
-      .scan-grid {
-        width: 300px;
-        height: 300px;
-        background: #001020;
-        border: 2px solid #004040;
+      .scan-viewport {
         position: relative;
-        margin-bottom: 15px;
+        width: 60vh;
+        height: 60vh;
+        border: 0.5vh solid rgba(85, 170, 255, 0.3);
+        margin-bottom: 2vh;
         overflow: hidden;
       }
-
-      /* Grid lines */
-      .scan-grid::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 50%;
-        width: 1px;
-        height: 100%;
-        background: rgba(0, 255, 255, 0.2);
-      }
-
-      .scan-grid::after {
+      
+      /* Center Crosshair lines */
+      .scan-viewport::before {
         content: '';
         position: absolute;
         top: 50%;
         left: 0;
         width: 100%;
-        height: 1px;
-        background: rgba(0, 255, 255, 0.2);
+        height: 0.25vh;
+        background: rgba(85, 170, 255, 0.2);
+        transform: translateY(-50%);
+        z-index: 5;
+      }
+      
+      .scan-viewport::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 0;
+        height: 100%;
+        width: 0.25vh;
+        background: rgba(85, 170, 255, 0.2);
+        transform: translateX(-50%);
+        z-index: 5;
+      }
+      
+      /* Starfield */
+      .scan-starfield {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+        z-index: 1; /* Behind objects */
+      }
+      
+      .scan-star {
+        position: absolute;
+        width: 2px;
+        height: 2px;
+        background: #FFFFFF;
+        border-radius: 50%;
       }
 
-      .scan-player {
+      /* Player Ship Sprite */
+      .scan-player-sprite {
         position: absolute;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        width: 12px;
-        height: 12px;
-        background: #4488ff;
-        border: 2px solid #ffffff;
-        border-radius: 50%;
+        width: 4px;
+        height: 4px;
+        color: #FFFFFF; 
+        box-shadow: 
+           0 -4px 0 0, /* Top nose */
+           -4px 0 0 0, 0 0 0 0, 4px 0 0 0, /* Wings */
+           -4px 4px 0 0, 4px 4px 0 0; /* Rear engines */
+        background: transparent;
+        /* Scale it up slightly to match the larger grid feeling? */
+        transform: translate(-50%, -50%) scale(1.5); 
         z-index: 10;
       }
 
-      .scan-object {
+      .scan-objects-layer {
         position: absolute;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 10;
+      }
+
+      .scan-obj {
+        position: absolute;
+        width: 4px;
+        height: 4px;
         transform: translate(-50%, -50%);
       }
 
-      .scan-object.enemy {
-        background: #00ffff;
-        box-shadow: 0 0 5px #00ffff;
+      /* Enemy Blip */
+      .scan-obj.enemy {
+        color: #00FFFF;
+        background: #00FFFF;
+        box-shadow: 0 0 4px #00FFFF;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%; 
       }
 
-      .scan-object.starbase {
-        background: #00ff00;
-        width: 14px;
-        height: 14px;
-        border-radius: 2px;
-        box-shadow: 0 0 8px #00ff00;
-      }
-
-      .scan-legend {
-        display: flex;
-        gap: 20px;
-        font-size: 10px;
-        margin-bottom: 10px;
-        justify-content: center;
-      }
-
-      .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-      }
-
-      .player-dot {
+      /* Starbase */
+      .scan-obj.starbase {
+        color: #BAFF00;
+        background: #BAFF00;
         width: 8px;
         height: 8px;
-        background: #4488ff;
-        border: 1px solid #ffffff;
-        border-radius: 50%;
-      }
-
-      .enemy-dot {
-        width: 8px;
-        height: 8px;
-        background: #00ffff;
-        border-radius: 50%;
-      }
-
-      .starbase-dot {
-        width: 8px;
-        height: 8px;
-        background: #00ff00;
-        border-radius: 2px;
-      }
-
-      .scan-info {
-        text-align: center;
-        font-size: 12px;
-        margin-bottom: 10px;
-      }
-
-      .enemy-count {
-        color: #ff0000;
-        font-weight: bold;
-      }
-
-      .scan-controls {
-        text-align: center;
-        font-size: 10px;
-        color: #ffff00;
+        box-shadow: 0 0 4px #BAFF00;
       }
     `;
     document.head.appendChild(style);
@@ -230,9 +262,13 @@ export class LongRangeScan {
     }
 
     this.isVisible = true;
-    this.scanElement.style.display = 'block';
-    this.generateObjectPositions();
+    this.scanElement.style.display = 'flex';
+    // this.generateObjectPositions(); // Deprecated
     this.update();
+
+    // Start animation loop
+    this.lastTime = performance.now();
+    this.animationLoop(this.lastTime);
   }
 
   /**
@@ -241,6 +277,63 @@ export class LongRangeScan {
   public hide(): void {
     this.isVisible = false;
     this.scanElement.style.display = 'none';
+    if (this.animationId !== null) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
+  }
+
+  /**
+   * Animation toggle
+   */
+  private animationLoop(timestamp: number): void {
+    if (!this.isVisible) return;
+
+    const deltaTime = (timestamp - this.lastTime) / 1000;
+    this.lastTime = timestamp;
+
+    this.updateStarfield(deltaTime);
+    this.update(); // Re-render everything after starfield update
+
+    this.animationId = requestAnimationFrame((t) => this.animationLoop(t));
+  }
+
+  /**
+   * Update star world positions based on engine speed (simulating movement)
+   */
+  private updateStarfield(deltaTime: number): void {
+    const speed = this.gameState.engineSpeed;
+    if (speed <= 0) return;
+
+    // Movement Logic replicates Game.ts updatePlayerMovement
+    // Stars move opposite to player heading
+    const moveSpeed = speed * 10 * deltaTime;
+
+    // Player Rotation tells us which way is "Forward" in World Space
+    // 0 = -Z (North). 90 = -X (West). etc.
+    const rotation = this.getPlayerRotation();
+    // Forward Vector from rotation
+    // x = -sin(rot), z = -cos(rot). (Standard 3D forward from Y-rot)
+    const dirX = -Math.sin(rotation);
+    const dirZ = -Math.cos(rotation);
+
+    // Displacement
+    const dx = dirX * moveSpeed;
+    const dz = dirZ * moveSpeed;
+
+    const RANGE = 500;
+
+    this.stars.forEach(star => {
+      // Star moves opposite to ship
+      star.x -= dx;
+      star.y -= dz; // star.y is World Z
+
+      // Wrap around in World Space
+      if (star.x > RANGE) star.x -= RANGE * 2;
+      if (star.x < -RANGE) star.x += RANGE * 2;
+      if (star.y > RANGE) star.y -= RANGE * 2;
+      if (star.y < -RANGE) star.y += RANGE * 2;
+    });
   }
 
   /**
@@ -262,43 +355,8 @@ export class LongRangeScan {
   }
 
   /**
-   * Generate random positions for objects in current sector
+   * (Removed generateObjectPositions - LRS now uses real entity data)
    */
-  private generateObjectPositions(): void {
-    this.objectPositions = [];
-
-    const sector = this.sectorSystem.getSector(
-      this.gameState.sectorX,
-      this.gameState.sectorY
-    );
-
-    if (!sector) return;
-
-    // Add enemies at random positions
-    for (let i = 0; i < sector.enemies; i++) {
-      // Distribute enemies around the player, not too close
-      const angle = Math.random() * Math.PI * 2;
-      const distance = 0.3 + Math.random() * 0.5; // 30-80% from center
-      this.objectPositions.push({
-        type: 'enemy',
-        x: 0.5 + Math.cos(angle) * distance * 0.4,
-        y: 0.5 + Math.sin(angle) * distance * 0.4,
-      });
-    }
-
-    // Add starbase if present
-    if (sector.hasStarbase && !sector.starbaseDestroyed) {
-      // Place starbase in a fixed location relative to sector
-      const hash = (sector.x * 8 + sector.y) * 12345;
-      const sbX = 0.2 + (hash % 100) / 100 * 0.6;
-      const sbY = 0.2 + ((hash * 7) % 100) / 100 * 0.6;
-      this.objectPositions.push({
-        type: 'starbase',
-        x: sbX,
-        y: sbY,
-      });
-    }
-  }
 
   /**
    * Update the scan display
@@ -306,35 +364,89 @@ export class LongRangeScan {
   public update(): void {
     if (!this.isVisible) return;
 
-    // Update sector label
-    const sectorLabel = this.scanElement.querySelector('.scan-sector');
-    if (sectorLabel) {
-      sectorLabel.textContent = `SECTOR ${this.gameState.sectorX},${this.gameState.sectorY}`;
+    // Get Player Rotation
+    const rotationRad = this.getPlayerRotation();
+    // Precalc rotation matrix
+    // We want to rotate the WORLD by -rotationRad
+    // x' = x cos(-th) - z sin(-th) = x cos - z (-sin) = x cos + z sin
+    // z' = x sin(-th) + z cos(-th) = x (-sin) + z cos = -x sin + z cos
+    const cos = Math.cos(rotationRad);
+    const sin = Math.sin(rotationRad);
+
+    // Player Sprite is Fixed Up (Heads-Up Display)
+    const playerSprite = this.scanElement.querySelector('.scan-player-sprite') as HTMLElement;
+    if (playerSprite) {
+      playerSprite.style.transform = `translate(-50%, -50%) scale(1.5)`;
     }
 
-    // Update enemy count
-    const sector = this.sectorSystem.getSector(
-      this.gameState.sectorX,
-      this.gameState.sectorY
-    );
-    const enemyCount = this.scanElement.querySelector('.enemy-count');
-    if (enemyCount && sector) {
-      enemyCount.textContent = sector.enemies.toString();
-    }
+    // Update Objects (Read from Real World)
+    const layer = this.scanElement.querySelector('.scan-objects-layer');
+    if (layer) {
+      layer.innerHTML = ''; // Clear
 
-    // Clear existing objects (except player)
-    const grid = this.scanElement.querySelector('.scan-grid');
-    if (grid) {
-      const objects = grid.querySelectorAll('.scan-object');
-      objects.forEach((obj) => obj.remove());
+      // Map scale: range +/- 500 units
+      const RANGE = 500;
 
-      // Add objects
-      for (const obj of this.objectPositions) {
-        const element = document.createElement('div');
-        element.className = `scan-object ${obj.type}`;
-        element.style.left = `${obj.x * 100}%`;
-        element.style.top = `${obj.y * 100}%`;
-        grid.appendChild(element);
+      // Shared Projection: Transform World Coords directly to Screen Coords (Heads-Up)
+      const renderObj = (worldX: number, worldZ: number, type: string, extraStyle: string = '') => {
+        const rx = worldX * cos - worldZ * sin;
+        const rz = worldX * sin + worldZ * cos;
+
+        // Map x/z to 0..1 (0.5 is center)
+        const px = 0.5 + (rx / RANGE) * 0.5;
+        const py = 0.5 + (rz / RANGE) * 0.5;
+
+        // Only render if in range
+        if (px >= 0 && px <= 1 && py >= 0 && py <= 1) {
+          // Stars are managed differently in DOM (they exist in a separate layer), 
+          // but to sync them perfectly we should maybe just clear/render them here too?
+          // Actually, the previous implementation had stars in '.scan-starfield'. 
+          // Let's update the existing star elements instead of creating new ones.
+          return { px, py, visible: true };
+        }
+        return { px: 0, py: 0, visible: false };
+      };
+
+      // 1. Update Stars (already in DOM, just move them)
+      const starElements = this.scanElement.querySelectorAll('.scan-star');
+      this.stars.forEach((star, index) => {
+        const result = renderObj(star.x, star.y, 'star');
+        const el = starElements[index] as HTMLElement;
+        if (el) {
+          if (result.visible) {
+            el.style.left = `${result.px * 100}%`;
+            el.style.top = `${result.py * 100}%`;
+            el.style.opacity = star.brightness.toString();
+          } else {
+            el.style.opacity = '0'; // Hide if out of bounds (shouldn't happen often with wrap)
+          }
+        }
+      });
+
+      // 2. Render Enemies and Base (Create new elements as before)
+      // Helper for DOM creation
+      const createBlip = (worldX: number, worldZ: number, type: string) => {
+        const result = renderObj(worldX, worldZ, type);
+        if (result.visible) {
+          const element = document.createElement('div');
+          element.className = `scan-obj ${type}`;
+          element.style.left = `${result.px * 100}%`;
+          element.style.top = `${result.py * 100}%`;
+          layer.appendChild(element);
+        }
+      };
+
+      const enemies = this.combatSystem.getEnemies();
+      for (const enemy of enemies) {
+        if (!enemy.isActive) continue;
+        const pos = enemy.getPosition();
+        createBlip(pos.x, pos.z, 'enemy');
+      }
+
+      const starbase = this.getStarbase();
+      if (starbase) {
+        const pos = starbase.getObject().position;
+        createBlip(pos.x, pos.z, 'starbase');
       }
     }
   }

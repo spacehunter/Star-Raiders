@@ -79,6 +79,7 @@ export class Game {
   // Docking state
   private isDocking: boolean = false;
   private dockingProgress: number = 0;
+  private dockingCooldown: number = 0; // Prevent re-docking spam
 
   constructor(
     container: HTMLElement,
@@ -96,21 +97,27 @@ export class Game {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000000);
 
-    // Set up camera with 75 degree FOV
+    // Camera with fixed aspect ratio for retro resolution
     this.camera = new THREE.PerspectiveCamera(
       75,
-      container.clientWidth / container.clientHeight,
+      320 / 192, // Fixed aspect ratio (5:3)
       0.1,
       5000
     );
 
-    // Set up renderer with antialiasing
+    // Set up renderer - RETRO RESOLUTION (320x192)
+    // No antialiasing for sharp pixel edges
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: false,
       powerPreference: 'high-performance',
     });
-    this.renderer.setSize(container.clientWidth, container.clientHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    // Fixed internal resolution (2x original Atari 800: 160x96)
+    const INTERNAL_WIDTH = 320;
+    const INTERNAL_HEIGHT = 192;
+
+    this.renderer.setSize(INTERNAL_WIDTH, INTERNAL_HEIGHT);
+    this.renderer.domElement.classList.add('game-canvas');
     container.appendChild(this.renderer.domElement);
 
     // Initialize game systems
@@ -124,7 +131,7 @@ export class Game {
     this.sectorSystem.generateGalaxy(this.gameState.difficulty);
 
     // Initialize entities
-    this.starfield = new Starfield(5000, 2000);
+    this.starfield = new Starfield(500, 2000); // Reduced from 5000 for retro resolution
     this.player = new Player();
 
     // Initialize combat system (needs scene)
@@ -138,7 +145,14 @@ export class Game {
       this.gameState,
       this.energySystem
     );
-    this.longRangeScan = new LongRangeScan(container, this.sectorSystem, this.gameState);
+    this.longRangeScan = new LongRangeScan(
+      container,
+      this.sectorSystem,
+      this.gameState,
+      this.combatSystem,
+      () => this.currentStarbase,
+      () => this.player.getObject().rotation.y
+    );
     this.attackComputer = new AttackComputer(container, this.gameState);
 
     // Set up scene
@@ -304,6 +318,9 @@ export class Game {
     this.attackComputer.setTarget(target);
     this.attackComputer.update(playerPos, this.player.getForwardDirection());
 
+    // Calculate and update targeting data for control panel (θ, Φ, R)
+    this.updateTargetingData(playerPos, target);
+
     // Handle view transition
     if (this.isViewTransitioning) {
       this.updateViewTransition(deltaTime);
@@ -311,6 +328,7 @@ export class Game {
 
     // Update UI
     this.controlPanel.update();
+    this.controlPanel.updateTargetsRemaining(this.sectorSystem.getRemainingEnemies());
     this.galacticChart.update();
     this.longRangeScan.update();
 
@@ -319,12 +337,64 @@ export class Game {
   };
 
   /**
+   * Update targeting data for control panel (θ, Φ, R)
+   */
+  private updateTargetingData(playerPos: THREE.Vector3, target: import('../entities/Enemy').Enemy | null): void {
+    if (!target || !target.isActive) {
+      this.controlPanel.updateTargetData(0, 0, 0);
+      return;
+    }
+
+    const targetPos = target.getPosition();
+    const playerDir = this.player.getForwardDirection();
+
+    // Vector from player to target
+    const toTarget = targetPos.clone().sub(playerPos);
+    const range = toTarget.length();
+
+    // Calculate horizontal angle (theta) - angle in XZ plane
+    const toTargetFlat = new THREE.Vector3(toTarget.x, 0, toTarget.z).normalize();
+    const playerDirFlat = new THREE.Vector3(playerDir.x, 0, playerDir.z).normalize();
+
+    // Cross product for sign
+    const cross = playerDirFlat.clone().cross(toTargetFlat);
+    const dotH = playerDirFlat.dot(toTargetFlat);
+    let theta = Math.acos(Math.max(-1, Math.min(1, dotH))) * (180 / Math.PI);
+    if (cross.y < 0) theta = -theta;
+
+    // Calculate vertical angle (phi) - elevation angle
+    toTarget.normalize();
+    const phi = (Math.asin(toTarget.y) - Math.asin(playerDir.y)) * (180 / Math.PI);
+
+    // Update control panel with rounded values
+    this.controlPanel.updateTargetData(
+      Math.round(theta),
+      Math.round(phi),
+      Math.round(range)
+    );
+  }
+
+  /**
    * Check for docking opportunity
    */
   private checkDocking(): void {
     if (!this.currentStarbase) return;
 
+    // Decrement cooldown
+    if (this.dockingCooldown > 0) {
+      this.dockingCooldown -= 1 / 60; // Approximate frame rate
+      return;
+    }
+
     const playerPos = this.player.getObject().position.clone();
+    const starbasePos = this.currentStarbase.getObject().position;
+    const distance = playerPos.distanceTo(starbasePos);
+    const speed = this.gameState.engineSpeed;
+
+    // Debug: log every 60 frames (~1 second)
+    if (Math.random() < 0.016) {
+      console.log(`Docking check: dist=${distance.toFixed(1)}, speed=${speed}, radius=${this.currentStarbase.getDockingRadius()}`);
+    }
 
     if (this.currentStarbase.canDock(playerPos, this.gameState.engineSpeed)) {
       if (!this.isDocking) {
@@ -341,6 +411,11 @@ export class Game {
   private updateDocking(deltaTime: number): void {
     this.dockingProgress += deltaTime * 0.5; // 2 seconds to dock
 
+    // Show repair droid message at midpoint
+    if (this.dockingProgress >= 0.4 && this.dockingProgress < 0.45) {
+      this.controlPanel.showMessage('REPAIR DROID DEPLOYED...');
+    }
+
     if (this.dockingProgress >= 1) {
       // Docking complete - repair and refuel
       this.gameState.energy = this.gameState.maxEnergy;
@@ -354,6 +429,7 @@ export class Game {
       };
 
       this.isDocking = false;
+      this.dockingCooldown = 5; // 5 second cooldown before can dock again
       this.controlPanel.showMessage('DOCKING COMPLETE - FULLY REPAIRED');
     }
   }
@@ -409,19 +485,44 @@ export class Game {
    * Update player movement based on engine speed
    */
   private updatePlayerMovement(deltaTime: number): void {
+    // Gradual acceleration/deceleration
+    const ACCELERATION_RATE = 4.0;
+
+    if (this.gameState.engineSpeed !== this.gameState.targetEngineSpeed) {
+      const diff = this.gameState.targetEngineSpeed - this.gameState.engineSpeed;
+      const change = Math.sign(diff) * ACCELERATION_RATE * deltaTime;
+      if (Math.abs(change) > Math.abs(diff)) {
+        this.gameState.engineSpeed = this.gameState.targetEngineSpeed;
+      } else {
+        this.gameState.engineSpeed += change;
+      }
+    }
+
     if (this.gameState.engineSpeed > 0) {
       const moveSpeed = this.gameState.engineSpeed * 10;
       const direction = this.player.getForwardDirection();
+      const displacement = direction.multiplyScalar(-moveSpeed * deltaTime);
 
-      // Move the starfield in opposite direction to simulate forward movement
+      // 1. Move Starfield
       const starfieldObj = this.starfield.getObject();
-      starfieldObj.position.add(direction.multiplyScalar(-moveSpeed * deltaTime));
-
-      // Wrap starfield position
+      starfieldObj.position.add(displacement);
       const maxDist = 1000;
       if (starfieldObj.position.length() > maxDist) {
         starfieldObj.position.set(0, 0, 0);
       }
+
+      // 2. Move Starbase (Relative to Player)
+      if (this.currentStarbase) {
+        this.currentStarbase.getObject().position.add(displacement);
+      }
+
+      // 3. Move Enemies
+      this.combatSystem.applyPlayerMovement(displacement);
+
+      // 4. Move Torpedoes (They fly relative to space, so if we move "space", we move them?)
+      // Actually, torpedoes have their own velocity in world space.
+      // If the coordinate system is shifting around the player, they need to be shifted too.
+      this.torpedoes.forEach(t => t.getObject().position.add(displacement));
     }
   }
 
@@ -445,21 +546,74 @@ export class Game {
    * Handle player input
    */
   private handleInput(_deltaTime: number): void {
-    // Check if viewing chart or scan - handle their inputs specially
-    if (this.galacticChart.visible) {
+    // ---- GLOBAL INPUTS (Available in all views) ----
+
+    // Speed control (0-9 keys) - works everywhere
+    for (let i = 0; i <= 9; i++) {
+      const key = i === 0 ? 'Digit0' : `Digit${i}`;
+      if (this.isKeyJustPressed(key)) {
+        this.setEngineSpeed(i);
+      }
+    }
+
+    // View Switching - (F, A, G, L) - Works everywhere (Hot Switching)
+    if (this.isKeyJustPressed('KeyF')) {
+      this.switchView(ViewMode.FRONT);
+    }
+    if (this.isKeyJustPressed('KeyA')) {
+      this.switchView(ViewMode.AFT);
+    }
+    if (this.isKeyJustPressed('KeyG')) {
+      if (this.gameState.currentView === ViewMode.GALACTIC_CHART) {
+        // Toggle off if already here
+        this.switchView(ViewMode.FRONT);
+      } else {
+        this.switchView(ViewMode.GALACTIC_CHART);
+      }
+    }
+    if (this.isKeyJustPressed('KeyL')) {
+      if (this.gameState.currentView === ViewMode.LONG_RANGE_SCAN) {
+        // Toggle off if already here
+        this.switchView(ViewMode.FRONT);
+      } else {
+        if (this.gameState.damage.longRangeScan) {
+          this.controlPanel.showMessage('LONG RANGE SCAN DAMAGED');
+        } else {
+          this.switchView(ViewMode.LONG_RANGE_SCAN);
+        }
+      }
+    }
+
+    // Toggle shields (S key) - Available everywhere? Or just cockpit?
+    // Let's assume global allowed for convenience as requested("jump all the way around")
+    if (this.isKeyJustPressed('KeyS')) {
+      const active = this.energySystem.toggleShields();
+      if (this.gameState.shieldsActive !== active) {
+        this.controlPanel.showMessage(active ? 'SHIELDS ACTIVATED' : 'SHIELDS DEACTIVATED');
+      }
+    }
+
+    // ---- MODE SPECIFIC INPUTS ----
+
+    // Galactic Chart Specifics
+    if (this.gameState.currentView === ViewMode.GALACTIC_CHART) {
       this.handleChartInput();
+      // Don't process cockpit inputs (fire, rotate)
       this.updateKeyStates();
       return;
     }
 
-    if (this.longRangeScan.visible) {
-      if (this.isKeyJustPressed('KeyL')) {
-        this.longRangeScan.hide();
-        this.gameState.currentView = ViewMode.FRONT;
-      }
+    // Long Range Scan Specifics
+    // Long Range Scan - Allow rotation
+    if (this.gameState.currentView === ViewMode.LONG_RANGE_SCAN) {
+      const mouseMovement = this.inputManager.getMouseMovement();
+      // Only X rotation (Steering), Y (Pitch) is less relevant/visible on 2D map but let's allow both for feel
+      this.player.rotate(mouseMovement.x, mouseMovement.y);
       this.updateKeyStates();
       return;
     }
+
+    // ---- COCKPIT INPUTS (Front/Aft) ----
 
     // Get mouse movement for ship rotation
     const mouseMovement = this.inputManager.getMouseMovement();
@@ -471,37 +625,9 @@ export class Game {
     // Rotate player based on mouse input
     this.player.rotate(mouseMovement.x * xMultiplier, mouseMovement.y);
 
-    // View switching
-    if (this.isKeyJustPressed('KeyF')) {
-      this.switchView(ViewMode.FRONT);
-    }
-    if (this.isKeyJustPressed('KeyA')) {
-      this.switchView(ViewMode.AFT);
-    }
-    if (this.isKeyJustPressed('KeyG')) {
-      this.galacticChart.show();
-      this.gameState.currentView = ViewMode.GALACTIC_CHART;
-    }
-    if (this.isKeyJustPressed('KeyL')) {
-      if (this.gameState.damage.longRangeScan) {
-        this.controlPanel.showMessage('LONG RANGE SCAN DAMAGED');
-      } else {
-        this.longRangeScan.show();
-        this.gameState.currentView = ViewMode.LONG_RANGE_SCAN;
-      }
-    }
-
     // Fire torpedo (Spacebar)
     if (this.isKeyJustPressed('Space')) {
       this.fireTorpedo();
-    }
-
-    // Toggle shields (S key)
-    if (this.isKeyJustPressed('KeyS')) {
-      const active = this.energySystem.toggleShields();
-      if (this.gameState.shieldsActive !== active) {
-        this.controlPanel.showMessage(active ? 'SHIELDS ACTIVATED' : 'SHIELDS DEACTIVATED');
-      }
     }
 
     // Targeting - T key for nearest, M key for next
@@ -519,14 +645,6 @@ export class Game {
       const target = this.combatSystem.selectNextTarget();
       if (target) {
         this.controlPanel.showMessage(`TARGET: ZYLON ${target.getType()}`);
-      }
-    }
-
-    // Speed control (0-9 keys)
-    for (let i = 0; i <= 9; i++) {
-      const key = i === 0 ? 'Digit0' : `Digit${i}`;
-      if (this.isKeyJustPressed(key)) {
-        this.setEngineSpeed(i);
       }
     }
 
@@ -555,12 +673,6 @@ export class Game {
     // H key to hyperwarp
     if (this.isKeyJustPressed('KeyH')) {
       this.initiateHyperwarp();
-    }
-
-    // G key to close chart
-    if (this.isKeyJustPressed('KeyG')) {
-      this.galacticChart.hide();
-      this.gameState.currentView = ViewMode.FRONT;
     }
   }
 
@@ -683,12 +795,21 @@ export class Game {
     if (this.gameState.currentView === view) return;
     if (this.isViewTransitioning) return;
 
-    // Close any open overlays
+    // Close any previous overlays
     this.galacticChart.hide();
     this.longRangeScan.hide();
+    // this.attackComputer.hide(); // If Attack Computer had a mode
 
     const previousView = this.gameState.currentView;
     this.gameState.currentView = view;
+
+    // Open new overlays if applicable
+    if (view === ViewMode.GALACTIC_CHART) {
+      this.galacticChart.show();
+    }
+    if (view === ViewMode.LONG_RANGE_SCAN) {
+      this.longRangeScan.show();
+    }
 
     // Handle view transition for Front/Aft
     if (
@@ -697,6 +818,13 @@ export class Game {
     ) {
       this.isViewTransitioning = true;
       this.viewTransitionProgress = 0;
+    } else {
+      // Immediate switch (e.g. from Map/LRS)
+      if (view === ViewMode.FRONT) {
+        this.camera.rotation.y = 0;
+      } else if (view === ViewMode.AFT) {
+        this.camera.rotation.y = Math.PI;
+      }
     }
   }
 
@@ -766,7 +894,9 @@ export class Game {
    */
   private setEngineSpeed(speed: number): void {
     const maxSpeed = this.gameState.damage.engines ? 5 : 9;
-    this.gameState.engineSpeed = Math.min(speed, maxSpeed);
+
+    // Set target, don't jump immediately
+    this.gameState.targetEngineSpeed = Math.min(speed, maxSpeed);
 
     if (speed > maxSpeed && this.gameState.damage.engines) {
       this.controlPanel.showMessage('ENGINES DAMAGED - MAX SPEED 5');
@@ -782,15 +912,12 @@ export class Game {
 
   /**
    * Handle window resize
+   * Note: With retro resolution, we don't resize the renderer.
+   * CSS handles the scaling. We just need to ensure the container stays valid.
    */
   private handleResize = (): void => {
-    const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
-
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-
-    this.renderer.setSize(width, height);
+    // Fixed internal resolution - no resize needed
+    // CSS scaling handles display size
   };
 
   /**

@@ -26,40 +26,27 @@ export class Starfield {
       positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
       positions[i3 + 2] = r * Math.cos(phi);
 
-      // Most stars are white, some have slight color variation
-      const colorVariation = Math.random();
-      if (colorVariation > 0.9) {
-        // Slight blue tint
-        colors[i3] = 0.8;
-        colors[i3 + 1] = 0.9;
-        colors[i3 + 2] = 1.0;
-      } else if (colorVariation > 0.8) {
-        // Slight yellow tint
-        colors[i3] = 1.0;
-        colors[i3 + 1] = 1.0;
-        colors[i3 + 2] = 0.8;
-      } else {
-        // White
-        colors[i3] = 1.0;
-        colors[i3 + 1] = 1.0;
-        colors[i3 + 2] = 1.0;
-      }
+      // Classic Atari 800 style - pure white stars like single pixels
+      // Occasional very slight brightness variation for depth
+      const brightness = 0.7 + Math.random() * 0.3;
+      colors[i3] = brightness;
+      colors[i3 + 1] = brightness;
+      colors[i3 + 2] = brightness;
 
-      // Vary star sizes
-      sizes[i] = Math.random() * 2 + 0.5;
+      // All stars same small size for authentic pixel look
+      sizes[i] = 1.5;
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-    // Create material - sizeAttenuation: false keeps stars visible at all distances
+    // Create material - single pixel stars like original Atari 800
     const material = new THREE.PointsMaterial({
-      size: 3,
+      size: 2,
       sizeAttenuation: false,
       vertexColors: true,
-      transparent: true,
-      opacity: 0.9,
+      transparent: false,
     });
 
     this.points = new THREE.Points(geometry, material);

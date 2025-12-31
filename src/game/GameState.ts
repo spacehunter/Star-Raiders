@@ -38,7 +38,8 @@ export class GameState {
   public maxEnergy: number = 9999;
 
   // Engine and movement
-  public engineSpeed: number = 0; // 0-9
+  public engineSpeed: number = 0; // Current visible speed
+  public targetEngineSpeed: number = 0; // Desired speed (set by keys)
   public maxSpeed: number = 9;
 
   // Shields
