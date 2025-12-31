@@ -53,10 +53,10 @@ export class Starfield {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-    // Create material
+    // Create material - sizeAttenuation: false keeps stars visible at all distances
     const material = new THREE.PointsMaterial({
-      size: 2,
-      sizeAttenuation: true,
+      size: 3,
+      sizeAttenuation: false,
       vertexColors: true,
       transparent: true,
       opacity: 0.9,
