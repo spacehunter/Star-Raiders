@@ -17,7 +17,7 @@ export class Starfield {
     for (let i = 0; i < starCount; i++) {
       const i3 = i * 3;
 
-      // Distribute stars in a sphere around the origin
+      // Spherical distribution - stars visible in all directions
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
       const r = radius * (0.5 + Math.random() * 0.5);
@@ -65,6 +65,51 @@ export class Starfield {
   public update(_deltaTime: number): void {
     // Optional: Add subtle twinkling animation here
     // For now, starfield is static
+  }
+
+  /**
+   * Update individual star positions based on player movement
+   * Recycles stars that drift too far from origin to maintain consistent density
+   *
+   * Uses spherical distribution - when a star exceeds max distance,
+   * respawn it at a random position on the sphere
+   */
+  public updateMovement(displacement: THREE.Vector3): void {
+    const positions = this.points.geometry.attributes.position as THREE.BufferAttribute;
+    const array = positions.array as Float32Array;
+
+    const maxDistance = 2000;      // Max distance from origin before recycling
+    const minDistance = 1000;      // Min respawn distance
+    const maxDistanceSq = maxDistance * maxDistance;
+
+    for (let i = 0; i < positions.count; i++) {
+      const i3 = i * 3;
+
+      // Apply displacement (stars move with space as player moves)
+      array[i3] += displacement.x;
+      array[i3 + 1] += displacement.y;
+      array[i3 + 2] += displacement.z;
+
+      // Check distance from origin (squared to avoid sqrt)
+      const x = array[i3];
+      const y = array[i3 + 1];
+      const z = array[i3 + 2];
+      const distSq = x * x + y * y + z * z;
+
+      // If star is too far, respawn at random position on sphere
+      if (distSq > maxDistanceSq) {
+        // Random spherical position (not opposite - that causes clustering)
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = minDistance + Math.random() * (maxDistance - minDistance);
+
+        array[i3] = r * Math.sin(phi) * Math.cos(theta);
+        array[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+        array[i3 + 2] = r * Math.cos(phi);
+      }
+    }
+
+    positions.needsUpdate = true;
   }
 
   /**

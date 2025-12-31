@@ -99,7 +99,7 @@ export class Game {
 
     // Camera with fixed aspect ratio for retro resolution
     this.camera = new THREE.PerspectiveCamera(
-      75,
+      90,
       320 / 192, // Fixed aspect ratio (5:3)
       0.1,
       5000
@@ -131,7 +131,7 @@ export class Game {
     this.sectorSystem.generateGalaxy(this.gameState.difficulty);
 
     // Initialize entities
-    this.starfield = new Starfield(500, 2000); // Reduced from 5000 for retro resolution
+    this.starfield = new Starfield(500, 2000);
     this.player = new Player();
 
     // Initialize combat system (needs scene)
@@ -499,17 +499,12 @@ export class Game {
     }
 
     if (this.gameState.engineSpeed > 0) {
-      const moveSpeed = this.gameState.engineSpeed * 10;
+      const moveSpeed = this.gameState.engineSpeed * 50;  // Faster star rush
       const direction = this.player.getForwardDirection();
       const displacement = direction.multiplyScalar(-moveSpeed * deltaTime);
 
-      // 1. Move Starfield
-      const starfieldObj = this.starfield.getObject();
-      starfieldObj.position.add(displacement);
-      const maxDist = 1000;
-      if (starfieldObj.position.length() > maxDist) {
-        starfieldObj.position.set(0, 0, 0);
-      }
+      // 1. Update Starfield - individual star recycling for consistent density
+      this.starfield.updateMovement(displacement);
 
       // 2. Move Starbase (Relative to Player)
       if (this.currentStarbase) {
@@ -729,9 +724,9 @@ export class Game {
     const stretchFactor = 1 + this.hyperwarpProgress * 10;
     starfieldObj.scale.z = stretchFactor;
 
-    // Move starfield rapidly
+    // Move starfield rapidly using individual star recycling
     const direction = this.player.getForwardDirection();
-    starfieldObj.position.add(direction.multiplyScalar(-500 * deltaTime));
+    this.starfield.updateMovement(direction.multiplyScalar(-500 * deltaTime));
 
     if (this.hyperwarpProgress >= 1 && this.hyperwarpTarget) {
       // Complete hyperwarp
@@ -739,9 +734,8 @@ export class Game {
       this.gameState.sectorY = this.hyperwarpTarget.y;
       this.sectorSystem.visitSector(this.hyperwarpTarget.x, this.hyperwarpTarget.y);
 
-      // Reset starfield
+      // Reset starfield scale (position handled by individual star recycling)
       starfieldObj.scale.z = 1;
-      starfieldObj.position.set(0, 0, 0);
 
       this.isHyperwarping = false;
       this.hyperwarpTarget = null;

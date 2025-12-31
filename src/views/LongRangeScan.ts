@@ -10,7 +10,6 @@ import { Starbase } from '../entities/Starbase';
 export class LongRangeScan {
   private container: HTMLElement;
   private scanElement: HTMLElement;
-  private sectorSystem: SectorSystem;
   private gameState: GameState;
 
   // Real world data access
@@ -35,7 +34,8 @@ export class LongRangeScan {
     getPlayerRotation: () => number
   ) {
     this.container = container;
-    this.sectorSystem = sectorSystem;
+    // sectorSystem available if needed in future
+    void sectorSystem;
     this.gameState = gameState;
     this.combatSystem = combatSystem;
     this.getStarbase = getStarbase;
@@ -388,7 +388,7 @@ export class LongRangeScan {
       const RANGE = 500;
 
       // Shared Projection: Transform World Coords directly to Screen Coords (Heads-Up)
-      const renderObj = (worldX: number, worldZ: number, type: string, extraStyle: string = '') => {
+      const renderObj = (worldX: number, worldZ: number, _type: string, _extraStyle: string = '') => {
         const rx = worldX * cos - worldZ * sin;
         const rz = worldX * sin + worldZ * cos;
 
