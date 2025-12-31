@@ -41,10 +41,41 @@ export class Starfield {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-    // Create material - single pixel stars like original Atari 800
-    const material = new THREE.PointsMaterial({
-      size: 2,
-      sizeAttenuation: false,
+    // Create custom shader material for distance-based sizing with a max cap
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        maxSize: { value: 2.0 }, // Current fixed size as max
+        attenuationFactor: { value: 600.0 } // Tuning for distance scaling
+      },
+      vertexShader: `
+        varying vec3 vColor;
+        uniform float maxSize;
+        uniform float attenuationFactor;
+        
+        void main() {
+          vColor = color;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+          
+          // Calculate size based on distance
+          float dist = length(mvPosition.xyz);
+          float size = attenuationFactor / dist;
+          
+          // Clamp to max size (user requested stars not get bigger than current)
+          gl_PointSize = min(maxSize, size);
+          
+          // Ensure extremely far stars don't disappear completely if undesired, 
+          // or let them fade to < 1.0 which makes them sub-pixel/transparent
+          gl_PointSize = max(0.5, gl_PointSize);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        void main() {
+          // Authentic retro look: Square pixels
+          gl_FragColor = vec4(vColor, 1.0);
+        }
+      `,
       vertexColors: true,
       transparent: false,
     });

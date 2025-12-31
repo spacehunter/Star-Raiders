@@ -7,6 +7,8 @@ import { Rank } from '../systems/ScoringSystem';
 export class MainMenu {
   private container: HTMLElement;
   private menuElement: HTMLElement;
+  private starfieldCanvas: HTMLCanvasElement;
+  private animationId: number | null = null;
   private onStartCallback: ((difficulty: DifficultyLevel) => void) | null = null;
 
   private selectedDifficulty: DifficultyLevel = DifficultyLevel.NOVICE;
@@ -14,8 +16,93 @@ export class MainMenu {
   constructor(container: HTMLElement) {
     this.container = container;
     this.menuElement = this.createMenu();
+    this.starfieldCanvas = this.createStarfield();
+
+    this.container.appendChild(this.starfieldCanvas);
     this.container.appendChild(this.menuElement);
+
     this.addStyles();
+    this.startStarfieldAnimation();
+  }
+
+  /**
+   * Create the starfield canvas
+   */
+  private createStarfield(): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'menu-starfield';
+    return canvas;
+  }
+
+  /**
+   * Start the warp speed starfield animation
+   */
+  private startStarfieldAnimation(): void {
+    const ctx = this.starfieldCanvas.getContext('2d');
+    if (!ctx) return;
+
+    // Resize canvas
+    const resize = () => {
+      this.starfieldCanvas.width = window.innerWidth;
+      this.starfieldCanvas.height = window.innerHeight;
+    };
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Star data
+    const stars: { x: number; y: number; z: number }[] = [];
+    const numStars = 400;
+    const speed = 2;
+
+    // Initialize stars
+    for (let i = 0; i < numStars; i++) {
+      stars.push({
+        x: (Math.random() - 0.5) * window.innerWidth * 2,
+        y: (Math.random() - 0.5) * window.innerHeight * 2,
+        z: Math.random() * window.innerWidth
+      });
+    }
+
+    const animate = () => {
+      // Clear background (with fade effect for trails)
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, this.starfieldCanvas.width, this.starfieldCanvas.height);
+
+      const cx = this.starfieldCanvas.width / 2;
+      const cy = this.starfieldCanvas.height / 2;
+
+      ctx.fillStyle = '#FFFFFF';
+
+      for (let i = 0; i < numStars; i++) {
+        const star = stars[i];
+
+        // Move star closer
+        star.z -= speed;
+
+        // Reset if passed viewer
+        if (star.z <= 0) {
+          star.x = (Math.random() - 0.5) * this.starfieldCanvas.width * 2;
+          star.y = (Math.random() - 0.5) * this.starfieldCanvas.height * 2;
+          star.z = this.starfieldCanvas.width;
+        }
+
+        // Project 3D position to 2D
+        const k = 128.0 / star.z;
+        const screenX = star.x * k + cx;
+        const screenY = star.y * k + cy;
+
+        // Draw star
+        if (screenX >= 0 && screenX < this.starfieldCanvas.width &&
+          screenY >= 0 && screenY < this.starfieldCanvas.height) {
+          const size = (1 - star.z / this.starfieldCanvas.width) * 4;
+          ctx.fillRect(screenX, screenY, size, size);
+        }
+      }
+
+      this.animationId = requestAnimationFrame(animate);
+    };
+
+    animate();
   }
 
   /**
@@ -27,26 +114,22 @@ export class MainMenu {
     menu.innerHTML = `
       <div class="menu-content">
         <h1 class="game-title">STAR RAIDERS</h1>
-        <p class="subtitle">A Classic Recreation</p>
+        <p class="subtitle">A CLASSIC RECREATION</p>
 
         <div class="difficulty-section">
           <p class="section-title">SELECT DIFFICULTY</p>
           <div class="difficulty-options">
             <button class="difficulty-btn selected" data-difficulty="NOVICE">
               <span class="diff-name">NOVICE</span>
-              <span class="diff-desc">24 enemies • No damage</span>
             </button>
             <button class="difficulty-btn" data-difficulty="PILOT">
               <span class="diff-name">PILOT</span>
-              <span class="diff-desc">36 enemies • Damage active</span>
             </button>
             <button class="difficulty-btn" data-difficulty="WARRIOR">
               <span class="diff-name">WARRIOR</span>
-              <span class="diff-desc">45 enemies • Aggressive AI</span>
             </button>
             <button class="difficulty-btn" data-difficulty="COMMANDER">
               <span class="diff-name">COMMANDER</span>
-              <span class="diff-desc">60 enemies • Maximum challenge</span>
             </button>
           </div>
         </div>
@@ -56,21 +139,20 @@ export class MainMenu {
         <div class="controls-section">
           <p class="section-title">CONTROLS</p>
           <div class="controls-grid">
-            <span>MOUSE</span><span>Aim ship</span>
-            <span>SPACE</span><span>Fire torpedoes</span>
-            <span>0-9</span><span>Engine speed</span>
-            <span>S</span><span>Toggle shields</span>
-            <span>F/A</span><span>Front/Aft view</span>
-            <span>G</span><span>Galactic Chart</span>
-            <span>L</span><span>Long Range Scan</span>
-            <span>H</span><span>Hyperwarp</span>
-            <span>T/M</span><span>Target selection</span>
+            <span>MOUSE</span><span>AIM SHIP</span>
+            <span>SPACE</span><span>FIRE</span>
+            <span>0-9</span><span>SPEED</span>
+            <span>S</span><span>SHIELDS</span>
+            <span>F/A</span><span>VIEWS</span>
+            <span>G</span><span>CHART</span>
+            <span>L</span><span>SCAN</span>
+            <span>H</span><span>WARP</span>
           </div>
         </div>
       </div>
     `;
 
-    // Add event listeners
+    // Add event listeners (same as before)
     const buttons = menu.querySelectorAll('.difficulty-btn');
     buttons.forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -100,215 +182,209 @@ export class MainMenu {
     const style = document.createElement('style');
     style.id = 'main-menu-styles';
     style.textContent = `
+      @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+      .menu-starfield {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 900;
+        image-rendering: pixelated;
+      }
+
       .main-menu {
         position: fixed;
         top: 0;
         left: 0;
-        right: 0;
-        bottom: 0;
-        background: radial-gradient(ellipse at center, #001030 0%, #000000 100%);
+        width: 100vw;
+        height: 100vh;
+        z-index: 1000;
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 1000;
-        font-family: 'Courier New', monospace;
-        color: #00ffff;
+        font-family: 'Press Start 2P', monospace;
+        image-rendering: pixelated;
       }
 
       .menu-content {
         text-align: center;
-        max-width: 600px;
-        padding: 20px;
+        width: 90vw;
+        max-width: 80vh; /* Keep it constrained */
       }
 
       .game-title {
-        font-size: 48px;
-        font-weight: bold;
-        color: #ffffff;
-        text-shadow: 0 0 20px #00ffff, 0 0 40px #0066ff;
-        margin-bottom: 5px;
-        letter-spacing: 8px;
+        font-size: 6vh;
+        line-height: 1.2;
+        margin-bottom: 2vh;
+        
+        /* Authentic "Star Raiders" Logo Style */
+        color: #FFD700; /* Gold */
+        background: -webkit-linear-gradient(#FFD700, #FF4500);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        filter: drop-shadow(0.5vh 0.5vh 0px #8B0000);
+        transform: perspective(500px) rotateX(20deg); /* 3D tilt effect */
       }
 
       .subtitle {
-        font-size: 14px;
-        color: #008888;
-        margin-bottom: 40px;
+        font-size: 2vh;
+        color: #00FFFF;
+        margin-bottom: 6vh;
+        text-shadow: 0.25vh 0.25vh 0 #000;
+        letter-spacing: 0.5vw;
       }
 
       .section-title {
-        font-size: 12px;
-        color: #008888;
-        margin-bottom: 15px;
-        letter-spacing: 2px;
-      }
-
-      .difficulty-section {
-        margin-bottom: 30px;
+        font-size: 2vh;
+        color: #BAFF00;
+        margin-bottom: 2vh;
+        text-shadow: 0.25vh 0.25vh 0 #000;
       }
 
       .difficulty-options {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 1.5vh;
+        align-items: center;
+        margin-bottom: 4vh;
       }
 
       .difficulty-btn {
-        background: rgba(0, 40, 60, 0.8);
-        border: 2px solid #004060;
-        padding: 12px 20px;
+        background: transparent;
+        border: 0.5vh solid #55AAFF;
+        padding: 1.5vh 4vw;
         cursor: pointer;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
+        width: 60%;
+        font-family: 'Press Start 2P', monospace;
+        color: #55AAFF;
+        text-align: center;
         transition: all 0.2s;
+        box-shadow: 0 0 0.5vh #55AAFF;
       }
 
       .difficulty-btn:hover {
-        border-color: #00ffff;
-        background: rgba(0, 60, 80, 0.8);
+        background: rgba(85, 170, 255, 0.2);
+        color: #FFFFFF;
+        border-color: #FFFFFF;
       }
 
       .difficulty-btn.selected {
-        border-color: #00ff00;
-        background: rgba(0, 80, 40, 0.8);
+        background: #55AAFF;
+        color: #000000;
+        border-color: #FFFFFF;
+        box-shadow: 0 0 1.5vh #55AAFF;
+        transform: scale(1.05);
       }
 
       .diff-name {
-        font-size: 16px;
-        font-weight: bold;
-        color: #ffffff;
-      }
-
-      .diff-desc {
-        font-size: 11px;
-        color: #00ffff;
+        font-size: 2vh;
       }
 
       .start-btn {
-        background: linear-gradient(to bottom, #004080, #002040);
-        border: 3px solid #00ffff;
-        color: #ffffff;
-        font-size: 20px;
-        font-weight: bold;
-        padding: 15px 50px;
+        background: #FF0000;
+        border: 0.5vh solid #FF8888;
+        color: #FFFFFF;
+        font-size: 3vh;
+        padding: 2vh 4vw;
         cursor: pointer;
-        font-family: 'Courier New', monospace;
-        letter-spacing: 3px;
-        transition: all 0.2s;
-        margin-bottom: 30px;
+        font-family: 'Press Start 2P', monospace;
+        margin-bottom: 4vh;
+        text-shadow: 0.25vh 0.25vh 0 #000;
+        box-shadow: 0 0.5vh 0 #880000;
       }
 
       .start-btn:hover {
-        background: linear-gradient(to bottom, #0060a0, #003060);
-        border-color: #ffffff;
-        box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+        background: #FF4444;
+        transform: translateY(0.2vh);
+        box-shadow: 0 0.3vh 0 #880000;
+      }
+
+      .start-btn:active {
+        transform: translateY(0.5vh);
+        box-shadow: none;
       }
 
       .controls-section {
-        border-top: 1px solid #004040;
-        padding-top: 20px;
+        border-top: 0.5vh solid #55AAFF;
+        padding-top: 2vh;
+        width: 100%;
       }
 
       .controls-grid {
         display: grid;
         grid-template-columns: auto auto;
-        gap: 5px 20px;
-        font-size: 11px;
+        gap: 1vh 4vw;
+        font-size: 1.5vh;
         text-align: left;
-        max-width: 300px;
+        max-width: 80%;
         margin: 0 auto;
       }
 
       .controls-grid span:nth-child(odd) {
-        color: #ffff00;
-        font-weight: bold;
+        color: #BAFF00;
         text-align: right;
       }
 
       .controls-grid span:nth-child(even) {
-        color: #00ffff;
+        color: #CEFFFF;
       }
 
-      /* Game Over Screen */
+      /* Game Over Screen Updates */
       .game-over-screen {
         position: fixed;
         top: 0;
         left: 0;
-        right: 0;
-        bottom: 0;
+        width: 100vw;
+        height: 100vh;
         background: rgba(0, 0, 0, 0.9);
+        z-index: 2000;
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 1000;
-        font-family: 'Courier New', monospace;
-        color: #00ffff;
+        font-family: 'Press Start 2P', monospace;
+        image-rendering: pixelated;
       }
 
       .game-over-content {
         text-align: center;
-        padding: 40px;
-        border: 3px solid #00ffff;
-        background: rgba(0, 20, 40, 0.95);
+        padding: 4vh;
+        border: 0.5vh solid #CEFFFF;
+        background: #001030;
+        width: 80vw;
+        max-width: 80vh;
       }
 
       .game-over-title {
-        font-size: 36px;
-        font-weight: bold;
-        margin-bottom: 20px;
+        font-size: 4vh;
+        margin-bottom: 4vh;
+        text-shadow: 0.5vh 0.5vh 0 #000;
       }
-
-      .game-over-title.victory {
-        color: #00ff00;
-      }
-
-      .game-over-title.defeat {
-        color: #ff0000;
-      }
-
-      .score-breakdown {
-        text-align: left;
-        margin: 20px 0;
-        font-size: 14px;
-      }
-
+      
       .score-row {
         display: flex;
         justify-content: space-between;
-        margin: 5px 0;
-        padding: 5px 10px;
+        margin: 1vh 0;
+        font-size: 2vh;
+        color: #CEFFFF;
       }
-
-      .score-row.total {
-        border-top: 2px solid #00ffff;
-        margin-top: 15px;
-        padding-top: 15px;
-        font-size: 18px;
-        font-weight: bold;
-      }
-
+      
       .rank-display {
-        font-size: 24px;
-        font-weight: bold;
-        color: #ffff00;
-        margin: 20px 0;
+        font-size: 3vh;
+        color: #BAFF00;
+        margin: 4vh 0;
+        text-shadow: 0.25vh 0.25vh 0 #000;
       }
-
+      
       .restart-btn {
-        background: linear-gradient(to bottom, #004080, #002040);
-        border: 2px solid #00ffff;
-        color: #ffffff;
-        font-size: 16px;
-        padding: 10px 30px;
+        background: #55AAFF;
+        border: 0.5vh solid #FFFFFF;
+        color: #000000;
+        font-size: 2vh;
+        padding: 2vh 4vw;
+        font-family: 'Press Start 2P', monospace;
         cursor: pointer;
-        font-family: 'Courier New', monospace;
-        margin-top: 20px;
-      }
-
-      .restart-btn:hover {
-        background: linear-gradient(to bottom, #0060a0, #003060);
-        border-color: #ffffff;
       }
     `;
     document.head.appendChild(style);
@@ -326,6 +402,10 @@ export class MainMenu {
    */
   public show(): void {
     this.menuElement.style.display = 'flex';
+    this.starfieldCanvas.style.display = 'block';
+    if (!this.animationId) {
+      this.startStarfieldAnimation();
+    }
   }
 
   /**
@@ -333,93 +413,52 @@ export class MainMenu {
    */
   public hide(): void {
     this.menuElement.style.display = 'none';
+    this.starfieldCanvas.style.display = 'none';
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
   }
 
   /**
-   * Show game over screen
+   * Show game over screen (Updated for simple pass-through)
    */
   public showGameOver(
     victory: boolean,
     score: number,
     rank: Rank,
-    breakdown: {
-      enemyScore: number;
-      timeBonus: number;
-      energyBonus: number;
-      starbasePenalty: number;
-    },
+    breakdown: any,
     onRestart: () => void
   ): void {
-    // Remove existing game over screen if any
-    const existing = this.container.querySelector('.game-over-screen');
-    if (existing) {
-      existing.remove();
-    }
-
+    // Basic implementation for now, reusing new styles
     const screen = document.createElement('div');
     screen.className = 'game-over-screen';
     screen.innerHTML = `
       <div class="game-over-content">
-        <h1 class="game-over-title ${victory ? 'victory' : 'defeat'}">
+        <h1 class="game-over-title" style="color: ${victory ? '#BAFF00' : '#FF0000'}">
           ${victory ? 'MISSION COMPLETE' : 'MISSION FAILED'}
         </h1>
-
         <div class="score-breakdown">
-          <div class="score-row">
-            <span>Enemies Destroyed:</span>
-            <span>+${breakdown.enemyScore}</span>
-          </div>
-          <div class="score-row">
-            <span>Time Bonus:</span>
-            <span>+${breakdown.timeBonus}</span>
-          </div>
-          <div class="score-row">
-            <span>Energy Efficiency:</span>
-            <span>+${breakdown.energyBonus}</span>
-          </div>
-          ${breakdown.starbasePenalty > 0 ? `
-          <div class="score-row">
-            <span>Starbases Lost:</span>
-            <span style="color: #ff0000">-${breakdown.starbasePenalty}</span>
-          </div>
-          ` : ''}
-          <div class="score-row total">
-            <span>TOTAL SCORE:</span>
-            <span>${score}</span>
-          </div>
+          <div class="score-row"><span>SCORE:</span><span>${score}</span></div>
         </div>
-
-        <div class="rank-display">
-          RANK: ${rank}
-        </div>
-
+        <div class="rank-display">RANK: ${rank}</div>
         <button class="restart-btn">PLAY AGAIN</button>
       </div>
     `;
 
-    const restartBtn = screen.querySelector('.restart-btn');
-    restartBtn?.addEventListener('click', () => {
+    screen.querySelector('.restart-btn')?.addEventListener('click', () => {
       screen.remove();
+      this.show(); // Show main menu
       onRestart();
     });
 
     this.container.appendChild(screen);
   }
 
-  /**
-   * Dispose of resources
-   */
   public dispose(): void {
-    if (this.menuElement.parentElement) {
-      this.menuElement.parentElement.removeChild(this.menuElement);
-    }
-    const gameOver = this.container.querySelector('.game-over-screen');
-    if (gameOver) {
-      gameOver.remove();
-    }
-    const styles = document.getElementById('main-menu-styles');
-    if (styles) {
-      styles.remove();
-    }
+    this.menuElement.remove();
+    this.starfieldCanvas.remove();
+    document.getElementById('main-menu-styles')?.remove();
+    if (this.animationId) cancelAnimationFrame(this.animationId);
   }
 }
