@@ -207,8 +207,8 @@ export class GalacticChart {
       .footer-row {
         display: flex;
         justify-content: space-between;
-        margin-bottom: 20px;
-        font-size: 20px;
+        margin-bottom: 2vh;
+        font-size: 2.5vh;
       }
 
       .footer-col {

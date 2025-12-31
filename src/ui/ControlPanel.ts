@@ -119,21 +119,19 @@ export class ControlPanel {
       .control-panel {
         position: fixed;
         bottom: 0;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 100%;
-        max-width: 90vw;
+        left: 0;
+        width: 100vw;
         background: #2B608A;
         z-index: 100;
         image-rendering: pixelated;
-        border-bottom-left-radius: 2vh;
-        border-bottom-right-radius: 2vh;
-        box-shadow: 0 0 0 1vh #000;
-        padding-bottom: 0.5vh;
+        /* Full-width rectangle - no rounded corners, authentic Atari 800 style */
+        border-radius: 0;
+        box-sizing: border-box;
       }
 
       .panel-content {
-        padding: 0.5vh 3vw 1.5vh 3vw;
+        /* Taller bar with more space below text - matches Atari 800 screenshot */
+        padding: 2vh 3vw 6vh 3vw;
       }
 
       .panel-row {
@@ -151,7 +149,7 @@ export class ControlPanel {
 
       .stat-label, .stat-value {
         font-family: 'Press Start 2P', monospace;
-        font-size: 2vh;
+        font-size: 3vh;
         font-weight: normal;
         letter-spacing: 0.1vw;
         line-height: 1;
@@ -186,7 +184,7 @@ export class ControlPanel {
         left: 50%;
         transform: translateX(-50%);
         font-family: 'Press Start 2P', monospace;
-        font-size: 2vh;
+        font-size: 3vh;
         color: #FF5555;
         text-shadow: 0.25vh 0.25vh 0 #000;
         z-index: 1000;
@@ -239,7 +237,7 @@ export class ControlPanel {
       /* Shield active indicator */
       .control-panel.shields-active {
          background: #3B709A; /* Lighter blue when shielded */
-         box-shadow: 0 0 15px #BAFF00; /* Energy glow on border */
+         box-shadow: inset 0 0 20px rgba(186, 255, 0, 0.3); /* Subtle inner glow */
       }
       
       /* Hints */
