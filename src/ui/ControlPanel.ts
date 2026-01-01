@@ -23,6 +23,7 @@ export class ControlPanel {
   private killsValue!: HTMLElement;
   private energyValue!: HTMLElement;
   private targetsValue!: HTMLElement;
+  private hullValue!: HTMLElement;
   private thetaValue!: HTMLElement;
   private phiValue!: HTMLElement;
   private rangeValue!: HTMLElement;
@@ -65,6 +66,7 @@ export class ControlPanel {
     this.killsValue = this.panelElement.querySelector('.kills-value')!;
     this.energyValue = this.panelElement.querySelector('.energy-value')!;
     this.targetsValue = this.panelElement.querySelector('.targets-value')!;
+    this.hullValue = this.panelElement.querySelector('.hull-value')!;
     this.thetaValue = this.panelElement.querySelector('.theta-value')!;
     this.phiValue = this.panelElement.querySelector('.phi-value')!;
     this.rangeValue = this.panelElement.querySelector('.range-value')!;
@@ -98,6 +100,9 @@ export class ControlPanel {
           </span>
           <span class="stat-group shield-display">
             <span class="stat-label">S:</span><span class="stat-value shield-value">---</span>
+          </span>
+          <span class="stat-group hull">
+            <span class="stat-label">H:</span><span class="stat-value hull-value">100</span>
           </span>
         </div>
         <div class="panel-row bottom-row">
@@ -323,6 +328,17 @@ export class ControlPanel {
           0 0 0.4vh #00FFFF;
         z-index: 3;
         letter-spacing: 0.2vw;
+      }
+
+      /* Red-Orange for Hull Integrity */
+      .stat-group.hull .stat-label,
+      .stat-group.hull .stat-value {
+        color: #FF6644;
+      }
+
+      /* Hull warning state - blink when critically low */
+      .stat-group.hull.critical .stat-value {
+        animation: blink 0.5s infinite;
       }
 
       .message-display {
@@ -552,6 +568,7 @@ export class ControlPanel {
     // T: Targets remaining (will be updated externally)
     // Keep current value unless updated
 
+<<<<<<< HEAD
     // S: Shield display
     const shieldGroup = this.shieldValue.parentElement?.parentElement;
     if (this.gameState.shieldsActive) {
@@ -562,6 +579,19 @@ export class ControlPanel {
       this.shieldValue.textContent = '---';
       shieldGroup?.classList.remove('active');
       this.panelElement.classList.remove('shields-active');
+=======
+    // H: Hull integrity
+    this.hullValue.textContent = Math.floor(this.gameState.hull).toString();
+
+    // Add critical class if hull is low
+    const hullGroup = this.hullValue.parentElement;
+    if (hullGroup) {
+      if (this.gameState.isHullLow()) {
+        hullGroup.classList.add('critical');
+      } else {
+        hullGroup.classList.remove('critical');
+      }
+>>>>>>> ff4c7b8 (auto-claude: subtask-5-1 - Add hull integrity display to ControlPanel)
     }
 
     // θ: Theta (horizontal angle to target)
