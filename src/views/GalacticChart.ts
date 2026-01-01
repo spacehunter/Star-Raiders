@@ -1,6 +1,7 @@
 import { SectorSystem } from '../systems/SectorSystem';
 import { GameState } from '../game/GameState';
 import { EnergySystem } from '../systems/EnergySystem';
+import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';
 
 /**
  * GalacticChart - 2D overlay displaying the 8x8 sector grid
@@ -12,6 +13,7 @@ export class GalacticChart {
   private sectorSystem: SectorSystem;
   private gameState: GameState;
   private energySystem: EnergySystem;
+  private starbaseAttackSystem: StarbaseAttackSystem | null = null;
 
   private cursorX: number = 4;
   private cursorY: number = 4;
@@ -340,13 +342,57 @@ export class GalacticChart {
       }
 
       @keyframes blink-shadow {
-        0%, 100% { 
+        0%, 100% {
           color: #FF0000;
           box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FF0000')};
         }
-        50% { 
+        50% {
           color: #FF0000;
-          box-shadow: none; 
+          box-shadow: none;
+        }
+      }
+
+      /* Starbase being strategically targeted (enemies moving to surround) */
+      .starbase-targeted {
+        background-color: rgba(255, 165, 0, 0.15);
+      }
+
+      .starbase-targeted .starbase-sprite::after {
+        box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FFA500')};
+        animation: pulse-orange 1.5s infinite;
+      }
+
+      @keyframes pulse-orange {
+        0%, 100% {
+          box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FFA500')};
+        }
+        50% {
+          box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FF6600')};
+        }
+      }
+
+      /* Starbase surrounded (destruction countdown active) */
+      .starbase-surrounded {
+        background-color: rgba(255, 0, 0, 0.25);
+        animation: danger-pulse 0.5s infinite;
+      }
+
+      .starbase-surrounded .starbase-sprite::after {
+        box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FF0000')};
+        animation: rapid-blink 0.25s infinite;
+      }
+
+      @keyframes danger-pulse {
+        0%, 100% { background-color: rgba(255, 0, 0, 0.25); }
+        50% { background-color: rgba(255, 0, 0, 0.5); }
+      }
+
+      @keyframes rapid-blink {
+        0%, 100% {
+          box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FF0000')};
+        }
+        50% {
+          box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FFFF00')};
         }
       }
 
@@ -425,6 +471,13 @@ export class GalacticChart {
   }
 
   /**
+   * Set the starbase attack system reference for displaying attack status
+   */
+  public setStarbaseAttackSystem(system: StarbaseAttackSystem): void {
+    this.starbaseAttackSystem = system;
+  }
+
+  /**
    * Update the chart display
    */
   public update(): void {
@@ -438,7 +491,7 @@ export class GalacticChart {
       const sector = this.sectorSystem.getSector(x, y);
 
       // Reset classes
-      cellEl.classList.remove('current-sector', 'cursor', 'has-starbase', 'starbase-attacked');
+      cellEl.classList.remove('current-sector', 'cursor', 'has-starbase', 'starbase-attacked', 'starbase-targeted', 'starbase-surrounded');
       cellEl.textContent = '';
 
       // Clear any existing sprites
@@ -457,6 +510,18 @@ export class GalacticChart {
         if (sector.hasStarbase && !sector.starbaseDestroyed) {
           this.renderSprite(cellEl, 'starbase');
           cellEl.classList.add('has-starbase');
+
+          // Check if this starbase is being strategically attacked
+          if (this.starbaseAttackSystem) {
+            const attack = this.starbaseAttackSystem.getCurrentAttack();
+            if (attack && attack.targetSector.x === x && attack.targetSector.y === y) {
+              cellEl.classList.add('starbase-targeted');
+              if (attack.isSurrounded) {
+                cellEl.classList.add('starbase-surrounded');
+              }
+            }
+          }
+
           if (sector.enemies > 0) {
             cellEl.classList.add('starbase-attacked');
           }
