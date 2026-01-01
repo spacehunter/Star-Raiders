@@ -222,6 +222,82 @@ export class SoundManager {
   }
 
   /**
+   * Play enemy fire sound - distinct from player torpedo
+   */
+  public playEnemyFire(): void {
+    if (!this.audioContext || !this.masterGain) return;
+
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+
+    // Higher pitched, rising frequency - distinct from player's falling torpedo
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(300, this.audioContext.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(600, this.audioContext.currentTime + 0.08);
+
+    gain.gain.setValueAtTime(0.2, this.audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.08);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start();
+    osc.stop(this.audioContext.currentTime + 0.08);
+  }
+
+  /**
+   * Play player hit sound - impact with damage indication
+   */
+  public playPlayerHit(): void {
+    if (!this.audioContext || !this.masterGain) return;
+
+    // Create noise burst for impact
+    const bufferSize = this.audioContext.sampleRate * 0.15;
+    const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    }
+
+    const source = this.audioContext.createBufferSource();
+    source.buffer = buffer;
+
+    // Low-pass filter for a heavy impact feel
+    const filter = this.audioContext.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(800, this.audioContext.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(200, this.audioContext.currentTime + 0.15);
+
+    const gain = this.audioContext.createGain();
+    gain.gain.setValueAtTime(0.4, this.audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.15);
+
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+
+    source.start();
+
+    // Add a low thump oscillator for impact
+    const osc = this.audioContext.createOscillator();
+    const oscGain = this.audioContext.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, this.audioContext.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(50, this.audioContext.currentTime + 0.1);
+
+    oscGain.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.1);
+
+    osc.connect(oscGain);
+    oscGain.connect(this.masterGain);
+
+    osc.start();
+    osc.stop(this.audioContext.currentTime + 0.1);
+  }
+
+  /**
    * Play engine hum - continuous tone based on speed
    */
   private engineOsc: OscillatorNode | null = null;
