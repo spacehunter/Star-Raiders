@@ -1,0 +1,15 @@
+{
+  "task_description": "Review and verify outstanding changes on branch claude/review-changes-summary-XIGAL - enemy AI enhancements and combat system improvements including pursuit behavior, catch-up boost mechanics, and weighted enemy spawning.",
+  "scoped_services": ["main"],
+  "files_to_modify": [
+    ".gitignore",
+    "src/entities/Enemy.ts",
+    "src/entities/Player.ts",
+    "src/game/Game.ts",
+    "src/systems/CombatSystem.ts"
+  ],
+  "files_to_reference": [],
+  "patterns": {},
+  "service_contexts": {},
+  "created_at": "2025-01-01T12:00:00Z"
+}

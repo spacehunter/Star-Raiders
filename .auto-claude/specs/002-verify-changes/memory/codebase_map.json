@@ -1,0 +1,10 @@
+{
+  "discovered_files": {
+    "tsconfig.json": {
+      "description": "TypeScript configured with strict mode, ES2022 target, bundler moduleResolution. Uses noEmit for type checking only - Vite handles bundling.",
+      "category": "build-config",
+      "discovered_at": "2026-01-01T17:50:57.594042+00:00"
+    }
+  },
+  "last_updated": "2026-01-01T17:50:57.594047+00:00"
+}

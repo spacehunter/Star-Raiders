@@ -1,0 +1,36 @@
+{
+  "project_root": "/Users/moog/Documents/Star-Raiders",
+  "project_type": "single",
+  "services": {
+    "main": {
+      "name": "main",
+      "path": "/Users/moog/Documents/Star-Raiders",
+      "language": "TypeScript",
+      "framework": null,
+      "type": "unknown",
+      "package_manager": "npm",
+      "build_tool": "Vite",
+      "default_port": 5173,
+      "dev_command": "npm run dev",
+      "key_directories": {
+        "src": {
+          "path": "src",
+          "purpose": "Source code"
+        }
+      },
+      "entry_point": "src/main.ts",
+      "dependencies": [
+        "@types/three",
+        "three"
+      ],
+      "dev_dependencies": [
+        "typescript",
+        "vite"
+      ]
+    }
+  },
+  "infrastructure": {},
+  "conventions": {
+    "typescript": true
+  }
+}
