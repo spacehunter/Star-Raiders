@@ -31,6 +31,7 @@ export class ControlPanel {
   private damageValue!: HTMLElement;
   private viewModeIndicator!: HTMLElement;
   private messageDisplay!: HTMLElement;
+  private redAlertOverlay!: HTMLElement;
 
   // Tracking values for display
   private currentTheta: number = 0;
@@ -54,6 +55,11 @@ export class ControlPanel {
     this.messageDisplay = document.createElement('div');
     this.messageDisplay.className = 'message-display';
     this.container.appendChild(this.messageDisplay);
+
+    // Create red alert overlay (flashing screen edges for combat warning)
+    this.redAlertOverlay = document.createElement('div');
+    this.redAlertOverlay.className = 'red-alert-overlay';
+    this.container.appendChild(this.redAlertOverlay);
 
     this.cacheElements();
   }
@@ -520,6 +526,45 @@ export class ControlPanel {
       .control-hints {
         display: none;
       }
+
+      /* Red Alert Overlay - Combat Warning */
+      .red-alert-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        pointer-events: none;
+        z-index: 50;
+        /* Red vignette effect - edges flash red during combat */
+        box-shadow: inset 0 0 100px 20px rgba(255, 0, 0, 0.6);
+        animation: red-alert-pulse 0.5s infinite;
+      }
+
+      .red-alert-overlay.active {
+        display: block;
+      }
+
+      @keyframes red-alert-pulse {
+        0%, 100% {
+          box-shadow: inset 0 0 100px 20px rgba(255, 0, 0, 0.6);
+        }
+        50% {
+          box-shadow: inset 0 0 80px 15px rgba(255, 0, 0, 0.3);
+        }
+      }
+
+      /* Control panel red alert state - background changes to red */
+      .control-panel.red-alert {
+        background: #8A2B2B;
+        animation: panel-alert-blink 0.3s infinite;
+      }
+
+      @keyframes panel-alert-blink {
+        0%, 100% { background: #8A2B2B; }
+        50% { background: #2B608A; }
+      }
     `;
     document.head.appendChild(style);
   }
@@ -568,7 +613,6 @@ export class ControlPanel {
     // T: Targets remaining (will be updated externally)
     // Keep current value unless updated
 
-<<<<<<< HEAD
     // S: Shield display
     const shieldGroup = this.shieldValue.parentElement?.parentElement;
     if (this.gameState.shieldsActive) {
@@ -579,7 +623,8 @@ export class ControlPanel {
       this.shieldValue.textContent = '---';
       shieldGroup?.classList.remove('active');
       this.panelElement.classList.remove('shields-active');
-=======
+    }
+
     // H: Hull integrity
     this.hullValue.textContent = Math.floor(this.gameState.hull).toString();
 
@@ -591,7 +636,6 @@ export class ControlPanel {
       } else {
         hullGroup.classList.remove('critical');
       }
->>>>>>> ff4c7b8 (auto-claude: subtask-5-1 - Add hull integrity display to ControlPanel)
     }
 
     // θ: Theta (horizontal angle to target)
@@ -694,6 +738,20 @@ export class ControlPanel {
   }
 
   /**
+   * Set red alert state (combat warning)
+   * Shows flashing red screen edges and panel color change when under attack
+   */
+  public setRedAlert(active: boolean): void {
+    if (active) {
+      this.redAlertOverlay.classList.add('active');
+      this.panelElement.classList.add('red-alert');
+    } else {
+      this.redAlertOverlay.classList.remove('active');
+      this.panelElement.classList.remove('red-alert');
+    }
+  }
+
+  /**
    * Set visibility of the Hyperwarp Target Marker
    */
   public setHyperwarpMarkerVisible(visible: boolean): void {
@@ -728,6 +786,12 @@ export class ControlPanel {
   public dispose(): void {
     if (this.panelElement.parentElement) {
       this.panelElement.parentElement.removeChild(this.panelElement);
+    }
+    if (this.redAlertOverlay.parentElement) {
+      this.redAlertOverlay.parentElement.removeChild(this.redAlertOverlay);
+    }
+    if (this.messageDisplay.parentElement) {
+      this.messageDisplay.parentElement.removeChild(this.messageDisplay);
     }
     const styles = document.getElementById('control-panel-styles');
     if (styles) {
