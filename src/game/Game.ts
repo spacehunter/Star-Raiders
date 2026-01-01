@@ -6,6 +6,7 @@ import { EnergySystem } from '../systems/EnergySystem';
 import { SectorSystem } from '../systems/SectorSystem';
 import { CombatSystem } from '../systems/CombatSystem';
 import { ScoringSystem } from '../systems/ScoringSystem';
+import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';
 import { Starfield } from '../entities/Starfield';
 import { Player } from '../entities/Player';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
@@ -44,6 +45,7 @@ export class Game {
   private sectorSystem: SectorSystem;
   private combatSystem: CombatSystem;
   private scoringSystem: ScoringSystem;
+  private starbaseAttackSystem: StarbaseAttackSystem;
   private gameState: GameState;
 
   // UI
@@ -133,6 +135,12 @@ export class Game {
     // Generate galaxy
     this.sectorSystem.generateGalaxy(this.gameState.difficulty);
 
+    // Initialize starbase attack system (enemy strategic AI)
+    this.starbaseAttackSystem = new StarbaseAttackSystem(
+      this.sectorSystem,
+      this.gameState.difficulty
+    );
+
     // Initialize entities
     this.starfield = new Starfield(500, 2000);
     this.player = new Player();
@@ -160,6 +168,14 @@ export class Game {
 
     // Set up scene
     this.setupScene();
+
+    // Set up starbase attack system message callback
+    this.starbaseAttackSystem.setMessageCallback((message, duration) => {
+      this.controlPanel.showMessage(message, duration);
+    });
+
+    // Connect galactic chart to starbase attack system for visual indicators
+    this.galacticChart.setStarbaseAttackSystem(this.starbaseAttackSystem);
 
     // Handle window resize
     window.addEventListener('resize', this.handleResize);
@@ -309,6 +325,13 @@ export class Game {
     // Update combat system
     const playerPos = this.player.getObject().position.clone();
     this.combatSystem.update(deltaTime, playerPos);
+
+    // Update starbase attack system (enemy strategic AI)
+    this.starbaseAttackSystem.update(
+      deltaTime,
+      this.gameState.sectorX,
+      this.gameState.sectorY
+    );
 
     // Check torpedo collisions
     const destroyed = this.combatSystem.checkTorpedoCollisions(this.torpedoes);
