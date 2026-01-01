@@ -93,6 +93,98 @@ class Explosion {
 }
 
 /**
+ * Shield hit effect - cyan/blue hemisphere particles
+ */
+class ShieldHit {
+  private particles: THREE.Points;
+  private velocities: Float32Array;
+  private age: number = 0;
+  private maxAge: number = 0.3;
+  public isActive: boolean = true;
+
+  constructor(position: THREE.Vector3) {
+    const particleCount = 30;
+    const geometry = new THREE.BufferGeometry();
+
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+    this.velocities = new Float32Array(particleCount * 3);
+
+    for (let i = 0; i < particleCount; i++) {
+      const i3 = i * 3;
+
+      // Start at hit position
+      positions[i3] = position.x;
+      positions[i3 + 1] = position.y;
+      positions[i3 + 2] = position.z;
+
+      // Hemisphere outward velocity (toward camera, positive Z)
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * Math.PI * 0.5; // Hemisphere (0 to PI/2)
+      const speed = 15 + Math.random() * 25;
+
+      this.velocities[i3] = Math.sin(phi) * Math.cos(theta) * speed;
+      this.velocities[i3 + 1] = Math.sin(phi) * Math.sin(theta) * speed;
+      this.velocities[i3 + 2] = Math.cos(phi) * speed; // Positive Z toward camera
+
+      // Cyan/blue colors
+      colors[i3] = 0.2 + Math.random() * 0.3;
+      colors[i3 + 1] = 0.7 + Math.random() * 0.3;
+      colors[i3 + 2] = 1;
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 1.5,
+      vertexColors: true,
+      transparent: true,
+      opacity: 1,
+    });
+
+    this.particles = new THREE.Points(geometry, material);
+  }
+
+  public getObject(): THREE.Object3D {
+    return this.particles;
+  }
+
+  public update(deltaTime: number): void {
+    this.age += deltaTime;
+
+    if (this.age >= this.maxAge) {
+      this.isActive = false;
+      return;
+    }
+
+    const positions = this.particles.geometry.attributes.position.array as Float32Array;
+
+    for (let i = 0; i < positions.length; i += 3) {
+      positions[i] += this.velocities[i] * deltaTime;
+      positions[i + 1] += this.velocities[i + 1] * deltaTime;
+      positions[i + 2] += this.velocities[i + 2] * deltaTime;
+
+      // Quick slowdown for shield effect
+      this.velocities[i] *= 0.92;
+      this.velocities[i + 1] *= 0.92;
+      this.velocities[i + 2] *= 0.92;
+    }
+
+    this.particles.geometry.attributes.position.needsUpdate = true;
+
+    // Quick fade out
+    const material = this.particles.material as THREE.PointsMaterial;
+    material.opacity = 1 - this.age / this.maxAge;
+  }
+
+  public dispose(): void {
+    this.particles.geometry.dispose();
+    (this.particles.material as THREE.Material).dispose();
+  }
+}
+
+/**
  * Warp trail effect
  */
 class WarpTrail {
@@ -173,6 +265,7 @@ export class VFXSystem {
   private scene: THREE.Scene;
   private explosions: Explosion[] = [];
   private warpTrails: WarpTrail[] = [];
+  private shieldHits: ShieldHit[] = [];
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -194,6 +287,15 @@ export class VFXSystem {
     const trail = new WarpTrail(direction);
     this.warpTrails.push(trail);
     this.scene.add(trail.getObject());
+  }
+
+  /**
+   * Create shield hit effect at position
+   */
+  public createShieldHit(position: THREE.Vector3): void {
+    const shieldHit = new ShieldHit(position);
+    this.shieldHits.push(shieldHit);
+    this.scene.add(shieldHit.getObject());
   }
 
   /**
@@ -223,6 +325,18 @@ export class VFXSystem {
         this.warpTrails.splice(i, 1);
       }
     }
+
+    // Update shield hits
+    for (let i = this.shieldHits.length - 1; i >= 0; i--) {
+      const shieldHit = this.shieldHits[i];
+      shieldHit.update(deltaTime);
+
+      if (!shieldHit.isActive) {
+        this.scene.remove(shieldHit.getObject());
+        shieldHit.dispose();
+        this.shieldHits.splice(i, 1);
+      }
+    }
   }
 
   /**
@@ -240,5 +354,11 @@ export class VFXSystem {
       trail.dispose();
     }
     this.warpTrails = [];
+
+    for (const shieldHit of this.shieldHits) {
+      this.scene.remove(shieldHit.getObject());
+      shieldHit.dispose();
+    }
+    this.shieldHits = [];
   }
 }
