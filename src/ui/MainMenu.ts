@@ -427,7 +427,7 @@ export class MainMenu {
     victory: boolean,
     score: number,
     rank: Rank,
-    breakdown: any,
+    _breakdown: any,
     onRestart: () => void
   ): void {
     // Basic implementation for now, reusing new styles

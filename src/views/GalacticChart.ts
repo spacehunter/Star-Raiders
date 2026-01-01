@@ -41,29 +41,30 @@ export class GalacticChart {
   }
 
   /**
+  /**
    * Create the chart HTML structure
    */
   private createChart(): HTMLElement {
     const chart = document.createElement('div');
     chart.className = 'galactic-chart';
     chart.innerHTML = `
-      <div class="chart-header">
+      <div class="chart-header-bar">
         <span class="chart-title">GALACTIC CHART</span>
       </div>
-      <div class="chart-container">
+      <div class="chart-main">
         <div class="chart-grid"></div>
       </div>
       <div class="chart-footer">
-        <div class="footer-row">
-          <div class="footer-col">
+        <div class="footer-row top-row">
+           <div class="info-group">
              <span class="label">WARP ENERGY:</span>
              <span class="value warp-cost">0000</span>
-          </div>
-          <div class="footer-col" style="flex: 2; text-align: center;">
+           </div>
+           <div class="info-group">
              <span class="label">TARGETS:</span>
              <span class="value total-enemies">00</span>
-          </div>
-          <div class="footer-col dc-col">
+           </div>
+           <div class="info-group dc-group">
              <span class="label">DC:</span>
              <span class="dc-indicators">
                 <span class="dc-char" data-sys="P">P</span>
@@ -73,15 +74,12 @@ export class GalacticChart {
                 <span class="dc-char" data-sys="L">L</span>
                 <span class="dc-char" data-sys="R">R</span>
              </span>
-          </div>
+           </div>
         </div>
-        <div class="footer-row">
-           <div class="footer-col">
+        <div class="footer-row bottom-row">
+           <div class="info-group centered">
               <span class="label">STAR DATE:</span>
               <span class="value star-date">00.00</span>
-           </div>
-           <div class="footer-col" style="text-align: right;">
-              <!-- Empty or extra info -->
            </div>
         </div>
       </div>
@@ -102,11 +100,94 @@ export class GalacticChart {
     return chart;
   }
 
+  /* Sprite Patterns (8x8 grids, X = pixel, . = empty) */
+  private static readonly SPRITES = {
+    STARBASE: [ // 5x5 centered
+      ". . . . . . . .",
+      ". . . . . . . .",
+      ". . X . X . X .",
+      ". . . X X X . .",
+      ". . X X X X X .",
+      ". . . X X X . .",
+      ". . X . X . X .",
+      ". . . . . . . ."
+    ],
+    ENEMY_1: [ // Left-pointing ship (centered, shifted down +1)
+      ". . . . . . . .",
+      ". . . . . . . .",
+      ". . X X . . . .",
+      ". . . X X . . .",
+      ". . X X X X X .",
+      ". . . X X . . .",
+      ". . X X . . . .",
+      ". . . . . . . ."
+    ],
+    ENEMY_2: [ // Three dashes (centered, shifted down +1)
+      ". . . . . . . .",
+      ". . . . . . . .",
+      ". . . . X X X .",
+      ". . . . . . . .",
+      ". . X X X . . .",
+      ". . . . . . . .",
+      ". . . X X X . .",
+      ". . . . . . . ."
+    ],
+    ENEMY_3: [ // Stacked dashes (centered, shifted down +1)
+      ". . . . . . . .",
+      ". . . . . . . .",
+      ". . . X X . . .",
+      ". . . . . . . .",
+      ". . X X . X X .",
+      ". . . . . . . .",
+      ". . . . X X . .",
+      ". . . . . . . ."
+    ],
+    ENEMY_4: [ // Diamond 4-fleet (centered, shifted down +1)
+      ". . . . . . . .",
+      ". . . . . . . .",
+      ". . . X X . . .",
+      ". . X X X X . .",
+      ". X X . . X X .",
+      ". . X X X X . .",
+      ". . . X X . . .",
+      ". . . . . . . ."
+    ]
+  };
+
+  /**
+   * Helper to generate box-shadow CSS from a pattern
+   */
+  private generateBoxShadow(pattern: string[], pixelSize: number = 0.4): string {
+    let shadows: string[] = [];
+    pattern.forEach((row, y) => {
+      // Remove spaces to handle "X . X" formats if user adds extra spaces for readability
+      // But standard format is likely "X" or "." character by character?
+      // User said "string is an 8x8 string". Let's assume input is array of strings.
+      // We'll iterate characters.
+      const chars = row.replace(/\s+/g, '').split(''); // Remove whitespace delimiters if any
+
+      chars.forEach((char, x) => {
+        if (char === 'X') {
+          // x * pixelSize, y * pixelSize
+          shadows.push(`${x * pixelSize}vh ${y * pixelSize}vh 0 0 #CEFFFF`);
+        }
+      });
+    });
+    return shadows.join(',');
+  }
+
   /**
    * Add CSS styles
    */
   private addStyles(): void {
     if (document.getElementById('galactic-chart-styles')) return;
+
+    // Generate sprite CSS
+    const starbaseShadow = this.generateBoxShadow(GalacticChart.SPRITES.STARBASE);
+    const enemy1Shadow = this.generateBoxShadow(GalacticChart.SPRITES.ENEMY_1);
+    const enemy2Shadow = this.generateBoxShadow(GalacticChart.SPRITES.ENEMY_2);
+    const enemy3Shadow = this.generateBoxShadow(GalacticChart.SPRITES.ENEMY_3);
+    const enemy4Shadow = this.generateBoxShadow(GalacticChart.SPRITES.ENEMY_4);
 
     const style = document.createElement('style');
     style.id = 'galactic-chart-styles';
@@ -119,210 +200,171 @@ export class GalacticChart {
         left: 0;
         width: 100vw;
         height: 100vh;
-        background: #2B608A;
+        background: #2B608A; /* Authentic Atari Blue */
         z-index: 200;
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: flex-start;
-        padding-top: 2vh;
+        justify-content: space-between;
+        padding-bottom: 5vh;
         box-sizing: border-box;
         image-rendering: pixelated;
+        font-family: 'Press Start 2P', monospace;
       }
 
-      .chart-header {
-        margin-bottom: 1vh;
+      /* Black Header Bar */
+      .chart-header-bar {
         width: 100%;
+        background: #000000;
+        padding: 2vh 0;
+        margin-bottom: 2vh;
         text-align: center;
+        border-bottom: 0.5vh solid #000;
       }
 
       .chart-title {
-        font-family: 'Press Start 2P', monospace;
-        font-size: 3vh;
-        color: #CEFFFF;
-        text-shadow: 0.5vh 0.5vh 0 #000;
+        font-size: 3.5vh;
+        color: #CEFFFF; /* Light Cyan */
         text-transform: uppercase;
+        letter-spacing: 0.5vw;
       }
 
-      .chart-container {
+      .chart-main {
         flex: 1;
         display: flex;
         align-items: center;
         justify-content: center;
         width: 100%;
-        max-height: 70vh;
       }
 
       .chart-grid {
         display: grid;
         grid-template-columns: repeat(8, 1fr);
         grid-template-rows: repeat(8, 1fr);
-        height: 60vh;
-        width: 60vh; 
-        gap: 0;
-        border: 0.5vh solid #CEFFFF;
+        height: 65vh; /* Larger grid */
+        width: 80vh;  /* Wide aspect ratio */
         background: transparent;
+        border: 0.4vh solid #55AAFF;
+        margin-top: 0.4vh; /* Up 1px */
+        margin-left: 0.4vh; /* Right 1px (Adjusted from 0.8vh) */
       }
 
       .chart-cell {
-        border: 0.25vh solid #55AAFF;
+        border: 0.4vh solid #55AAFF;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-family: 'Press Start 2P', monospace;
-        font-size: 2vh;
-        color: #CEFFFF;
         position: relative;
-        text-shadow: 0.25vh 0.25vh 0 #000;
+        background: transparent;
       }
 
+      /* Active Cursor */
       .chart-cell.cursor {
-        background-color: rgba(206, 255, 255, 0.3);
-        box-shadow: inset 0 0 0 4px #FFFF00;
+        box-shadow: inset 0 0 0 0.5vh #BAFF00; /* Bright Green Highlighting */
+        background-color: rgba(186, 255, 0, 0.2);
       }
 
-      .chart-cell.has-starbase {
-        color: #BAFF00; /* Green/Yellow for starbase */
-        font-size: 32px;
-      }
-      
-      .chart-cell.starbase-attacked {
-        color: #FF0000;
-        animation: blink 0.5s infinite;
-      }
-
-      @keyframes blink {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0; }
-      }
-
+      /* Footer Styling */
       .chart-footer {
-        width: 80%;
-        max-width: 800px;
-        margin-bottom: 40px;
-        font-family: 'Press Start 2P', monospace;
+        width: 90%;
+        max-width: 1200px;
         color: #CEFFFF;
       }
 
       .footer-row {
         display: flex;
         justify-content: space-between;
-        margin-bottom: 2vh;
+        align-items: center;
+        margin-bottom: 1.5vh;
         font-size: 2.5vh;
       }
 
-      .footer-col {
+      .bottom-row {
+        justify-content: center;
+      }
+
+      .info-group {
         display: flex;
-        gap: 15px;
+        gap: 1.5vw;
         align-items: center;
       }
 
-      .label {
-        color: #CEFFFF;
-      }
+      .label { color: #CEFFFF; }
+      .value { color: #CEFFFF; } 
 
-      .value {
-        color: #BAFF00;
-      }
-      
+      /* DC Indicators */
+      .dc-group { display: flex; gap: 1vw; }
       .dc-indicators {
         display: flex;
-        gap: 8px;
-        background: #000; /* DC usually has black back? Or transparent */
-        padding: 0 5px;
+        gap: 0.5vw;
       }
-      
-      .dc-char {
-        color: #BAFF00; /* Green = OK */
-      }
-      
-      .dc-char.damaged {
-        color: #FF5555; /* Red = Damaged */
-      }
-      
-      .dc-char.destroyed {
-        color: #000000;
-        text-shadow: none;
-        opacity: 0.2;
-      }
-      
-      /* Sprites */
+      .dc-char { color: #CEFFFF; }
+      .dc-char.damaged { color: #FF5555; }
+      .dc-char.destroyed { color: #000000; text-shadow: none; }
+
+      /* --- SPRITES --- */
+      /* 
+         Sprite Container: Explicit 8x8 Grid Size 
+         Grid Unit = 0.4vh
+         Size = 8 * 0.4vh = 3.2vh
+      */
       .sprite {
-        width: 1px;
-        height: 1px;
-        position: absolute;
-      }
-      
-      /* Starbase Sprite - Authentic 8-point star */
-      /* Pattern from screenshot: 3x3 core with 1px tips ? */
-      /* Looks like a 5x5 grid:
-         . . X . .
-         . X X X .
-         X X X X X
-         . X X X .
-         . . X . .
-         Color appears light blue/white in screenshot, not yellow.
-      */
-      .starbase-sprite {
+        position: relative; /* Relative to cell (which is flex centered) */
+        width: 3.2vh; 
+        height: 3.2vh;
         background: transparent;
-        color: #CEFFFF; /* Light Cyan/White */
-        transform: scale(4); /* Larger scale */
-        box-shadow: 
-          0 0 0 1px, /* Center */
-          0 -2px 0 0, /* Top tip */
-          0 2px 0 0, /* Bot tip */
-          -2px 0 0 0, /* Left tip */
-          2px 0 0 0, /* Right tip */
-          -1px -1px 0 0, 0px -1px 0 0, 1px -1px 0 0,
-          -1px 0 0 0, 1px 0 0 0,
-          -1px 1px 0 0, 0px 1px 0 0, 1px 1px 0 0;
+        transform: scale(2.8); /* Scale the whole 8x8 grid */
+        top: -0.4vh; /* Counteract grid 0.4vh */
+        left: -0.4vh; /* Counteract grid 0.4vh */
       }
       
-      /* Enemy Sprite (Zylon Fighter) */
-      .enemy-sprite {
-         color: #FFFFFF;
-         transform: scale(4);
-      }
-      
-      /* 1 Enemy: Left-facing fighter shape */
-      /*
-        . X .
-        X X .
-        X X X  <-- Wing back?
-        X X .
-        . X .
-      */
-      .enemy-sprite.count-1 {
-         box-shadow:
-           0 0 0 1px,
-           -1px 0 0 0, 
-           0 -1px 0 0, -1px -1px 0 0,
-           0 1px 0 0, -1px 1px 0 0,
-           1px 0 0 0; /* Nose */
-      }
-      
-      /* 2 Enemies: Two small blips */
-      .enemy-sprite.count-2 {
-         box-shadow:
-           -2px -2px 0 1px,
-           2px 2px 0 1px;
-      }
-      
-      /* 3 Enemies: Three blips */
-      .enemy-sprite.count-3 {
-        box-shadow:
-           -2px -3px 0 1px,
-           2px -3px 0 1px,
-           0px 2px 0 1px;
-      }
-      
-      /* Fleet (4+): Four blips block */
-      .enemy-sprite.count-4 {
-         box-shadow:
-            -2px -2px 0 1px, 2px -2px 0 1px,
-            -2px 2px 0 1px, 2px 2px 0 1px;
+      /* The Pixel Renderer */
+      .sprite::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 0.4vh; 
+        height: 0.4vh;
+        background: transparent;
+        /* box-shadow will be applied here dynamically */
       }
 
+      .starbase-sprite::after {
+        box-shadow: ${starbaseShadow};
+        color: #CEFFFF;
+      }
+      
+      .starbase-attacked .starbase-sprite::after {
+        animation: blink-shadow 0.5s infinite;
+      }
+
+      @keyframes blink-shadow {
+        0%, 100% { 
+          color: #FF0000;
+          box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FF0000')};
+        }
+        50% { 
+          color: #FF0000;
+          box-shadow: none; 
+        }
+      }
+
+      .enemy-sprite.count-1::after {
+        box-shadow: ${enemy1Shadow};
+      }
+      
+      .enemy-sprite.count-2::after {
+        box-shadow: ${enemy2Shadow};
+      }
+
+      .enemy-sprite.count-3::after {
+        box-shadow: ${enemy3Shadow};
+      }
+
+      .enemy-sprite.count-4::after {
+        box-shadow: ${enemy4Shadow};
+      }
     `;
     document.head.appendChild(style);
   }
@@ -483,6 +525,17 @@ export class GalacticChart {
   private renderSprite(container: HTMLElement, type: 'starbase' | 'enemy', count: number = 1): void {
     const sprite = document.createElement('div');
     sprite.className = `sprite ${type}-sprite count-${count}`;
+
+    if (type === 'enemy') {
+      // Create pips for each enemy (up to 4 for visual stack)
+      const visualCount = Math.min(count, 4);
+      for (let i = 0; i < visualCount; i++) {
+        const pip = document.createElement('div');
+        pip.className = 'enemy-pip';
+        sprite.appendChild(pip);
+      }
+    }
+
     container.appendChild(sprite);
   }
 

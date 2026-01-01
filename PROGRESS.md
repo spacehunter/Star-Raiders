@@ -381,3 +381,56 @@ A fully playable web-based recreation of the classic 1979 Atari 800 game.
 
 ### Files Created: 24 TypeScript modules
 ### Build Size: ~560KB minified (~140KB gzipped)
+
+---
+
+## Iteration 7 - Hyperwarp and Navigation Improvements
+**Date:** 2025-12-31
+**Status:** In Progress
+
+### Completed:
+- [x] Fixed camera rotation reset on hyperwarp exit (immediate snap, no damping)
+- [x] Removed orphaned code in updatePlayerMovement that broke speed/hyperwarp
+- [x] Hyperwarp now preserves player's pre-warp impulse speed selection
+- [x] Exit hyperwarp at warp velocity (speed 20) then decelerate to player's selection
+- [x] Added hyperwarp steering marker UI for navigation mini-game
+- [x] Sector boundaries with wrapping (±500 units toroidal space)
+- [x] Enemy speeds aligned with player impulse scale (Fighter=7, Cruiser=5)
+- [x] Pursuit range system - enemies only actively move within 200 units
+
+### Known Issues - Long Range Scan (LRS):
+
+**Problem:** The Long Range Scan view does not display realistic relative motion.
+
+**Symptoms:**
+- Enemies appear to zoom past the player ship very fast when entering from the top of the LRS
+- After passing the player, enemies slow down significantly at the bottom
+- The asymmetric speed is due to relative motion math:
+  - Enemy in FRONT: player speed + enemy speed = very fast approach
+  - Enemy BEHIND: player speed - enemy speed = slow recession
+- Wrapping creates jarring visual discontinuity when objects teleport
+
+**Attempted Solutions:**
+1. Catch-up boost system (enemies accelerate when far) - still looked unnatural
+2. Pursuit range (enemies idle when far) - didn't solve the visual asymmetry
+3. Sector wrapping - objects teleporting looks jarring
+
+**Needs Investigation:**
+- The LRS should show a more abstract/strategic view where movement appears consistent
+- Consider decoupling LRS display from real-time world positions
+- Original Star Raiders may have used a different approach for the tactical display
+- May need to render LRS positions based on relative velocity rather than absolute position changes
+
+---
+
+## TODO - Next Steps
+
+### High Priority:
+- [ ] **Redesign LRS motion display** - Make movement appear consistent regardless of direction
+- [ ] Consider LRS as "abstract tactical view" vs real-time position tracking
+- [ ] Research original Star Raiders LRS behavior for reference
+
+### Future Enhancements:
+- [ ] Mobile touch controls (Phase 7)
+- [ ] PWA configuration for offline play
+- [ ] Additional visual polish

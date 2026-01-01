@@ -55,16 +55,17 @@ export class Enemy {
     this.state = EnemyState.IDLE;
 
     // Set type-specific properties
+    // Speed uses same scale as player: impulse * 50 units/sec
     switch (type) {
       case EnemyType.FIGHTER:
         this.health = this.maxHealth = 2;
-        this.speed = 50;
+        this.speed = 7 * 50; // Impulse 7 equivalent (350 units/sec)
         this.fireRate = 1.5;
         this.attackRange = 80;
         break;
       case EnemyType.CRUISER:
         this.health = this.maxHealth = 4;
-        this.speed = 30;
+        this.speed = 5 * 50; // Impulse 5 equivalent (250 units/sec)
         this.fireRate = 2.5;
         this.attackRange = 120;
         break;
@@ -327,11 +328,18 @@ export class Enemy {
     // Calculate distance to player
     const distanceToPlayer = this.mesh.position.distanceTo(playerPosition);
 
+    // Pursuit range - enemies only actively move when within this range
+    // Beyond this, they just drift with the sector (no AI movement)
+    const PURSUIT_RANGE = 200;
+
     // Update state based on distance
     if (distanceToPlayer < this.attackRange) {
       this.state = EnemyState.ATTACK;
-    } else if (this.type !== EnemyType.BASESTAR) {
+    } else if (distanceToPlayer < PURSUIT_RANGE && this.type !== EnemyType.BASESTAR) {
       this.state = EnemyState.PATROL;
+    } else {
+      // Too far - just idle (no active movement, drift with sector)
+      this.state = EnemyState.IDLE;
     }
 
     // Update based on state
@@ -344,9 +352,6 @@ export class Enemy {
         break;
       case EnemyState.ATTACK:
         this.updateAttack(deltaTime, playerPosition);
-        break;
-      case EnemyState.EVADE:
-        this.updateEvade(deltaTime, playerPosition);
         break;
     }
 
@@ -422,15 +427,6 @@ export class Enemy {
         )
       );
     }
-  }
-
-  /**
-   * Evade behavior
-   */
-  private updateEvade(deltaTime: number, playerPosition: THREE.Vector3): void {
-    // Move away from player
-    const awayFromPlayer = this.mesh.position.clone().sub(playerPosition).normalize();
-    this.mesh.position.add(awayFromPlayer.multiplyScalar(this.speed * deltaTime));
   }
 
   /**

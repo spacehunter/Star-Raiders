@@ -99,6 +99,7 @@ export class ControlPanel {
       </div>
       <!-- Message display moved out -->
       <div class="crosshair"></div>
+      <div class="hyperwarp-marker"></div>
     `;
 
     this.addStyles();
@@ -233,6 +234,44 @@ export class ControlPanel {
         top: 50%;
         transform: translateY(-50%);
       }
+      
+      /* Hyperwarp Target Marker - "Zig-Zag Cross" */
+      .hyperwarp-marker {
+        display: none; /* Hidden by default */
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        /* Adjusted by JS but starts centered */
+        width: 6vh;
+        height: 6vh;
+        pointer-events: none;
+        z-index: 98;
+        transform: translate(-50%, -50%);
+      }
+
+      /* Inner cross part */
+      .hyperwarp-marker::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 2vh;
+        height: 2vh;
+        background: transparent;
+        /* Authentic thick cross look via box shadow */
+        box-shadow: 
+           0 -2vh 0 -0.5vh #CEFFFF, /* Top arm */
+           0 2vh 0 -0.5vh #CEFFFF,  /* Bottom arm */
+           -2vh 0 0 -0.5vh #CEFFFF, /* Left arm */
+           2vh 0 0 -0.5vh #CEFFFF,  /* Right arm */
+           0 0 0 0.5vh #CEFFFF;     /* Center block */
+      }
+      
+      /* Use drop-shadow to give it that glow/thickness */
+      .hyperwarp-marker {
+         filter: drop-shadow(0 0 2px #000);
+      }
 
       /* Shield active indicator */
       .control-panel.shields-active {
@@ -316,6 +355,35 @@ export class ControlPanel {
         this.messageDisplay.textContent = '';
       }
     }, duration);
+  }
+
+  /**
+   * Set visibility of the Hyperwarp Target Marker
+   */
+  public setHyperwarpMarkerVisible(visible: boolean): void {
+    const marker = this.panelElement.querySelector('.hyperwarp-marker') as HTMLElement;
+    if (marker) {
+      marker.style.display = visible ? 'block' : 'none';
+    }
+  }
+
+  /**
+   * Update position of the Hyperwarp Target Marker
+   * @param x Horizontal offset (0 is center)
+   * @param y Vertical offset (0 is center)
+   */
+  public updateHyperwarpMarker(x: number, y: number): void {
+    const marker = this.panelElement.querySelector('.hyperwarp-marker') as HTMLElement;
+    if (marker) {
+      // Use CSS transformtranslate to position relative to center
+      // 50% start + offset (vh)
+      // x, y are in 'screen units' passed from game logic. 
+      // Let's assume Game passes roughly pixel or VH offsets.
+      // Or normalized -1 to 1?
+      // Let's assume input is in 'screen percentage' or similar magnitude for now.
+      // Actually, easier to let Game logic drive the offset in VH units.
+      marker.style.transform = `translate(calc(-50% + ${x}vh), calc(-50% + ${y}vh))`;
+    }
   }
 
   /**

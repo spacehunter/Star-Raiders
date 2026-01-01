@@ -185,11 +185,16 @@ export class Player {
   }
 
   /**
-   * Reset rotation to center
+   * Reset rotation to center (immediate snap, no damping)
    */
   public resetRotation(): void {
     this.targetYaw = 0;
     this.targetPitch = 0;
+    this.currentYaw = 0;
+    this.currentPitch = 0;
+    // Also apply to objects immediately
+    this.yawObject.rotation.y = 0;
+    this.pitchObject.rotation.x = 0;
   }
 
   /**

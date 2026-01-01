@@ -75,6 +75,9 @@ export class Game {
   private isHyperwarping: boolean = false;
   private hyperwarpProgress: number = 0;
   private hyperwarpTarget: { x: number; y: number } | null = null;
+  private hyperwarpAlignment: { x: number; y: number } = { x: 0, y: 0 };
+  private hyperwarpDifficulty: number = 1;
+  private preHyperwarpSpeed: number = 0; // Store player's selected speed before hyperwarp
 
   // Docking state
   private isDocking: boolean = false;
@@ -483,10 +486,11 @@ export class Game {
 
   /**
    * Update player movement based on engine speed
-   */
+  */
   private updatePlayerMovement(deltaTime: number): void {
     // Gradual acceleration/deceleration
-    const ACCELERATION_RATE = 4.0;
+    // Rate of 3.0 means ~7 seconds to decelerate from warp speed (20) to stop
+    const ACCELERATION_RATE = 3.0;
 
     if (this.gameState.engineSpeed !== this.gameState.targetEngineSpeed) {
       const diff = this.gameState.targetEngineSpeed - this.gameState.engineSpeed;
@@ -509,16 +513,47 @@ export class Game {
       // 2. Move Starbase (Relative to Player)
       if (this.currentStarbase) {
         this.currentStarbase.getObject().position.add(displacement);
+        this.wrapPositionInSector(this.currentStarbase.getObject().position);
       }
 
-      // 3. Move Enemies
+      // 3. Move Enemies - they wrap within sector boundaries
       this.combatSystem.applyPlayerMovement(displacement);
+      for (const enemy of this.combatSystem.getEnemies()) {
+        if (enemy.isActive) {
+          this.wrapPositionInSector(enemy.getObject().position);
+        }
+      }
 
       // 4. Move Torpedoes (They fly relative to space, so if we move "space", we move them?)
       // Actually, torpedoes have their own velocity in world space.
       // If the coordinate system is shifting around the player, they need to be shifted too.
+      // Note: Torpedoes don't wrap - they should expire if they leave the sector
       this.torpedoes.forEach(t => t.getObject().position.add(displacement));
     }
+  }
+
+  /**
+   * Wrap a position within sector boundaries (toroidal space)
+   * Sector matches LRS display range so everything is always visible
+   */
+  private wrapPositionInSector(position: THREE.Vector3): void {
+    // Match LRS RANGE of 500 - sector is ±500 units
+    const SECTOR_HALF_SIZE = 500;
+
+    // Wrap X
+    if (position.x > SECTOR_HALF_SIZE) {
+      position.x -= SECTOR_HALF_SIZE * 2;
+    } else if (position.x < -SECTOR_HALF_SIZE) {
+      position.x += SECTOR_HALF_SIZE * 2;
+    }
+
+    // Wrap Z (forward/back axis)
+    if (position.z > SECTOR_HALF_SIZE) {
+      position.z -= SECTOR_HALF_SIZE * 2;
+    } else if (position.z < -SECTOR_HALF_SIZE) {
+      position.z += SECTOR_HALF_SIZE * 2;
+    }
+    // Y (vertical) stays unchanged - space is flat in this game
   }
 
   /**
@@ -537,115 +572,9 @@ export class Game {
     }
   }
 
-  /**
-   * Handle player input
-   */
-  private handleInput(_deltaTime: number): void {
-    // ---- GLOBAL INPUTS (Available in all views) ----
 
-    // Speed control (0-9 keys) - works everywhere
-    for (let i = 0; i <= 9; i++) {
-      const key = i === 0 ? 'Digit0' : `Digit${i}`;
-      if (this.isKeyJustPressed(key)) {
-        this.setEngineSpeed(i);
-      }
-    }
 
-    // View Switching - (F, A, G, L) - Works everywhere (Hot Switching)
-    if (this.isKeyJustPressed('KeyF')) {
-      this.switchView(ViewMode.FRONT);
-    }
-    if (this.isKeyJustPressed('KeyA')) {
-      this.switchView(ViewMode.AFT);
-    }
-    if (this.isKeyJustPressed('KeyG')) {
-      if (this.gameState.currentView === ViewMode.GALACTIC_CHART) {
-        // Toggle off if already here
-        this.switchView(ViewMode.FRONT);
-      } else {
-        this.switchView(ViewMode.GALACTIC_CHART);
-      }
-    }
-    if (this.isKeyJustPressed('KeyL')) {
-      if (this.gameState.currentView === ViewMode.LONG_RANGE_SCAN) {
-        // Toggle off if already here
-        this.switchView(ViewMode.FRONT);
-      } else {
-        if (this.gameState.damage.longRangeScan) {
-          this.controlPanel.showMessage('LONG RANGE SCAN DAMAGED');
-        } else {
-          this.switchView(ViewMode.LONG_RANGE_SCAN);
-        }
-      }
-    }
 
-    // Toggle shields (S key) - Available everywhere? Or just cockpit?
-    // Let's assume global allowed for convenience as requested("jump all the way around")
-    if (this.isKeyJustPressed('KeyS')) {
-      const active = this.energySystem.toggleShields();
-      if (this.gameState.shieldsActive !== active) {
-        this.controlPanel.showMessage(active ? 'SHIELDS ACTIVATED' : 'SHIELDS DEACTIVATED');
-      }
-    }
-
-    // ---- MODE SPECIFIC INPUTS ----
-
-    // Galactic Chart Specifics
-    if (this.gameState.currentView === ViewMode.GALACTIC_CHART) {
-      this.handleChartInput();
-      // Don't process cockpit inputs (fire, rotate)
-      this.updateKeyStates();
-      return;
-    }
-
-    // Long Range Scan Specifics
-    // Long Range Scan - Allow rotation
-    if (this.gameState.currentView === ViewMode.LONG_RANGE_SCAN) {
-      const mouseMovement = this.inputManager.getMouseMovement();
-      // Only X rotation (Steering), Y (Pitch) is less relevant/visible on 2D map but let's allow both for feel
-      this.player.rotate(mouseMovement.x, mouseMovement.y);
-      this.updateKeyStates();
-      return;
-    }
-
-    // ---- COCKPIT INPUTS (Front/Aft) ----
-
-    // Get mouse movement for ship rotation
-    const mouseMovement = this.inputManager.getMouseMovement();
-
-    // In Aft view, controls are reversed
-    const reverseControls = this.gameState.currentView === ViewMode.AFT;
-    const xMultiplier = reverseControls ? -1 : 1;
-
-    // Rotate player based on mouse input
-    this.player.rotate(mouseMovement.x * xMultiplier, mouseMovement.y);
-
-    // Fire torpedo (Spacebar)
-    if (this.isKeyJustPressed('Space')) {
-      this.fireTorpedo();
-    }
-
-    // Targeting - T key for nearest, M key for next
-    if (this.isKeyJustPressed('KeyT')) {
-      const playerPos = this.player.getObject().position.clone();
-      const target = this.combatSystem.selectNearestTarget(playerPos);
-      if (target) {
-        this.controlPanel.showMessage(`TRACKING: ZYLON ${target.getType()}`);
-      } else {
-        this.controlPanel.showMessage('NO TARGETS IN RANGE');
-      }
-    }
-
-    if (this.isKeyJustPressed('KeyM')) {
-      const target = this.combatSystem.selectNextTarget();
-      if (target) {
-        this.controlPanel.showMessage(`TARGET: ZYLON ${target.getType()}`);
-      }
-    }
-
-    // Update key states for next frame
-    this.updateKeyStates();
-  }
 
   /**
    * Handle input when galactic chart is open
@@ -665,7 +594,7 @@ export class Game {
       this.galacticChart.moveCursor(1, 0);
     }
 
-    // H key to hyperwarp
+    // H key to hyperwarp (Directly from chart)
     if (this.isKeyJustPressed('KeyH')) {
       this.initiateHyperwarp();
     }
@@ -705,39 +634,136 @@ export class Game {
     this.isHyperwarping = true;
     this.hyperwarpProgress = 0;
     this.hyperwarpTarget = { x: cursor.x, y: cursor.y };
+    this.preHyperwarpSpeed = this.gameState.targetEngineSpeed; // Remember player's selected speed
+
+    // Initialize Steering State
+    // Start with some random misalignment
+    this.hyperwarpAlignment = {
+      x: (Math.random() - 0.5) * 20, // Start +/- 10vh off center
+      y: (Math.random() - 0.5) * 20
+    };
+
+    // Calculate difficulty based on distance
+    const dist = Math.sqrt(
+      Math.pow(cursor.x - this.gameState.sectorX, 2) +
+      Math.pow(cursor.y - this.gameState.sectorY, 2)
+    );
+    // Harder if jumping far
+    this.hyperwarpDifficulty = 1 + (dist * 0.5);
+
+    if (this.gameState.difficulty >= 'WARRIOR') {
+      this.hyperwarpDifficulty *= 1.5;
+    }
+
+    // Show Marker
+    this.controlPanel.setHyperwarpMarkerVisible(true);
+    this.controlPanel.updateHyperwarpMarker(this.hyperwarpAlignment.x, this.hyperwarpAlignment.y);
 
     // Consume energy
     this.gameState.consumeEnergy(cost);
 
-    this.controlPanel.showMessage('HYPERWARP ENGAGED');
+    this.controlPanel.showMessage('HYPERWARPENGAGED - STEER TO TARGET');
     this.gameState.currentView = ViewMode.FRONT;
+
+    // Reset player rotation so we warp "forward"
+    this.player.resetRotation();
   }
 
   /**
-   * Update hyperwarp animation
+   * Update hyperwarp animation and steering
    */
   private updateHyperwarp(deltaTime: number): void {
-    this.hyperwarpProgress += deltaTime * 0.5;
+    const WARP_DURATION = 5.0; // Seconds to complete warp
+    this.hyperwarpProgress += deltaTime / WARP_DURATION;
+
+    // --- STEERING MECHANIC ---
+    if (this.gameState.difficulty !== 'NOVICE') { // Novice doesn't need to steer
+      // 1. Apply Drift (pushes away from center or randomly)
+      // Simple Brownian motion for now
+      const driftStrength = 15 * this.hyperwarpDifficulty * deltaTime;
+      this.hyperwarpAlignment.x += (Math.random() - 0.5) * driftStrength;
+      this.hyperwarpAlignment.y += (Math.random() - 0.5) * driftStrength;
+
+      // Constant pull away from center scaling with difficulty
+      // this.hyperwarpAlignment.x += Math.sign(this.hyperwarpAlignment.x) * driftStrength * 0.1;
+
+      // 2. Apply Player Input (Mouse steers marker back to center)
+      const mouseMove = this.inputManager.getMouseMovement();
+      const steerPower = 40 * deltaTime; // Tuning value
+      // Note: To "steer into" the marker to fix it, we conceptually move the ship.
+      // If marker is Left, we turn Left. If we turn Left, the visual reference (marker) moves Right?
+      // Usually in flight sims: Steer TO the needle.
+      // Mouse X positive = Turn Right. 
+      // If I turn Right, the object in front looks like it moves Left.
+      this.hyperwarpAlignment.x -= mouseMove.x * steerPower;
+      this.hyperwarpAlignment.y -= mouseMove.y * steerPower;
+    } else {
+      // Auto-center for Novice
+      this.hyperwarpAlignment.x *= 0.95;
+      this.hyperwarpAlignment.y *= 0.95;
+    }
+
+    // Update UI
+    this.controlPanel.updateHyperwarpMarker(this.hyperwarpAlignment.x, this.hyperwarpAlignment.y);
+
 
     // Stretch starfield during warp
     const starfieldObj = this.starfield.getObject();
-    const stretchFactor = 1 + this.hyperwarpProgress * 10;
+    const stretchFactor = 1 + (Math.sin(this.hyperwarpProgress * Math.PI) * 10); // Pulse effect
     starfieldObj.scale.z = stretchFactor;
 
     // Move starfield rapidly using individual star recycling
     const direction = this.player.getForwardDirection();
-    this.starfield.updateMovement(direction.multiplyScalar(-500 * deltaTime));
+    this.starfield.updateMovement(direction.multiplyScalar(-1000 * deltaTime));
 
-    if (this.hyperwarpProgress >= 1 && this.hyperwarpTarget) {
+    if (this.hyperwarpProgress >= 1) {
       // Complete hyperwarp
-      this.gameState.sectorX = this.hyperwarpTarget.x;
-      this.gameState.sectorY = this.hyperwarpTarget.y;
-      this.sectorSystem.visitSector(this.hyperwarpTarget.x, this.hyperwarpTarget.y);
+      this.isHyperwarping = false;
+      this.controlPanel.setHyperwarpMarkerVisible(false); // Hide marker
+
+      if (!this.hyperwarpTarget) {
+        // Safety abort if target lost
+        this.starfield.getObject().scale.z = 1;
+        this.gameState.engineSpeed = 0;
+        return;
+      }
+
+      // Check Alignment Success
+
+      // Check Alignment Success
+      const alignmentError = Math.sqrt(
+        this.hyperwarpAlignment.x * this.hyperwarpAlignment.x +
+        this.hyperwarpAlignment.y * this.hyperwarpAlignment.y
+      );
+
+      const TOLERANCE = 10; // Acceptance radius (vh)
+      let arrivalX = this.hyperwarpTarget.x;
+      let arrivalY = this.hyperwarpTarget.y;
+
+      if (alignmentError > TOLERANCE && this.gameState.difficulty !== 'NOVICE') {
+        // MISJUMP!
+        this.controlPanel.showMessage('HYPERWARP ERROR: NAVIGATION FAILURE');
+        // Random adjacent sector
+        arrivalX += Math.floor(Math.random() * 3) - 1;
+        arrivalY += Math.floor(Math.random() * 3) - 1;
+        // Clamp to grid
+        arrivalX = Math.max(0, Math.min(7, arrivalX));
+        arrivalY = Math.max(0, Math.min(7, arrivalY));
+      }
+
+      this.gameState.sectorX = arrivalX;
+      this.gameState.sectorY = arrivalY;
+      this.sectorSystem.visitSector(arrivalX, arrivalY);
 
       // Reset starfield scale (position handled by individual star recycling)
       starfieldObj.scale.z = 1;
 
-      this.isHyperwarping = false;
+      // Decelerate from warp speed to player's last selected impulse speed
+      // Hyperspace moves at 1000 units/sec, normal impulse = engineSpeed * 50
+      // So warp speed equivalent = 1000 / 50 = 20
+      this.gameState.engineSpeed = 20; // Exit at actual warp velocity
+      this.gameState.targetEngineSpeed = this.preHyperwarpSpeed; // Decelerate to player's selection
+
       this.hyperwarpTarget = null;
 
       // Spawn contents for new sector
@@ -754,6 +780,98 @@ export class Game {
         }
       }
     }
+  }
+
+  /**
+   * Handle user input
+   */
+  private handleInput(_deltaTime: number): void {
+    if (this.isViewTransitioning) return;
+
+    // --- Global View Controls ---
+    if (this.isKeyJustPressed('KeyF')) this.switchView(ViewMode.FRONT);
+    if (this.isKeyJustPressed('KeyA')) this.switchView(ViewMode.AFT);
+    if (this.isKeyJustPressed('KeyG')) this.switchView(ViewMode.GALACTIC_CHART);
+    if (this.isKeyJustPressed('KeyL')) this.switchView(ViewMode.LONG_RANGE_SCAN);
+
+    // --- Impulse Engines (0-9) ---
+    for (let i = 0; i <= 9; i++) {
+      const key = i === 0 ? 'Digit0' : `Digit${i}`;
+      if (this.inputManager.isKeyPressed(key)) {
+        this.setEngineSpeed(i);
+      }
+    }
+
+    // --- View Specific Inputs ---
+    if (this.gameState.currentView === ViewMode.GALACTIC_CHART) {
+      this.handleChartInput();
+    }
+    else if (this.gameState.currentView === ViewMode.LONG_RANGE_SCAN) {
+      // Long Range Scan - Allow rotation
+      const mouseMovement = this.inputManager.getMouseMovement();
+      // Only X rotation (Steering), Y (Pitch) is less relevant/visible on 2D map but let's allow both for feel
+      this.player.rotate(mouseMovement.x, mouseMovement.y);
+    }
+    else if (this.gameState.currentView === ViewMode.FRONT || this.gameState.currentView === ViewMode.AFT) {
+      // --- Cockpit Controls (Front/Aft) ---
+
+      // Get mouse movement for ship rotation
+      const mouseMovement = this.inputManager.getMouseMovement();
+
+      // In Aft view, controls are reversed
+      const reverseControls = this.gameState.currentView === ViewMode.AFT;
+      const xMultiplier = reverseControls ? -1 : 1;
+
+      // Rotate player based on mouse input
+      this.player.rotate(mouseMovement.x * xMultiplier, mouseMovement.y);
+
+      // Shields
+      if (this.isKeyJustPressed('KeyS')) {
+        this.gameState.shieldsActive = !this.gameState.shieldsActive;
+        if (this.gameState.damage.shields) {
+          this.controlPanel.showMessage('SHIELDS DAMAGED');
+          this.gameState.shieldsActive = false;
+        } else {
+          this.controlPanel.showMessage(this.gameState.shieldsActive ? 'SHIELDS ACTIVATED' : 'SHIELDS DEACTIVATED');
+        }
+      }
+
+      // Fire Torpedo (Spacebar)
+      if (this.isKeyJustPressed('Space')) {
+        this.fireTorpedo();
+      }
+
+      // Targeting - T key for nearest, M key for next
+      if (this.isKeyJustPressed('KeyT')) {
+        const playerPos = this.player.getObject().position.clone();
+        // Note: selectNearestTarget logic from orphan
+        const target = this.combatSystem.selectNearestTarget(playerPos);
+        if (target) {
+          this.controlPanel.showMessage(`TRACKING: ZYLON ${target.getType()}`);
+        } else {
+          this.controlPanel.showMessage('NO TARGETS IN RANGE');
+        }
+      }
+
+      if (this.isKeyJustPressed('KeyM')) {
+        const target = this.combatSystem.selectNextTarget();
+        if (target) {
+          this.controlPanel.showMessage(`TARGET: ZYLON ${target.getType()}`);
+        }
+      }
+
+      // Hyperwarp Trigger (H Key) - Only works in Front View
+      if (this.isKeyJustPressed('KeyH')) {
+        if (this.gameState.currentView === ViewMode.FRONT) {
+          this.initiateHyperwarp();
+        } else {
+          this.controlPanel.showMessage('HYPERWARP: SWITCH TO FRONT VIEW');
+        }
+      }
+    }
+
+    // Update key states for next frame
+    this.updateKeyStates();
   }
 
   /**
