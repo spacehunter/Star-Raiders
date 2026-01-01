@@ -45,7 +45,12 @@ export class GameState {
   // Shields
   public shieldsActive: boolean = false;
 
+  // Hull integrity
+  public hull: number = 100;
+  public maxHull: number = 100;
+
   // Combat stats
+  public isUnderAttack: boolean = false;
   public enemiesDestroyed: number = 0;
   public totalEnemies: number = 0;
 
@@ -85,6 +90,9 @@ export class GameState {
     this.maxEnergy = 9999;
     this.engineSpeed = 0;
     this.shieldsActive = false;
+    this.hull = 100;
+    this.maxHull = 100;
+    this.isUnderAttack = false;
     this.enemiesDestroyed = 0;
     this.starDate = 2850.0;
     this.missionStartTime = Date.now();
@@ -212,5 +220,27 @@ export class GameState {
     this.damage[systemToDamage] = true;
 
     return systemToDamage;
+  }
+
+  /**
+   * Apply damage to hull, returns true if hull destroyed
+   */
+  public takeDamage(amount: number): boolean {
+    this.hull = Math.max(0, this.hull - amount);
+    return this.hull <= 0;
+  }
+
+  /**
+   * Check if hull is critically low
+   */
+  public isHullLow(): boolean {
+    return this.hull < this.maxHull * 0.25;
+  }
+
+  /**
+   * Repair hull (e.g., from starbase docking)
+   */
+  public repairHull(amount: number): void {
+    this.hull = Math.min(this.maxHull, this.hull + amount);
   }
 }
