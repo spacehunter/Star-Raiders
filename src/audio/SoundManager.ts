@@ -298,6 +298,58 @@ export class SoundManager {
   }
 
   /**
+   * Play shield hit sound - energy absorption crackle
+   */
+  public playShieldHit(): void {
+    if (!this.audioContext || !this.masterGain) return;
+
+    // Create a short noise burst for the impact crackle
+    const bufferSize = this.audioContext.sampleRate * 0.1;
+    const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    }
+
+    const source = this.audioContext.createBufferSource();
+    source.buffer = buffer;
+
+    // High-pass filter for a crackly energy feel
+    const filter = this.audioContext.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(2000, this.audioContext.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(500, this.audioContext.currentTime + 0.1);
+
+    const noiseGain = this.audioContext.createGain();
+    noiseGain.gain.setValueAtTime(0.25, this.audioContext.currentTime);
+    noiseGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.1);
+
+    source.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGain);
+
+    source.start();
+
+    // Add a resonant sweep to suggest shield energy
+    const osc = this.audioContext.createOscillator();
+    const oscGain = this.audioContext.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1200, this.audioContext.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(400, this.audioContext.currentTime + 0.15);
+
+    oscGain.gain.setValueAtTime(0.2, this.audioContext.currentTime);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.15);
+
+    osc.connect(oscGain);
+    oscGain.connect(this.masterGain);
+
+    osc.start();
+    osc.stop(this.audioContext.currentTime + 0.15);
+  }
+
+  /**
    * Play engine hum - continuous tone based on speed
    */
   private engineOsc: OscillatorNode | null = null;
