@@ -251,6 +251,13 @@ export class Game {
       this.currentStarbase = null;
     }
 
+    // Clear player torpedoes when leaving sector
+    for (const torpedo of this.torpedoes) {
+      this.scene.remove(torpedo.getObject());
+      torpedo.dispose();
+    }
+    this.torpedoes = [];
+
     // Clear enemy projectiles when leaving sector
     for (const projectile of this.enemyProjectiles) {
       this.scene.remove(projectile.getObject());
