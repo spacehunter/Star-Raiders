@@ -2,61 +2,76 @@ import * as THREE from 'three';
 
 /**
  * PhotonTorpedo - Projectile fired by the player
+ * Uses particle system for scrambled energy ball visual effect
  */
 export class PhotonTorpedo {
-  private mesh: THREE.Mesh;
+  private particles: THREE.Points;
+  private centerPosition: THREE.Vector3;
   private velocity: THREE.Vector3;
   private age: number = 0;
   private maxAge: number = 3; // Seconds before despawning
   private speed: number = 200; // Units per second
+  private particleCount: number = 20;
   public isActive: boolean = true;
 
   constructor(position: THREE.Vector3, direction: THREE.Vector3) {
-    // Create torpedo geometry - elongated sphere with glow effect
-    const geometry = new THREE.SphereGeometry(0.15, 8, 8);
-    geometry.scale(1, 1, 2); // Elongate
+    // Store center position for collision detection and particle positioning
+    this.centerPosition = position.clone();
 
-    // Bright emissive material (red/orange glow)
-    const material = new THREE.MeshBasicMaterial({
-      color: 0xff4400,
+    // Create particle geometry using BufferGeometry
+    const geometry = new THREE.BufferGeometry();
+
+    const positions = new Float32Array(this.particleCount * 3);
+    const colors = new Float32Array(this.particleCount * 3);
+
+    // Initialize particles around the center position
+    for (let i = 0; i < this.particleCount; i++) {
+      const i3 = i * 3;
+
+      // Random spherical offset from center
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const radius = Math.random() * 0.3;
+
+      positions[i3] = this.centerPosition.x + radius * Math.sin(phi) * Math.cos(theta);
+      positions[i3 + 1] = this.centerPosition.y + radius * Math.sin(phi) * Math.sin(theta);
+      positions[i3 + 2] = this.centerPosition.z + radius * Math.cos(phi);
+
+      // Cyan/blue colors for photon energy (#00FFFF to #0088FF range)
+      colors[i3] = 0; // R
+      colors[i3 + 1] = 0.5 + Math.random() * 0.5; // G (0.5-1.0)
+      colors[i3 + 2] = 1; // B
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    // Create PointsMaterial for particle rendering
+    const material = new THREE.PointsMaterial({
+      size: 0.12,
+      vertexColors: true,
       transparent: true,
       opacity: 0.9,
     });
 
-    this.mesh = new THREE.Mesh(geometry, material);
-    this.mesh.position.copy(position);
-
-    // Align torpedo to face direction of travel
-    const quaternion = new THREE.Quaternion();
-    quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.normalize());
-    this.mesh.quaternion.copy(quaternion);
+    this.particles = new THREE.Points(geometry, material);
 
     // Set velocity
     this.velocity = direction.normalize().multiplyScalar(this.speed);
-
-    // Add glow effect using a larger transparent sphere
-    const glowGeometry = new THREE.SphereGeometry(0.3, 8, 8);
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff6600,
-      transparent: true,
-      opacity: 0.4,
-    });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    this.mesh.add(glow);
   }
 
   /**
    * Get the Three.js object
    */
   public getObject(): THREE.Object3D {
-    return this.mesh;
+    return this.particles;
   }
 
   /**
    * Get current position
    */
   public getPosition(): THREE.Vector3 {
-    return this.mesh.position.clone();
+    return this.centerPosition.clone();
   }
 
   /**
@@ -65,8 +80,26 @@ export class PhotonTorpedo {
   public update(deltaTime: number): void {
     if (!this.isActive) return;
 
-    // Move torpedo
-    this.mesh.position.add(this.velocity.clone().multiplyScalar(deltaTime));
+    // Move center position
+    this.centerPosition.add(this.velocity.clone().multiplyScalar(deltaTime));
+
+    // Update particle positions with scrambled effect
+    const positions = this.particles.geometry.attributes.position.array as Float32Array;
+
+    for (let i = 0; i < this.particleCount; i++) {
+      const i3 = i * 3;
+
+      // Random spherical offset from center (scrambled effect)
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const radius = Math.random() * 0.3;
+
+      positions[i3] = this.centerPosition.x + radius * Math.sin(phi) * Math.cos(theta);
+      positions[i3 + 1] = this.centerPosition.y + radius * Math.sin(phi) * Math.sin(theta);
+      positions[i3 + 2] = this.centerPosition.z + radius * Math.cos(phi);
+    }
+
+    this.particles.geometry.attributes.position.needsUpdate = true;
 
     // Age the torpedo
     this.age += deltaTime;
@@ -75,7 +108,7 @@ export class PhotonTorpedo {
     }
 
     // Fade out as it ages
-    const material = this.mesh.material as THREE.MeshBasicMaterial;
+    const material = this.particles.material as THREE.PointsMaterial;
     material.opacity = 0.9 * (1 - this.age / this.maxAge);
   }
 
@@ -83,8 +116,8 @@ export class PhotonTorpedo {
    * Check collision with a target (simple sphere collision)
    */
   public checkCollision(targetPosition: THREE.Vector3, targetRadius: number): boolean {
-    const distance = this.mesh.position.distanceTo(targetPosition);
-    return distance < targetRadius + 0.15;
+    const distance = this.centerPosition.distanceTo(targetPosition);
+    return distance < targetRadius + 0.3; // 0.3 is the particle scatter radius
   }
 
   /**
@@ -98,13 +131,7 @@ export class PhotonTorpedo {
    * Dispose of resources
    */
   public dispose(): void {
-    this.mesh.geometry.dispose();
-    (this.mesh.material as THREE.Material).dispose();
-    this.mesh.children.forEach((child) => {
-      if (child instanceof THREE.Mesh) {
-        child.geometry.dispose();
-        (child.material as THREE.Material).dispose();
-      }
-    });
+    this.particles.geometry.dispose();
+    (this.particles.material as THREE.Material).dispose();
   }
 }
