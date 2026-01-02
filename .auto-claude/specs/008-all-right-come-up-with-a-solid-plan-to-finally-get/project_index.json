@@ -1,0 +1,47 @@
+{
+  "project_root": "/Users/moog/Documents/Star-Raiders",
+  "project_type": "single",
+  "services": {
+    "main": {
+      "name": "main",
+      "path": ".",
+      "language": "TypeScript",
+      "framework": "Three.js",
+      "type": "game",
+      "package_manager": "npm",
+      "build_tool": "Vite",
+      "default_port": 5173,
+      "dev_command": "npm run dev",
+      "test_command": "npm test",
+      "key_directories": {
+        "src": { "path": "src", "purpose": "Source code" },
+        "entities": { "path": "src/entities", "purpose": "Game entities (Player, Enemy, Projectiles)" },
+        "systems": { "path": "src/systems", "purpose": "Game systems (Combat, Energy, Scoring)" },
+        "game": { "path": "src/game", "purpose": "Core game classes (Game, GameState, GameLoop)" },
+        "ui": { "path": "src/ui", "purpose": "UI components (ControlPanel, MainMenu)" },
+        "views": { "path": "src/views", "purpose": "View overlays (GalacticChart, LongRangeScan)" },
+        "config": { "path": "src/config", "purpose": "Configuration constants" }
+      },
+      "entry_point": "src/main.ts",
+      "dependencies": ["three", "@types/three"],
+      "dev_dependencies": ["typescript", "vite"]
+    }
+  },
+  "infrastructure": {
+    "docker": false,
+    "database": null,
+    "ci_cd": false
+  },
+  "conventions": {
+    "typescript": true,
+    "linter": null,
+    "formatter": null,
+    "testing": "manual",
+    "patterns": {
+      "entity_pattern": "Classes with mesh, update(), getObject(), dispose() methods",
+      "projectile_pattern": "isActive flag, velocity, age-based lifecycle, checkCollision()",
+      "type_differentiation": "Switch/case in constructor based on type enum",
+      "array_management": "Backward iteration for removal, add/remove from scene"
+    }
+  }
+}

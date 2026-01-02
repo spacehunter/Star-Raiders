@@ -1,0 +1,482 @@
+{
+  "feature": "Enemy Weapon Firing System",
+  "workflow_type": "feature",
+  "workflow_rationale": "This is a new gameplay feature that extends the existing combat system. The infrastructure (enemy AI, targeting, fire rate logic) exists, but projectile spawning and player damage mechanics need to be built.",
+  "phases": [
+    {
+      "id": "phase-1-entity",
+      "name": "Create EnemyProjectile Entity",
+      "type": "implementation",
+      "description": "Create the EnemyProjectile class following the PhotonTorpedo pattern, with type-based differentiation for Fighter, Cruiser, and Basestar projectiles",
+      "depends_on": [],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-1-1",
+          "description": "Create EnemyProjectile class with configuration constants",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [
+            "src/entities/EnemyProjectile.ts"
+          ],
+          "patterns_from": [
+            "src/entities/PhotonTorpedo.ts",
+            "src/config/EnemyConfig.ts"
+          ],
+          "implementation_details": {
+            "config_structure": {
+              "FIGHTER": {
+                "speed": 180,
+                "damage": 100,
+                "color": "0x00ff88 (green)",
+                "size": 0.12
+              },
+              "CRUISER": {
+                "speed": 150,
+                "damage": 200,
+                "color": "0xff00ff (purple)",
+                "size": 0.18
+              },
+              "BASESTAR": {
+                "speed": 120,
+                "damage": 350,
+                "color": "0xffd700 (gold)",
+                "size": 0.25
+              }
+            },
+            "class_properties": [
+              "mesh",
+              "velocity",
+              "age",
+              "maxAge",
+              "damage",
+              "isActive",
+              "sourceType"
+            ],
+            "class_methods": [
+              "constructor(position, direction, enemyType)",
+              "getObject()",
+              "getPosition()",
+              "getDamage()",
+              "update(deltaTime)",
+              "checkCollision(targetPosition, targetRadius)",
+              "deactivate()",
+              "dispose()"
+            ]
+          },
+          "verification": {
+            "type": "command",
+            "command": "npx tsc --noEmit src/entities/EnemyProjectile.ts",
+            "expected": "No TypeScript errors"
+          },
+          "status": "completed",
+          "notes": "Created EnemyProjectile.ts with PROJECTILE_CONFIGS for Fighter/Cruiser/Basestar differentiation and full EnemyProjectile class following PhotonTorpedo pattern. Committed: 96dd7bc",
+          "updated_at": "2026-01-02T17:13:58.983255+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-2-gamestate",
+      "name": "Player Damage Handling",
+      "type": "implementation",
+      "description": "Add player damage application methods to GameState for when projectiles hit the player",
+      "depends_on": [
+        "phase-1-entity"
+      ],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-2-1",
+          "description": "Add applyEnemyDamage method to GameState",
+          "service": "main",
+          "files_to_modify": [
+            "src/game/GameState.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/game/GameState.ts"
+          ],
+          "implementation_details": {
+            "new_method": "applyEnemyDamage(amount: number, hasShields: boolean, difficulty: DifficultyLevel): { energyLost: number, systemDamaged: string | null }",
+            "shield_absorption": "70% damage reduction when shields active and not damaged",
+            "system_damage_chance": "10% on higher difficulties (not NOVICE)",
+            "possible_systems": [
+              "engines",
+              "shields",
+              "photonTorpedoes",
+              "attackComputer",
+              "longRangeScan"
+            ]
+          },
+          "verification": {
+            "type": "command",
+            "command": "npx tsc --noEmit src/game/GameState.ts",
+            "expected": "No TypeScript errors"
+          },
+          "status": "completed",
+          "notes": "Added applyEnemyDamage(amount, hasShields, difficulty) method to GameState that returns { energyLost, systemDamaged }. Shields reduce damage by 70% when active and not damaged. 10% system damage chance on non-NOVICE difficulties. Also added private applyRandomSystemDamage() helper. Committed: aa35949",
+          "updated_at": "2026-01-02T17:16:06.520913+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-3-integration",
+      "name": "Game.ts Integration",
+      "type": "implementation",
+      "description": "Integrate enemy projectile spawning, update loop, collision detection, and relative movement into Game.ts",
+      "depends_on": [
+        "phase-1-entity",
+        "phase-2-gamestate"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-3-1",
+          "description": "Add enemyProjectiles array and import EnemyProjectile class",
+          "service": "main",
+          "files_to_modify": [
+            "src/game/Game.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/game/Game.ts"
+          ],
+          "implementation_details": {
+            "add_import": "import { EnemyProjectile } from '../entities/EnemyProjectile';",
+            "add_property": "private enemyProjectiles: EnemyProjectile[] = [];",
+            "add_cleanup": "Clear in clearSectorContents() and dispose()"
+          },
+          "verification": {
+            "type": "command",
+            "command": "npx tsc --noEmit src/game/Game.ts",
+            "expected": "No TypeScript errors"
+          },
+          "status": "completed",
+          "notes": "Added import for EnemyProjectile class and enemyProjectiles array to Game.ts. Follows existing torpedoes array pattern.",
+          "updated_at": "2026-01-02T17:17:44.632395+00:00"
+        },
+        {
+          "id": "subtask-3-2",
+          "description": "Add enemy projectile spawning after combatSystem.update()",
+          "service": "main",
+          "files_to_modify": [
+            "src/game/Game.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/game/Game.ts"
+          ],
+          "implementation_details": {
+            "location": "In update() method, after combatSystem.update() call",
+            "logic": [
+              "Check each enemy with enemy.shouldFire(this.gameTime, playerPos)",
+              "If true, create EnemyProjectile with enemy.getPosition(), enemy.getFiringDirection(playerPos), enemy.getType()",
+              "Add to enemyProjectiles array and scene"
+            ],
+            "note": "Use getEnemyFiring() OR iterate enemies directly - either works"
+          },
+          "verification": {
+            "type": "manual",
+            "instructions": "Run game, enter sector with enemies, observe console logs for projectile spawning"
+          },
+          "status": "completed",
+          "notes": "Added enemy projectile spawning in Game.ts update loop after combatSystem.update(). Checks if any enemy should fire using getEnemyFiring(), creates EnemyProjectile with position, direction, and enemy type, then adds to scene and enemyProjectiles array.",
+          "updated_at": "2026-01-02T17:19:35.973693+00:00"
+        },
+        {
+          "id": "subtask-3-3",
+          "description": "Add updateEnemyProjectiles method for projectile lifecycle",
+          "service": "main",
+          "files_to_modify": [
+            "src/game/Game.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/game/Game.ts"
+          ],
+          "implementation_details": {
+            "method_signature": "private updateEnemyProjectiles(deltaTime: number): void",
+            "pattern": "Copy from updateTorpedoes() - backward iteration, call update(), cleanup inactive"
+          },
+          "verification": {
+            "type": "manual",
+            "instructions": "Projectiles should move and eventually disappear after maxAge"
+          },
+          "status": "completed",
+          "notes": "Added updateEnemyProjectiles method following the updateTorpedoes pattern. The method iterates through enemy projectiles, updates their position/age, and removes expired ones from the scene. Also added cleanup in dispose() and clearSectorContents() for proper resource management.",
+          "updated_at": "2026-01-02T17:23:01.766250+00:00"
+        },
+        {
+          "id": "subtask-3-4",
+          "description": "Add enemy projectile collision detection with player",
+          "service": "main",
+          "files_to_modify": [
+            "src/game/Game.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/game/Game.ts"
+          ],
+          "implementation_details": {
+            "method_signature": "private checkEnemyProjectileCollisions(): void",
+            "logic": [
+              "Skip if isHyperwarping is true",
+              "For each active enemyProjectile, check collision with player position (radius ~2)",
+              "On hit: projectile.deactivate(), call gameState.applyEnemyDamage()",
+              "Show damage message via controlPanel.showMessage()"
+            ],
+            "player_radius": 2
+          },
+          "verification": {
+            "type": "manual",
+            "instructions": "Stand still, let enemies fire, verify collision detection (energy should decrease)"
+          },
+          "status": "completed",
+          "notes": "Added checkEnemyProjectileCollisions() method that checks for collisions between enemy projectiles and the player (at origin with 2.5 unit collision radius). Integrated into updateEnemyProjectiles() loop. Uses gameState.applyEnemyDamage() for proper shield absorption and random system damage. Added getSystemDisplayName() helper for formatted messages. Shows appropriate control panel messages for shield hits, system damage, and normal hits.",
+          "updated_at": "2026-01-02T17:25:16.264585+00:00"
+        },
+        {
+          "id": "subtask-3-5",
+          "description": "Add enemy projectiles to updatePlayerMovement for relative coordinates",
+          "service": "main",
+          "files_to_modify": [
+            "src/game/Game.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/game/Game.ts"
+          ],
+          "implementation_details": {
+            "location": "In updatePlayerMovement(), after torpedoes displacement",
+            "add_line": "this.enemyProjectiles.forEach(p => p.getObject().position.add(displacement));"
+          },
+          "verification": {
+            "type": "manual",
+            "instructions": "Move while enemies fire, projectiles should maintain relative positions"
+          },
+          "status": "completed",
+          "notes": "Added enemy projectile displacement in updatePlayerMovement() at line 582-585. Enemy projectiles now receive the same displacement treatment as torpedoes, maintaining relative positions when player moves through space.",
+          "updated_at": "2026-01-02T17:26:57.567220+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-4-ui-feedback",
+      "name": "UI Feedback",
+      "type": "implementation",
+      "description": "Add visual and text feedback for player damage",
+      "depends_on": [
+        "phase-3-integration"
+      ],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-4-1",
+          "description": "Add damage-specific messages to ControlPanel",
+          "service": "main",
+          "files_to_modify": [
+            "src/ui/ControlPanel.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/ui/ControlPanel.ts"
+          ],
+          "implementation_details": {
+            "messages": {
+              "hit_no_shields": "TAKING FIRE!",
+              "hit_with_shields": "SHIELDS ABSORBING FIRE!",
+              "system_damage": "[SYSTEM] DAMAGED!",
+              "critical_energy": "ENERGY CRITICAL!"
+            },
+            "note": "Can use existing showMessage() - just need to call with appropriate text"
+          },
+          "verification": {
+            "type": "browser",
+            "url": "http://localhost:5173",
+            "checks": [
+              "Damage messages appear when hit",
+              "Shield messages appear when shields active"
+            ]
+          },
+          "status": "completed",
+          "notes": "Added showDamageMessage() method with 4 message types (damage/shield/critical/system) with distinct CSS styling. Added critical energy warning at 500 energy threshold. Updated Game.ts to use new method for damage feedback. Messages now display: 'TAKING FIRE!' (orange), 'SHIELDS ABSORBING FIRE!' (green), '[SYSTEM] DAMAGED!' (purple), 'ENERGY CRITICAL!' (red flashing). Committed: 6aa0f69",
+          "updated_at": "2026-01-02T17:30:00.626470+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-5-cleanup",
+      "name": "Cleanup and Polish",
+      "type": "cleanup",
+      "description": "Ensure proper cleanup of enemy projectiles and verify game balance",
+      "depends_on": [
+        "phase-4-ui-feedback"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-5-1",
+          "description": "Verify enemy projectile cleanup in clearSectorContents and dispose",
+          "service": "main",
+          "files_to_modify": [
+            "src/game/Game.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/game/Game.ts"
+          ],
+          "implementation_details": {
+            "clearSectorContents": "Clear enemyProjectiles array, remove from scene, dispose each",
+            "dispose": "Same cleanup pattern"
+          },
+          "verification": {
+            "type": "manual",
+            "instructions": "Hyperwarp between sectors, no memory leaks or orphaned projectiles"
+          },
+          "status": "completed",
+          "notes": "Verified enemy projectile cleanup is properly implemented in both clearSectorContents() and dispose() methods. Added player torpedo cleanup to clearSectorContents() for consistency - torpedoes now properly cleared during hyperwarp sector transitions to prevent orphaned objects and memory leaks.",
+          "updated_at": "2026-01-02T17:32:09.543733+00:00"
+        },
+        {
+          "id": "subtask-5-2",
+          "description": "Balance testing and tuning",
+          "service": "main",
+          "files_to_modify": [
+            "src/entities/EnemyProjectile.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [],
+          "implementation_details": {
+            "verify": [
+              "NOVICE is survivable for new players",
+              "COMMANDER is challenging but fair",
+              "Shields make meaningful difference",
+              "Different enemy types feel distinct"
+            ],
+            "tunable_values": [
+              "projectile speeds",
+              "damage values",
+              "shield absorption %"
+            ]
+          },
+          "verification": {
+            "type": "e2e",
+            "steps": [
+              "Play NOVICE difficulty for 2 minutes",
+              "Play COMMANDER difficulty for 2 minutes",
+              "Verify game is challenging but playable"
+            ]
+          },
+          "status": "in_progress",
+          "notes": "Starting balance testing and tuning. Analyzing current projectile configs and difficulty settings.",
+          "updated_at": "2026-01-02T17:40:20.331966+00:00"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_phases": 5,
+    "total_subtasks": 9,
+    "services_involved": [
+      "main"
+    ],
+    "parallelism": {
+      "max_parallel_phases": 1,
+      "parallel_groups": [],
+      "recommended_workers": 1,
+      "speedup_estimate": "N/A - sequential dependencies"
+    },
+    "startup_command": "npm run dev"
+  },
+  "verification_strategy": {
+    "risk_level": "medium",
+    "skip_validation": false,
+    "test_creation_phase": "post_implementation",
+    "test_types_required": [
+      "integration",
+      "manual"
+    ],
+    "security_scanning_required": false,
+    "staging_deployment_required": false,
+    "acceptance_criteria": [
+      "Enemies actively fire visible projectiles at the player",
+      "Fighter, Cruiser, and Basestar have visually distinct projectiles",
+      "Projectiles damage the player on collision (energy reduction)",
+      "Shields reduce damage when active",
+      "Damage messages display via control panel",
+      "System damage can occur on hits (higher difficulties)",
+      "No console errors during combat",
+      "Game is playable and balanced"
+    ],
+    "verification_steps": [
+      {
+        "name": "TypeScript Compilation",
+        "command": "npx tsc --noEmit",
+        "expected_outcome": "No TypeScript errors",
+        "type": "build",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Manual Gameplay Test",
+        "command": "npm run dev",
+        "expected_outcome": "Game runs, enemies fire, player can take damage",
+        "type": "manual",
+        "required": true,
+        "blocking": true
+      }
+    ],
+    "reasoning": "Medium risk feature affecting core combat system. Manual gameplay testing essential for balance verification. TypeScript compilation catches integration errors."
+  },
+  "qa_acceptance": {
+    "unit_tests": {
+      "required": false,
+      "commands": [],
+      "minimum_coverage": null,
+      "notes": "Project has no existing test infrastructure"
+    },
+    "integration_tests": {
+      "required": true,
+      "commands": [
+        "npx tsc --noEmit"
+      ],
+      "services_to_test": [
+        "main"
+      ],
+      "notes": "TypeScript compilation verifies integration between modules"
+    },
+    "e2e_tests": {
+      "required": true,
+      "commands": [],
+      "flows": [
+        "enemy-fires-at-player",
+        "player-takes-damage",
+        "shields-absorb-damage"
+      ],
+      "notes": "Manual gameplay testing required"
+    },
+    "browser_verification": {
+      "required": true,
+      "pages": [
+        {
+          "url": "http://localhost:5173",
+          "checks": [
+            "Enemy projectiles visible",
+            "Damage messages appear",
+            "Energy decreases on hit"
+          ]
+        }
+      ]
+    },
+    "database_verification": {
+      "required": false,
+      "checks": []
+    }
+  },
+  "qa_signoff": null,
+  "last_updated": "2026-01-02T17:40:20.331973+00:00",
+  "status": "in_progress",
+  "planStatus": "in_progress",
+  "updated_at": "2026-01-02T17:39:28.569Z",
+  "recoveryNote": "Task recovered from stuck state at 2026-01-02T17:39:28.569Z"
+}

@@ -151,4 +151,66 @@ export class GameState {
   public addEnergy(amount: number): void {
     this.energy = Math.min(this.maxEnergy, this.energy + amount);
   }
+
+  /**
+   * Apply damage from enemy attack
+   * @param amount - Base damage amount
+   * @param hasShields - Whether shields are currently active
+   * @param difficulty - Current difficulty level
+   * @returns Object with energy lost and any system damaged
+   */
+  public applyEnemyDamage(
+    amount: number,
+    hasShields: boolean,
+    difficulty: DifficultyLevel
+  ): { energyLost: number; systemDamaged: string | null } {
+    let actualDamage = amount;
+
+    // Shields reduce damage by 70% when active and not damaged
+    if (hasShields && !this.damage.shields) {
+      actualDamage = Math.floor(amount * 0.3);
+    }
+
+    // Apply damage to energy
+    this.energy = Math.max(0, this.energy - actualDamage);
+
+    // Check for random system damage on higher difficulties (10% chance)
+    let systemDamaged: string | null = null;
+    if (difficulty !== DifficultyLevel.NOVICE && Math.random() < 0.1) {
+      systemDamaged = this.applyRandomSystemDamage();
+    }
+
+    return {
+      energyLost: actualDamage,
+      systemDamaged,
+    };
+  }
+
+  /**
+   * Apply damage to a random undamaged system
+   * @returns Name of the damaged system, or null if all systems already damaged
+   */
+  private applyRandomSystemDamage(): string | null {
+    const damageable: (keyof DamageState)[] = [
+      'engines',
+      'shields',
+      'photonTorpedoes',
+      'attackComputer',
+      'longRangeScan',
+    ];
+
+    // Filter to only undamaged systems
+    const undamagedSystems = damageable.filter((system) => !this.damage[system]);
+
+    if (undamagedSystems.length === 0) {
+      return null;
+    }
+
+    // Pick a random system to damage
+    const systemToDamage =
+      undamagedSystems[Math.floor(Math.random() * undamagedSystems.length)];
+    this.damage[systemToDamage] = true;
+
+    return systemToDamage;
+  }
 }

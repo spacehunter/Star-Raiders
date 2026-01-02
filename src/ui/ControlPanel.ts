@@ -36,6 +36,11 @@ export class ControlPanel {
   private currentPhi: number = 0;
   private currentRange: number = 0;
 
+  // Critical energy warning tracking
+  private lastEnergyCriticalWarning: number = 0;
+  private readonly CRITICAL_ENERGY_THRESHOLD: number = 500;
+  private readonly CRITICAL_WARNING_COOLDOWN: number = 5000; // ms between warnings
+
   constructor(container: HTMLElement, gameState: GameState) {
     this.container = container;
     this.gameState = gameState;
@@ -352,6 +357,41 @@ export class ControlPanel {
         50.01%, 100% { opacity: 0; }
       }
 
+      /* Damage message type variants */
+      .message-display.message-damage {
+        color: #FF6600;
+        text-shadow:
+          0.2vh 0.2vh 0 #000000,
+          0 0 0.6vh #FF6600;
+      }
+
+      .message-display.message-shield {
+        color: #BAFF00;
+        text-shadow:
+          0.2vh 0.2vh 0 #000000,
+          0 0 0.6vh #BAFF00;
+      }
+
+      .message-display.message-critical {
+        color: #FF0000;
+        text-shadow:
+          0.2vh 0.2vh 0 #000000,
+          0 0 1vh #FF0000;
+        animation: critical-flash 0.3s infinite steps(2);
+      }
+
+      .message-display.message-system {
+        color: #FF00FF;
+        text-shadow:
+          0.2vh 0.2vh 0 #000000,
+          0 0 0.8vh #FF00FF;
+      }
+
+      @keyframes critical-flash {
+        0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+        50% { opacity: 0.7; transform: translateX(-50%) scale(1.05); }
+      }
+
       /* CHUNKY BLOCKY CROSSHAIR - Pixelated style */
       .crosshair {
         position: fixed;
@@ -501,6 +541,14 @@ export class ControlPanel {
       }
     }
 
+    // Critical energy warning
+    const now = Date.now();
+    if (energy > 0 && energy < this.CRITICAL_ENERGY_THRESHOLD &&
+        now - this.lastEnergyCriticalWarning > this.CRITICAL_WARNING_COOLDOWN) {
+      this.showDamageMessage('ENERGY CRITICAL!', 'critical');
+      this.lastEnergyCriticalWarning = now;
+    }
+
     // T: Targets remaining (will be updated externally)
     // Keep current value unless updated
 
@@ -569,11 +617,50 @@ export class ControlPanel {
    */
   public showMessage(message: string, duration: number = 3000): void {
     this.messageDisplay.textContent = message;
+    // Clear any damage message styling
+    this.clearMessageStyles();
     setTimeout(() => {
       if (this.messageDisplay.textContent === message) {
         this.messageDisplay.textContent = '';
+        this.clearMessageStyles();
       }
     }, duration);
+  }
+
+  /**
+   * Show a damage-specific message with appropriate styling
+   * @param message The message to display
+   * @param type The type of damage message: 'damage' (orange), 'shield' (green), 'critical' (red flash), 'system' (purple)
+   * @param duration How long to display the message (default 3000ms)
+   */
+  public showDamageMessage(
+    message: string,
+    type: 'damage' | 'shield' | 'critical' | 'system' = 'damage',
+    duration: number = 3000
+  ): void {
+    this.messageDisplay.textContent = message;
+    // Clear previous styles and apply new type
+    this.clearMessageStyles();
+    this.messageDisplay.classList.add(`message-${type}`);
+
+    setTimeout(() => {
+      if (this.messageDisplay.textContent === message) {
+        this.messageDisplay.textContent = '';
+        this.clearMessageStyles();
+      }
+    }, duration);
+  }
+
+  /**
+   * Clear all damage message styling classes
+   */
+  private clearMessageStyles(): void {
+    this.messageDisplay.classList.remove(
+      'message-damage',
+      'message-shield',
+      'message-critical',
+      'message-system'
+    );
   }
 
   /**

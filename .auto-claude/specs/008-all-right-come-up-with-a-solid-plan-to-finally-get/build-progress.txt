@@ -1,0 +1,63 @@
+=== AUTO-BUILD PROGRESS ===
+
+Project: Star Raiders - Enemy Weapon Firing System
+Spec: 008-all-right-come-up-with-a-solid-plan-to-finally-get
+Started: 2026-01-02
+
+Workflow Type: feature
+Rationale: New gameplay feature extending existing combat system. Infrastructure (AI, targeting, fire rates) exists; needs projectile spawning and damage application.
+
+Session 1 (Planner):
+- Completed Phase 0: Deep Codebase Investigation
+- Analyzed PhotonTorpedo.ts, Enemy.ts, EnemyConfig.ts, Game.ts, CombatSystem.ts, GameState.ts, ControlPanel.ts
+- Identified existing patterns and integration points
+- Created implementation_plan.json with 5 phases, 9 subtasks
+- Created init.sh startup script
+- Updated project_index.json and context.json
+
+Phase Summary:
+- Phase 1 (Entity Creation): 1 subtask - Create EnemyProjectile class
+- Phase 2 (GameState): 1 subtask - Add player damage handling
+- Phase 3 (Integration): 5 subtasks - Game.ts integration (array, spawn, update, collision, movement)
+- Phase 4 (UI Feedback): 1 subtask - Damage messages
+- Phase 5 (Cleanup): 2 subtasks - Cleanup and balance testing
+
+Services Involved:
+- main: TypeScript/Three.js game client (single service project)
+
+Key Files to Create:
+- src/entities/EnemyProjectile.ts
+
+Key Files to Modify:
+- src/game/Game.ts (main integration hub)
+- src/game/GameState.ts (damage handling)
+- src/systems/CombatSystem.ts (minor adjustments if needed)
+- src/ui/ControlPanel.ts (damage messages)
+
+Patterns to Follow:
+- PhotonTorpedo.ts: Projectile entity structure
+- Enemy.ts: Type differentiation with switch/case
+- Game.ts: Entity array management (backward iteration)
+- EnemyConfig.ts: Configuration constants pattern
+
+Critical Constraints:
+- Enemy projectiles must move in relative coordinates (like player torpedoes)
+- Don't modify existing shouldFire() logic or difficulty settings
+- Skip collision detection during hyperwarp
+- Orphaned projectiles continue flying after enemy death
+
+Parallelism Analysis:
+- Max parallel phases: 1 (sequential dependencies throughout)
+- Recommended workers: 1
+- No parallel groups identified
+
+=== STARTUP COMMAND ===
+
+To continue building this spec, run:
+
+  cd /Users/moog/Documents/Star-Raiders
+  npm run dev
+
+Then implement the subtasks in order as defined in implementation_plan.json.
+
+=== END SESSION 1 ===

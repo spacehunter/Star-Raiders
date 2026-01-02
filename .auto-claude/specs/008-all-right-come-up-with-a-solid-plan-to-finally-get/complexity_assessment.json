@@ -1,0 +1,93 @@
+{
+  "complexity": "standard",
+  "workflow_type": "feature",
+  "confidence": 0.85,
+  "reasoning": "Implementing enemy weapon firing requires creating a new EnemyProjectile class and integrating it with existing combat/damage systems. The codebase already has clear patterns (PhotonTorpedo, Enemy.shouldFire()) and difficulty-based behavior differentiation. The 'player types' mentioned refer to difficulty levels (NOVICE, PILOT, WARRIOR, COMMANDER) which already modify enemy fire rate, accuracy, and aggression. Scope is contained to 5-7 files in a single service with no external dependencies.",
+
+  "analysis": {
+    "scope": {
+      "estimated_files": 6,
+      "estimated_services": 1,
+      "is_cross_cutting": false,
+      "notes": "Files: EnemyProjectile.ts (new), CombatSystem.ts, Game.ts, GameState.ts, Enemy.ts (minor), VFXSystem.ts (hit effects). All changes are within the game client."
+    },
+    "integrations": {
+      "external_services": [],
+      "new_dependencies": [],
+      "research_needed": false,
+      "notes": "Uses existing Three.js patterns. No new libraries or external APIs required."
+    },
+    "infrastructure": {
+      "docker_changes": false,
+      "database_changes": false,
+      "config_changes": false,
+      "notes": "Pure TypeScript/Three.js implementation. No infrastructure changes needed."
+    },
+    "knowledge": {
+      "patterns_exist": true,
+      "research_required": false,
+      "unfamiliar_tech": [],
+      "notes": "PhotonTorpedo.ts provides exact template for projectile class. Enemy class already has shouldFire(), getLeadTargetPosition(), getFiringDirection() methods. DifficultySettings already define behavior differentiation (aggressionMultiplier, leadAccuracy, evasionChance)."
+    },
+    "risk": {
+      "level": "medium",
+      "concerns": [
+        "Game balance - enemies firing may make game too hard",
+        "Different firing behaviors per enemy type (FIGHTER vs CRUISER vs BASESTAR)",
+        "Player damage system needs to integrate with existing energy/shields",
+        "Performance if many projectiles are active simultaneously"
+      ],
+      "notes": "Careful tuning needed for fire rates and damage values. Existing difficulty system provides framework for balancing."
+    }
+  },
+
+  "clarifications": {
+    "player_types_resolved": "The user's reference to 'player types' actually means DIFFICULTY LEVELS (NOVICE, PILOT, WARRIOR, COMMANDER). Each difficulty already has different enemy behavior parameters defined in DIFFICULTY_SETTINGS.",
+    "enemy_types_identified": ["FIGHTER - aggressive, orbiting, 1.5s fire rate", "CRUISER - patrol/defensive, must be provoked, 2.5s fire rate", "BASESTAR - stationary, shielded, 3s fire rate"],
+    "existing_infrastructure": "Enemy.shouldFire() already implements timing logic with difficulty scaling. CombatSystem.getEnemyFiring() returns enemies ready to fire but doesn't spawn projectiles."
+  },
+
+  "recommended_phases": [
+    "discovery",
+    "requirements",
+    "context",
+    "spec_writing",
+    "planning",
+    "validation"
+  ],
+
+  "flags": {
+    "needs_research": false,
+    "needs_self_critique": false,
+    "needs_infrastructure_setup": false
+  },
+
+  "validation_recommendations": {
+    "risk_level": "medium",
+    "skip_validation": false,
+    "minimal_mode": false,
+    "test_types_required": ["unit", "integration"],
+    "security_scan_required": false,
+    "staging_deployment_required": false,
+    "reasoning": "Combat system changes require integration testing to verify projectile spawning, collision detection, and player damage work correctly. Unit tests for EnemyProjectile class and collision logic. No security concerns as this is a single-player game."
+  },
+
+  "implementation_notes": {
+    "key_tasks": [
+      "Create EnemyProjectile class (modeled after PhotonTorpedo)",
+      "Add projectile management to CombatSystem (array, spawning, updates)",
+      "Implement player collision detection in CombatSystem",
+      "Add player damage handling (integrate with GameState.energy/shields)",
+      "Differentiate firing patterns per enemy type (spread, single, burst)",
+      "Add visual feedback for player hits (VFXSystem integration)",
+      "Balance damage values and fire rates per difficulty"
+    ],
+    "enemy_behavior_differentiation": {
+      "FIGHTER": "Fast single shots, accurate lead targeting at higher difficulties",
+      "CRUISER": "Slower but heavier shots, only fires when provoked",
+      "BASESTAR": "Powerful shots, slower rate, always fires when player in range"
+    }
+  },
+
+  "created_at": "2025-01-02T16:30:00.000Z"
+}

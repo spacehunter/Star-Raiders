@@ -10,6 +10,7 @@ import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';
 import { Starfield } from '../entities/Starfield';
 import { Player } from '../entities/Player';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
+import { EnemyProjectile } from '../entities/EnemyProjectile';
 import { Starbase } from '../entities/Starbase';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GalacticChart } from '../views/GalacticChart';
@@ -58,6 +59,7 @@ export class Game {
   private starfield: Starfield;
   private player: Player;
   private torpedoes: PhotonTorpedo[] = [];
+  private enemyProjectiles: EnemyProjectile[] = [];
   private currentStarbase: Starbase | null = null;
 
   // State
@@ -248,6 +250,20 @@ export class Game {
       this.currentStarbase.dispose();
       this.currentStarbase = null;
     }
+
+    // Clear player torpedoes when leaving sector
+    for (const torpedo of this.torpedoes) {
+      this.scene.remove(torpedo.getObject());
+      torpedo.dispose();
+    }
+    this.torpedoes = [];
+
+    // Clear enemy projectiles when leaving sector
+    for (const projectile of this.enemyProjectiles) {
+      this.scene.remove(projectile.getObject());
+      projectile.dispose();
+    }
+    this.enemyProjectiles = [];
   }
 
   /**
@@ -328,6 +344,19 @@ export class Game {
     // This creates correct relative motion without needing compensation
     const playerPos = this.player.getObject().position.clone();
     this.combatSystem.update(deltaTime, playerPos);
+
+    // Spawn enemy projectiles
+    const firingEnemy = this.combatSystem.getEnemyFiring(this.gameTime, playerPos);
+    if (firingEnemy) {
+      const projectilePosition = firingEnemy.getPosition();
+      const firingDirection = firingEnemy.getFiringDirection(playerPos);
+      const projectile = new EnemyProjectile(projectilePosition, firingDirection, firingEnemy.getType());
+      this.enemyProjectiles.push(projectile);
+      this.scene.add(projectile.getObject());
+    }
+
+    // Update enemy projectiles
+    this.updateEnemyProjectiles(deltaTime);
 
     // Update starbase attack system (enemy strategic AI)
     this.starbaseAttackSystem.update(
@@ -556,6 +585,11 @@ export class Game {
       // If the coordinate system is shifting around the player, they need to be shifted too.
       // Note: Torpedoes don't wrap - they should expire if they leave the sector
       this.torpedoes.forEach(t => t.getObject().position.add(displacement));
+
+      // 5. Move Enemy Projectiles - same treatment as torpedoes
+      // They fly through world space, so player movement displaces them
+      // Note: Enemy projectiles don't wrap - they should expire naturally
+      this.enemyProjectiles.forEach(p => p.getObject().position.add(displacement));
     }
   }
 
@@ -607,6 +641,80 @@ export class Game {
         this.torpedoes.splice(i, 1);
       }
     }
+  }
+
+  /**
+   * Update enemy projectiles - move, age, and remove expired projectiles
+   */
+  private updateEnemyProjectiles(deltaTime: number): void {
+    for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
+      const projectile = this.enemyProjectiles[i];
+      projectile.update(deltaTime);
+
+      if (!projectile.isActive) {
+        this.scene.remove(projectile.getObject());
+        projectile.dispose();
+        this.enemyProjectiles.splice(i, 1);
+      }
+    }
+
+    // Check for collisions with player
+    this.checkEnemyProjectileCollisions();
+  }
+
+  /**
+   * Check enemy projectile collisions with player
+   * Player is at origin (0,0,0) since world moves around player
+   */
+  private checkEnemyProjectileCollisions(): void {
+    const PLAYER_COLLISION_RADIUS = 2.5; // Player ship hitbox radius
+    const playerPos = new THREE.Vector3(0, 0, 0);
+
+    for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
+      const projectile = this.enemyProjectiles[i];
+      if (!projectile.isActive) continue;
+
+      if (projectile.checkCollision(playerPos, PLAYER_COLLISION_RADIUS)) {
+        // Hit! Apply damage to player
+        const damage = projectile.getDamage();
+        const result = this.gameState.applyEnemyDamage(
+          damage,
+          this.gameState.shieldsActive,
+          this.gameState.difficulty
+        );
+
+        // Deactivate and remove the projectile
+        projectile.deactivate();
+        this.scene.remove(projectile.getObject());
+        projectile.dispose();
+        this.enemyProjectiles.splice(i, 1);
+
+        // Display hit message with damage-specific styling
+        if (result.systemDamaged) {
+          const systemName = this.getSystemDisplayName(result.systemDamaged);
+          this.controlPanel.showDamageMessage(`${systemName} DAMAGED!`, 'system');
+        } else if (this.gameState.shieldsActive && !this.gameState.damage.shields) {
+          this.controlPanel.showDamageMessage('SHIELDS ABSORBING FIRE!', 'shield');
+        } else {
+          this.controlPanel.showDamageMessage('TAKING FIRE!', 'damage');
+        }
+      }
+    }
+  }
+
+  /**
+   * Get display name for a damaged system
+   */
+  private getSystemDisplayName(systemKey: string): string {
+    const displayNames: Record<string, string> = {
+      engines: 'ENGINES',
+      shields: 'SHIELDS',
+      photonTorpedoes: 'PHOTON TORPEDOES',
+      subSpaceRadio: 'SUB-SPACE RADIO',
+      longRangeScan: 'LONG RANGE SCAN',
+      attackComputer: 'ATTACK COMPUTER',
+    };
+    return displayNames[systemKey] || systemKey.toUpperCase();
   }
 
 
@@ -1137,6 +1245,12 @@ export class Game {
       torpedo.dispose();
     }
     this.torpedoes = [];
+
+    for (const projectile of this.enemyProjectiles) {
+      this.scene.remove(projectile.getObject());
+      projectile.dispose();
+    }
+    this.enemyProjectiles = [];
 
     this.renderer.dispose();
     window.removeEventListener('resize', this.handleResize);
