@@ -1000,7 +1000,7 @@ export class Game {
   }
 
   /**
-   * Fire a photon torpedo
+   * Fire dual photon torpedoes from port and starboard cannons
    */
   private fireTorpedo(): void {
     if (
@@ -1024,18 +1024,50 @@ export class Game {
       return;
     }
 
-    const position = this.player.getObject().position.clone();
+    const playerPos = this.player.getObject().position.clone();
     let direction = this.player.getForwardDirection();
 
     if (this.gameState.currentView === ViewMode.AFT) {
       direction.negate();
     }
 
-    position.add(direction.clone().multiplyScalar(2));
+    // Get player's rotation quaternions for transforming offset positions
+    const pitchQuaternion = this.player.getCameraTarget().quaternion;
+    const yawQuaternion = this.player.getObject().quaternion;
 
-    const torpedo = new PhotonTorpedo(position, direction);
-    this.torpedoes.push(torpedo);
-    this.scene.add(torpedo.getObject());
+    // Define cannon offsets relative to ship center
+    // Port (left) and starboard (right) wing positions, slightly forward
+    const portOffset = new THREE.Vector3(-0.6, 0, -0.5);
+    const starboardOffset = new THREE.Vector3(0.6, 0, -0.5);
+
+    // For aft view, flip the z offset (fire from rear of wings)
+    if (this.gameState.currentView === ViewMode.AFT) {
+      portOffset.z = 0.5;
+      starboardOffset.z = 0.5;
+    }
+
+    // Apply player rotation to offsets (pitch first, then yaw - same as getForwardDirection)
+    portOffset.applyQuaternion(pitchQuaternion);
+    portOffset.applyQuaternion(yawQuaternion);
+    starboardOffset.applyQuaternion(pitchQuaternion);
+    starboardOffset.applyQuaternion(yawQuaternion);
+
+    // Calculate final firing positions
+    const portPosition = playerPos.clone().add(portOffset);
+    const starboardPosition = playerPos.clone().add(starboardOffset);
+
+    // Add forward offset to both positions
+    portPosition.add(direction.clone().multiplyScalar(2));
+    starboardPosition.add(direction.clone().multiplyScalar(2));
+
+    // Create dual torpedoes
+    const portTorpedo = new PhotonTorpedo(portPosition, direction.clone());
+    const starboardTorpedo = new PhotonTorpedo(starboardPosition, direction.clone());
+
+    this.torpedoes.push(portTorpedo);
+    this.torpedoes.push(starboardTorpedo);
+    this.scene.add(portTorpedo.getObject());
+    this.scene.add(starboardTorpedo.getObject());
   }
 
   /**
