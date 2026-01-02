@@ -241,8 +241,8 @@ export class GalacticChart {
 
       .chart-grid {
         display: grid;
-        grid-template-columns: repeat(${SectorSystem.GRID_WIDTH}, 1fr);
-        grid-template-rows: repeat(${SectorSystem.GRID_HEIGHT}, 1fr);
+        grid-template-columns: repeat(16, 1fr);
+        grid-template-rows: repeat(8, 1fr);
         height: 65vh; /* Larger grid */
         width: 80vh;  /* Wide aspect ratio */
         background: transparent;
