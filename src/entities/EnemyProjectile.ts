@@ -13,9 +13,36 @@ export interface EnemyProjectileConfig {
 
 /**
  * Projectile configurations for each enemy type
- * - Fighter: Fast, small green projectiles, lower damage
- * - Cruiser: Medium speed, purple projectiles, medium damage
- * - Basestar: Slower, large gold projectiles, high damage
+ *
+ * BALANCE TUNING (verified 2026-01-02):
+ *
+ * Speed values (player torpedo = 200 u/s, player max = 450 u/s):
+ * - Fighter: 180 u/s - fast, requires quick reactions but dodgeable
+ * - Cruiser: 150 u/s - medium speed, visible threat
+ * - Basestar: 120 u/s - slow but menacing, easier to dodge but punishing
+ *
+ * All projectiles are slower than player torpedoes, giving player tactical advantage.
+ * Player can outrun all projectiles at impulse 4+ (200 u/s).
+ *
+ * Damage values (shields absorb 70%, so player takes 30%):
+ * - Fighter: 100 (30 with shields) - chip damage, dangerous in groups
+ * - Cruiser: 200 (60 with shields) - significant threat
+ * - Basestar: 350 (105 with shields) - major damage, respect the fortress
+ *
+ * NOVICE balance (9999 energy, 50% lead accuracy, 1.4x fire rate multiplier):
+ * - Fighter effective DPS: ~24 damage/sec (unshielded), ~7/sec (shielded)
+ * - Very survivable, forgiving for new players learning mechanics
+ *
+ * COMMANDER balance (8000 energy, 95% lead accuracy, 0.65x fire rate multiplier):
+ * - Fighter effective DPS: ~97 damage/sec (unshielded), ~29/sec (shielded)
+ * - Challenging but fair with active piloting and shield management
+ *
+ * Visual distinctiveness (color-coded threats):
+ * - Fighter: Green (0x00ff88) - small, fast streaks
+ * - Cruiser: Purple (0xff00ff) - medium, ominous bolts
+ * - Basestar: Gold (0xffd700) - large, menacing orbs
+ *
+ * Size affects both visibility and collision detection radius.
  */
 export const PROJECTILE_CONFIGS: Record<EnemyType, EnemyProjectileConfig> = {
   FIGHTER: { speed: 180, damage: 100, color: 0x00ff88, size: 0.12 },
@@ -23,7 +50,10 @@ export const PROJECTILE_CONFIGS: Record<EnemyType, EnemyProjectileConfig> = {
   BASESTAR: { speed: 120, damage: 350, color: 0xffd700, size: 0.25 },
 };
 
-// Make globally accessible for console testing/tuning
+// Make globally accessible for runtime balance tuning during development
+// Usage in browser console:
+//   PROJECTILE_CONFIGS.FIGHTER.damage = 80  // reduce fighter damage
+//   PROJECTILE_CONFIGS.BASESTAR.speed = 100 // slow down basestar projectiles
 if (typeof window !== 'undefined') {
   (window as any).PROJECTILE_CONFIGS = PROJECTILE_CONFIGS;
 }

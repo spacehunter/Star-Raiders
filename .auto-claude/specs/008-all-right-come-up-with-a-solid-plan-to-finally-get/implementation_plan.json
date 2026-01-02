@@ -225,7 +225,7 @@
               "On hit: projectile.deactivate(), call gameState.applyEnemyDamage()",
               "Show damage message via controlPanel.showMessage()"
             ],
-            "player_radius": 2.0
+            "player_radius": 2
           },
           "verification": {
             "type": "manual",
@@ -254,7 +254,9 @@
             "type": "manual",
             "instructions": "Move while enemies fire, projectiles should maintain relative positions"
           },
-          "status": "pending"
+          "status": "completed",
+          "notes": "Added enemy projectile displacement in updatePlayerMovement() at line 582-585. Enemy projectiles now receive the same displacement treatment as torpedoes, maintaining relative positions when player moves through space.",
+          "updated_at": "2026-01-02T17:26:57.567220+00:00"
         }
       ]
     },
@@ -296,7 +298,9 @@
               "Shield messages appear when shields active"
             ]
           },
-          "status": "pending"
+          "status": "completed",
+          "notes": "Added showDamageMessage() method with 4 message types (damage/shield/critical/system) with distinct CSS styling. Added critical energy warning at 500 energy threshold. Updated Game.ts to use new method for damage feedback. Messages now display: 'TAKING FIRE!' (orange), 'SHIELDS ABSORBING FIRE!' (green), '[SYSTEM] DAMAGED!' (purple), 'ENERGY CRITICAL!' (red flashing). Committed: 6aa0f69",
+          "updated_at": "2026-01-02T17:30:00.626470+00:00"
         }
       ]
     },
@@ -329,7 +333,9 @@
             "type": "manual",
             "instructions": "Hyperwarp between sectors, no memory leaks or orphaned projectiles"
           },
-          "status": "pending"
+          "status": "completed",
+          "notes": "Verified enemy projectile cleanup is properly implemented in both clearSectorContents() and dispose() methods. Added player torpedo cleanup to clearSectorContents() for consistency - torpedoes now properly cleared during hyperwarp sector transitions to prevent orphaned objects and memory leaks.",
+          "updated_at": "2026-01-02T17:32:09.543733+00:00"
         },
         {
           "id": "subtask-5-2",
@@ -361,7 +367,9 @@
               "Verify game is challenging but playable"
             ]
           },
-          "status": "pending"
+          "status": "in_progress",
+          "notes": "Starting balance testing and tuning. Analyzing current projectile configs and difficulty settings.",
+          "updated_at": "2026-01-02T17:40:20.331966+00:00"
         }
       ]
     }
@@ -466,5 +474,9 @@
     }
   },
   "qa_signoff": null,
-  "last_updated": "2026-01-02T17:25:16.264593+00:00"
+  "last_updated": "2026-01-02T17:40:20.331973+00:00",
+  "status": "in_progress",
+  "planStatus": "in_progress",
+  "updated_at": "2026-01-02T17:39:28.569Z",
+  "recoveryNote": "Task recovered from stuck state at 2026-01-02T17:39:28.569Z"
 }
