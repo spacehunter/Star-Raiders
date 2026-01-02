@@ -1,0 +1,33 @@
+{
+  "subtasks": {
+    "subtask-1-1": {
+      "attempts": [
+        {
+          "session": 1,
+          "timestamp": "2026-01-02T11:14:16.469407",
+          "approach": "Implemented: Create EnemyProjectile class with configuration constants",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    },
+    "subtask-2-1": {
+      "attempts": [
+        {
+          "session": 2,
+          "timestamp": "2026-01-02T11:16:17.624547",
+          "approach": "Implemented: Add applyEnemyDamage method to GameState",
+          "success": true,
+          "error": null
+        }
+      ],
+      "status": "completed"
+    }
+  },
+  "stuck_subtasks": [],
+  "metadata": {
+    "created_at": "2026-01-02T11:12:01.655083",
+    "last_updated": "2026-01-02T11:16:17.624551"
+  }
+}

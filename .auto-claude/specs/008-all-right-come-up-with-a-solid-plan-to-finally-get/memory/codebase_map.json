@@ -1,0 +1,10 @@
+{
+  "discovered_files": {
+    "src/entities/EnemyProjectile.ts": {
+      "description": "EnemyProjectile class follows PhotonTorpedo pattern with type-based configs. PROJECTILE_CONFIGS record maps EnemyType to speed/damage/color/size. Global window exposure pattern used for console tuning.",
+      "category": "pattern",
+      "discovered_at": "2026-01-02T17:14:07.075244+00:00"
+    }
+  },
+  "last_updated": "2026-01-02T17:14:07.075251+00:00"
+}

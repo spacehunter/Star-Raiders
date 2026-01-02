@@ -10,6 +10,7 @@ import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';
 import { Starfield } from '../entities/Starfield';
 import { Player } from '../entities/Player';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
+import { EnemyProjectile } from '../entities/EnemyProjectile';
 import { Starbase } from '../entities/Starbase';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GalacticChart } from '../views/GalacticChart';
@@ -58,6 +59,7 @@ export class Game {
   private starfield: Starfield;
   private player: Player;
   private torpedoes: PhotonTorpedo[] = [];
+  private enemyProjectiles: EnemyProjectile[] = [];
   private currentStarbase: Starbase | null = null;
 
   // State

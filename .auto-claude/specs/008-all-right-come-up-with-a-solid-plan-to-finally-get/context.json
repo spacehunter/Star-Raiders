@@ -1,0 +1,46 @@
+{
+  "task_description": "Implement enemy weapon firing system with behavior differentiation based on enemy types (Fighter, Cruiser, Basestar) and difficulty levels",
+  "scoped_services": ["main"],
+  "files_to_modify": {
+    "main": [
+      "src/entities/EnemyProjectile.ts",
+      "src/game/Game.ts",
+      "src/systems/CombatSystem.ts",
+      "src/game/GameState.ts",
+      "src/ui/ControlPanel.ts"
+    ]
+  },
+  "files_to_reference": [
+    "src/entities/PhotonTorpedo.ts",
+    "src/entities/Enemy.ts",
+    "src/config/EnemyConfig.ts",
+    "src/game/Game.ts"
+  ],
+  "patterns": {
+    "projectile_pattern": "PhotonTorpedo uses mesh, velocity, age, maxAge, isActive with update(), checkCollision(), dispose()",
+    "enemy_type_pattern": "Enemy.ts uses switch/case in constructor for FIGHTER/CRUISER/BASESTAR differentiation",
+    "entity_management": "Game.ts manages torpedoes array with backward iteration, scene.add/remove, dispose()",
+    "config_pattern": "EnemyConfig.ts exports ENEMY_CONFIG object with grouped constants"
+  },
+  "existing_implementations": {
+    "description": "Enemy firing infrastructure exists but projectile spawning is missing",
+    "relevant_methods": {
+      "Enemy.shouldFire()": "Returns true when enemy should fire (timing + difficulty scaling)",
+      "Enemy.getFiringDirection()": "Returns normalized aim vector with lead targeting",
+      "Enemy.getLeadTargetPosition()": "Predicts player position based on velocity",
+      "CombatSystem.getEnemyFiring()": "Returns enemy ready to fire or null - NOT CURRENTLY USED"
+    },
+    "difficulty_settings": {
+      "NOVICE": { "aggressionMultiplier": 1.4, "leadAccuracy": 0.5 },
+      "PILOT": { "aggressionMultiplier": 1.0, "leadAccuracy": 0.65 },
+      "WARRIOR": { "aggressionMultiplier": 0.8, "leadAccuracy": 0.8 },
+      "COMMANDER": { "aggressionMultiplier": 0.65, "leadAccuracy": 0.95 }
+    }
+  },
+  "constraints": {
+    "relative_coordinates": "Projectiles must move with space like player torpedoes in updatePlayerMovement()",
+    "preserve_existing": "Don't modify shouldFire() logic or difficulty settings",
+    "hyperwarp_skip": "Skip collision detection during player hyperwarp"
+  },
+  "created_at": "2026-01-02T11:30:00.000Z"
+}
