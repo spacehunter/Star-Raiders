@@ -245,13 +245,13 @@ export class GalacticChart {
         height: 65vh; /* Larger grid */
         width: 140vh;  /* Wide enough for 16 cells with 8x8 sprites */
         background: transparent;
-        border: 0.4vh solid #55AAFF;
-        margin-top: 0.4vh; /* Up 1px */
-        margin-left: 0.4vh; /* Right 1px (Adjusted from 0.8vh) */
+        border: 0.2vh solid #55AAFF;
+        margin-top: 0.2vh; /* Up 1px */
+        margin-left: 0.2vh; /* Right 1px (Adjusted from 0.8vh) */
       }
 
       .chart-cell {
-        border: 0.4vh solid #55AAFF;
+        border: 0.2vh solid #55AAFF;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -316,8 +316,8 @@ export class GalacticChart {
         height: 3.2vh;
         background: transparent;
         transform: scale(2.0); /* Scale to ~6.4vh to fit 8.75vh cells */
-        top: -0.4vh; /* Counteract grid 0.4vh */
-        left: -0.4vh; /* Counteract grid 0.4vh */
+        top: -0.2vh; /* Counteract grid 0.2vh */
+        left: -0.2vh; /* Counteract grid 0.2vh */
       }
       
       /* The Pixel Renderer */
