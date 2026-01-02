@@ -1,0 +1,25 @@
+{
+  "active": true,
+  "spec": "005-come-to-speed-on-the-project-make-sure-you-have-a-",
+  "state": "building",
+  "subtasks": {
+    "completed": 0,
+    "total": 9,
+    "in_progress": 1,
+    "failed": 0
+  },
+  "phase": {
+    "current": "Core System Updates",
+    "id": null,
+    "total": 3
+  },
+  "workers": {
+    "active": 0,
+    "max": 1
+  },
+  "session": {
+    "number": 1,
+    "started_at": "2026-01-02T11:07:22.656649"
+  },
+  "last_update": "2026-01-02T11:07:22.663114"
+}

@@ -1,0 +1,90 @@
+=== AUTO-BUILD PROGRESS ===
+
+Project: Star Raiders - Fix Galactic Chart Grid Dimensions
+Spec: 005-come-to-speed-on-the-project
+Workspace: /Users/moog/Documents/Star-Raiders
+Started: 2026-01-02
+
+Workflow Type: feature
+Rationale: Targeted fix requiring coordinated changes across multiple files (system, view, state) while preserving existing functionality.
+
+Session 1 (Planner):
+- Created implementation_plan.json
+- Phases: 4
+- Total subtasks: 8
+- Created init.sh
+
+Phase Summary:
+- Phase 1 (Core System Updates): 3 subtasks, depends on []
+  - Replace GRID_SIZE with GRID_WIDTH/GRID_HEIGHT
+  - Update all grid iteration loops
+  - Expand starbase placement regions
+- Phase 2 (Rendering Updates): 3 subtasks, depends on [phase-1]
+  - Update grid creation loop to 16×8
+  - Update CSS grid template
+  - Update cursor navigation bounds
+- Phase 3 (Game State Updates): 1 subtask, depends on [phase-1]
+  - Update player starting position to (8,4)
+- Phase 4 (Integration Verification): 2 subtasks, depends on [phase-2, phase-3]
+  - Verify TypeScript build
+  - Visual verification of 16×8 grid
+
+Files to Modify:
+- src/systems/SectorSystem.ts (core grid constants and logic)
+- src/views/GalacticChart.ts (rendering and cursor navigation)
+- src/game/GameState.ts (player starting position)
+
+Files to Reference:
+- src/systems/StarbaseAttackSystem.ts (uses GRID_SIZE, will work with new constants)
+- src/views/LongRangeScan.ts (not affected, uses real-time positions)
+- src/systems/EnergySystem.ts (warp calculations, works with any coordinates)
+
+Services Involved:
+- main: Single TypeScript application (Vite + Three.js)
+
+Parallelism Analysis:
+- Max parallel phases: 2
+- Recommended workers: 1
+- Parallel groups: [phase-2-rendering, phase-3-state] can run together
+
+Key Changes Summary:
+1. SectorSystem.ts Line 17:
+   - Before: public static readonly GRID_SIZE = 8
+   - After:  public static readonly GRID_WIDTH = 16
+            public static readonly GRID_HEIGHT = 8
+
+2. GalacticChart.ts Lines 244-245 (CSS):
+   - Before: repeat(8, 1fr) for both
+   - After:  repeat(16, 1fr) for columns, repeat(8, 1fr) for rows
+
+3. GalacticChart.ts Lines 452-453 (cursor bounds):
+   - Before: Math.min(7, ...)
+   - After:  Math.min(15, cursorX + dx) for X
+            Math.min(7, cursorY + dy) for Y
+
+4. GameState.ts Lines 73, 95:
+   - Before: sectorX = 4
+   - After:  sectorX = 8 (center of 16-column grid)
+
+Success Criteria:
+- [ ] Grid displays 16 columns × 8 rows (128 total sectors)
+- [ ] Cursor navigates to all corners: (0,0), (15,0), (0,7), (15,7)
+- [ ] Player starts at sector (8, 4)
+- [ ] Starbases spawn across full 16-column width
+- [ ] No TypeScript compilation errors
+- [ ] No console errors during gameplay
+
+=== STARTUP COMMAND ===
+
+To continue building this spec, run:
+
+  source auto-claude/.venv/bin/activate && python auto-claude/run.py --spec 005 --parallel 1
+
+Or to start the dev server manually:
+
+  cd /Users/moog/Documents/Star-Raiders
+  npm run dev
+
+Then open http://localhost:5173 and press 'G' in-game to view the Galactic Chart.
+
+=== END SESSION 1 ===

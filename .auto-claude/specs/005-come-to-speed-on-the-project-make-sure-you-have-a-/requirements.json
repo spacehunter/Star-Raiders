@@ -1,0 +1,4 @@
+{
+  "task_description": "Come to speed on the project. Make sure you have a solid foundation of the architecture of this game. I want to look at the galactic chart. Right now we have a grid that is 8 by 8 when it should be 16 by 8. So that is 16 columns in 8 rows. That is what it should be. So investigate that.",
+  "workflow_type": "feature"
+}
