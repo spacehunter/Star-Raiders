@@ -682,14 +682,14 @@ export class Game {
         projectile.dispose();
         this.enemyProjectiles.splice(i, 1);
 
-        // Display hit message
+        // Display hit message with damage-specific styling
         if (result.systemDamaged) {
           const systemName = this.getSystemDisplayName(result.systemDamaged);
-          this.controlPanel.showMessage(`HIT! ${systemName} DAMAGED! (-${result.energyLost} ENERGY)`);
+          this.controlPanel.showDamageMessage(`${systemName} DAMAGED!`, 'system');
         } else if (this.gameState.shieldsActive && !this.gameState.damage.shields) {
-          this.controlPanel.showMessage(`SHIELDS ABSORBED HIT (-${result.energyLost} ENERGY)`);
+          this.controlPanel.showDamageMessage('SHIELDS ABSORBING FIRE!', 'shield');
         } else {
-          this.controlPanel.showMessage(`ZYLON HIT! (-${result.energyLost} ENERGY)`);
+          this.controlPanel.showDamageMessage('TAKING FIRE!', 'damage');
         }
       }
     }
