@@ -85,3 +85,52 @@ Phase 1 (Photon Torpedo Visual Overhaul): COMPLETE ✓
 Progress: 2/6 subtasks (33%)
 
 === END SESSION 2 ===
+
+=== SESSION 3 (Builder) ===
+Date: 2026-01-02
+
+Task: subtask-3-1 - Verify collision detection works with both projectiles
+
+Verification Analysis:
+
+1. Collision Detection Flow (VERIFIED ✅):
+   - Game.fireTorpedo() creates TWO PhotonTorpedo instances (port/starboard)
+   - Both pushed to same torpedoes[] array
+   - CombatSystem.checkTorpedoCollisions() iterates ALL torpedoes
+   - Each torpedo independently checks collision via centerPosition
+   - Enemies take damage correctly when hit by either projectile
+
+2. PhotonTorpedo.checkCollision() (VERIFIED ✅):
+   - Uses centerPosition (properly tracked in update())
+   - Sphere collision: distance < targetRadius + 0.3
+   - Independent collision radius for each torpedo instance
+
+3. Enemy Collision Radii (VERIFIED ✅):
+   - FIGHTER: 1.5 units
+   - CRUISER: 2.5 units
+   - BASESTAR: 4.0 units
+
+4. Multiple Torpedo Handling (VERIFIED ✅):
+   - Port and starboard torpedoes tracked independently
+   - Each can hit different enemies in same frame
+   - Rapid fire creates multiple salvos correctly
+
+5. VFX Integration (NOTE):
+   - VFXSystem exists but is NOT integrated in Game.ts
+   - This is a pre-existing gap, not introduced by dual cannon changes
+   - Collision detection and damage work correctly
+   - VFX integration is a separate enhancement opportunity
+
+Code Path Verified:
+  Game.fireTorpedo() → torpedoes.push(port, starboard)
+  Game.update() → combatSystem.checkTorpedoCollisions(torpedoes)
+  CombatSystem → for (torpedo of torpedoes) → torpedo.checkCollision()
+  PhotonTorpedo → centerPosition.distanceTo(target) < radius + 0.3
+  Enemy.takeDamage() → isDestroyed = true if health <= 0
+
+Result: Collision detection works correctly with both projectiles.
+        All torpedoes are tracked and can independently hit enemies.
+
+Progress: 5/6 subtasks (83%)
+
+=== END SESSION 3 ===
