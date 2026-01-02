@@ -1037,15 +1037,16 @@ export class Game {
 
     // Define cannon offsets relative to ship center
     // Port (left) and starboard (right) positions
-    // Y offset is negative to make torpedoes appear from bottom of screen (near player status)
-    // Z offset is small so they start close to player view
-    const portOffset = new THREE.Vector3(-0.8, -0.6, 0.2);
-    const starboardOffset = new THREE.Vector3(0.8, -0.6, 0.2);
+    // Y offset is large negative to make torpedoes appear from VERY BOTTOM of screen
+    // (near the player status bar showing velocity/energy)
+    // Z offset is 0 to start at camera's Z plane for closest bottom-edge appearance
+    const portOffset = new THREE.Vector3(-0.6, -1.4, 0.0);
+    const starboardOffset = new THREE.Vector3(0.6, -1.4, 0.0);
 
-    // For aft view, flip the z offset (fire from rear)
+    // For aft view, we need a slight negative Z to fire from behind
     if (this.gameState.currentView === ViewMode.AFT) {
-      portOffset.z = -0.2;
-      starboardOffset.z = -0.2;
+      portOffset.z = -0.1;
+      starboardOffset.z = -0.1;
     }
 
     // Apply player rotation to offsets (pitch first, then yaw - same as getForwardDirection)
@@ -1058,9 +1059,9 @@ export class Game {
     const portPosition = playerPos.clone().add(portOffset);
     const starboardPosition = playerPos.clone().add(starboardOffset);
 
-    // Small forward offset only - torpedoes should start at bottom of screen, not middle
-    portPosition.add(direction.clone().multiplyScalar(0.5));
-    starboardPosition.add(direction.clone().multiplyScalar(0.5));
+    // Minimal forward offset - torpedoes should start very close to camera at bottom of screen
+    portPosition.add(direction.clone().multiplyScalar(0.2));
+    starboardPosition.add(direction.clone().multiplyScalar(0.2));
 
     // Calculate convergence point - where both trajectories meet at crosshair
     // Convergence distance of 50 units places the intersection at crosshair depth
