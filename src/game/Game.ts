@@ -7,6 +7,8 @@ import { SectorSystem } from '../systems/SectorSystem';
 import { CombatSystem } from '../systems/CombatSystem';
 import { ScoringSystem } from '../systems/ScoringSystem';
 import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';
+import { VFXSystem } from '../systems/VFXSystem';
+import { SoundManager } from '../audio/SoundManager';
 import { Starfield } from '../entities/Starfield';
 import { Player } from '../entities/Player';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
@@ -47,6 +49,8 @@ export class Game {
   private combatSystem: CombatSystem;
   private scoringSystem: ScoringSystem;
   private starbaseAttackSystem: StarbaseAttackSystem;
+  private vfxSystem: VFXSystem;
+  private soundManager: SoundManager;
   private gameState: GameState;
 
   // UI
@@ -149,6 +153,10 @@ export class Game {
 
     // Initialize combat system (needs scene)
     this.combatSystem = new CombatSystem(this.scene, this.gameState, this.sectorSystem);
+
+    // Initialize VFX and Sound systems
+    this.vfxSystem = new VFXSystem(this.scene);
+    this.soundManager = new SoundManager();
 
     // Initialize UI
     this.controlPanel = new ControlPanel(container, this.gameState);
@@ -353,10 +361,19 @@ export class Game {
       const projectile = new EnemyProjectile(projectilePosition, firingDirection, firingEnemy.getType());
       this.enemyProjectiles.push(projectile);
       this.scene.add(projectile.getObject());
+
+      // Play enemy fire sound
+      this.soundManager.playEnemyFire();
     }
 
     // Update enemy projectiles
     this.updateEnemyProjectiles(deltaTime);
+
+    // Update red alert state based on enemy projectiles
+    this.updateRedAlert();
+
+    // Update VFX system (explosions, shield hits, etc.)
+    this.vfxSystem.update(deltaTime);
 
     // Update starbase attack system (enemy strategic AI)
     this.starbaseAttackSystem.update(
@@ -478,6 +495,7 @@ export class Game {
     if (this.dockingProgress >= 1) {
       // Docking complete - repair and refuel
       this.gameState.energy = this.gameState.maxEnergy;
+      this.gameState.hull = this.gameState.maxHull; // Repair hull to 100%
       this.gameState.damage = {
         engines: false,
         shields: false,
@@ -537,6 +555,12 @@ export class Game {
     if (this.gameState.energy <= 0) {
       this.gameState.isGameOver = true;
       this.controlPanel.showMessage('MISSION FAILED - OUT OF ENERGY!');
+    }
+
+    // Defeat: hull destroyed
+    if (this.gameState.hull <= 0) {
+      this.gameState.isGameOver = true;
+      this.controlPanel.showMessage('SHIP DESTROYED - MISSION FAILED!');
     }
   }
 
@@ -675,31 +699,81 @@ export class Game {
       if (!projectile.isActive) continue;
 
       if (projectile.checkCollision(playerPos, PLAYER_COLLISION_RADIUS)) {
-        // Hit! Apply damage to player
+        // Hit! Get projectile position for VFX
+        const hitPosition = projectile.getPosition();
         const damage = projectile.getDamage();
-        const result = this.gameState.applyEnemyDamage(
-          damage,
-          this.gameState.shieldsActive,
-          this.gameState.difficulty
-        );
+
+        // Apply damage differently based on shield status
+        if (this.gameState.shieldsActive && !this.gameState.damage.shields) {
+          // Shields active - reduce damage and show shield effects
+          const reducedDamage = Math.floor(damage * 0.3); // 70% absorbed
+
+          // Apply hull damage (shields protect but don't prevent all damage)
+          this.gameState.takeDamage(reducedDamage);
+
+          // Shield audio and visual feedback
+          this.soundManager.playShieldHit();
+          this.vfxSystem.createShieldHit(hitPosition);
+
+          // Apply energy damage too (from branch 008's system)
+          this.gameState.applyEnemyDamage(
+            damage,
+            this.gameState.shieldsActive,
+            this.gameState.difficulty
+          );
+
+          this.controlPanel.showDamageMessage(
+            `SHIELDS ABSORBING FIRE! Hull: ${Math.floor(this.gameState.hull)}%`,
+            'shield'
+          );
+        } else {
+          // No shields - full damage to hull
+          const destroyed = this.gameState.takeDamage(damage);
+
+          // Player hit audio
+          this.soundManager.playPlayerHit();
+
+          // Also apply energy damage and potential system damage
+          const result = this.gameState.applyEnemyDamage(
+            damage,
+            false,
+            this.gameState.difficulty
+          );
+
+          // Display appropriate message
+          if (destroyed) {
+            this.controlPanel.showDamageMessage('SHIP DESTROYED!', 'critical');
+          } else if (result.systemDamaged) {
+            const systemName = this.getSystemDisplayName(result.systemDamaged);
+            this.controlPanel.showDamageMessage(
+              `${systemName} DAMAGED! Hull: ${Math.floor(this.gameState.hull)}%`,
+              'system'
+            );
+          } else {
+            this.controlPanel.showDamageMessage(
+              `HULL DAMAGE! ${Math.floor(this.gameState.hull)}% remaining`,
+              'damage'
+            );
+          }
+        }
 
         // Deactivate and remove the projectile
         projectile.deactivate();
         this.scene.remove(projectile.getObject());
         projectile.dispose();
         this.enemyProjectiles.splice(i, 1);
-
-        // Display hit message with damage-specific styling
-        if (result.systemDamaged) {
-          const systemName = this.getSystemDisplayName(result.systemDamaged);
-          this.controlPanel.showDamageMessage(`${systemName} DAMAGED!`, 'system');
-        } else if (this.gameState.shieldsActive && !this.gameState.damage.shields) {
-          this.controlPanel.showDamageMessage('SHIELDS ABSORBING FIRE!', 'shield');
-        } else {
-          this.controlPanel.showDamageMessage('TAKING FIRE!', 'damage');
-        }
       }
     }
+  }
+
+  /**
+   * Update red alert state based on combat situation
+   * Activates when enemy projectiles are in flight
+   */
+  private updateRedAlert(): void {
+    const underAttack = this.enemyProjectiles.length > 0;
+    this.gameState.isUnderAttack = underAttack;
+    this.controlPanel.setRedAlert(underAttack);
   }
 
   /**
