@@ -1,0 +1,88 @@
+{
+  "complexity": "standard",
+  "workflow_type": "feature",
+  "confidence": 0.85,
+  "reasoning": "Dual photon cannon system with animated 'scrambled energy ball' effect. While the visual effect is non-trivial, all patterns exist in the codebase - particle systems (VFXSystem/Explosion), glow effects (PhotonTorpedo), and Three.js materials. Changes contained to 3-5 files in single frontend service with no external dependencies or infrastructure changes.",
+
+  "analysis": {
+    "scope": {
+      "estimated_files": 4,
+      "estimated_services": 1,
+      "is_cross_cutting": false,
+      "notes": "Primary changes: PhotonTorpedo.ts (visual overhaul), Game.ts (dual firing logic), Player.ts (cannon position methods). Minor: ControlPanel.ts for naming updates."
+    },
+    "integrations": {
+      "external_services": [],
+      "new_dependencies": [],
+      "research_needed": false,
+      "notes": "Uses existing Three.js library. Particle/animation patterns already exist in VFXSystem.ts (Explosion class) and current PhotonTorpedo glow effects."
+    },
+    "infrastructure": {
+      "docker_changes": false,
+      "database_changes": false,
+      "config_changes": false,
+      "notes": "Pure frontend game logic changes. No build or deployment changes needed."
+    },
+    "knowledge": {
+      "patterns_exist": true,
+      "research_required": false,
+      "unfamiliar_tech": [],
+      "notes": "Codebase already has: particle systems (Explosion class in VFXSystem), glow effects (PhotonTorpedo), Three.js BufferGeometry animations. All needed patterns are established."
+    },
+    "risk": {
+      "level": "low",
+      "concerns": [
+        "Trajectory math for converging fire paths needs precise angle calculations",
+        "Animated projectile performance with dual firing (2x projectiles)",
+        "Visual fidelity of 'scrambled energy ball' to match player expectations"
+      ],
+      "notes": "Changes isolated to weapon system. Easy to test visually. No security or data concerns. Temporary breaks to firing are immediately visible and testable."
+    }
+  },
+
+  "implementation_details": {
+    "key_files": {
+      "PhotonTorpedo.ts": "Major rewrite - replace static sphere with animated scrambled particle/pixel effect",
+      "Game.ts": "Modify fireTorpedo() to fire two projectiles from port/starboard positions with converging trajectories",
+      "Player.ts": "Add methods to get port and starboard cannon positions relative to ship geometry",
+      "ControlPanel.ts": "Update weapon naming from 'torpedo' to 'photon cannon' in messages"
+    },
+    "technical_approach": {
+      "dual_firing": "Calculate port (-X offset) and starboard (+X offset) positions from Player ship. Both aim toward screen center (crosshair position).",
+      "trajectory_math": "Use atan2 to calculate angle from each cannon position to crosshair. Projectiles converge at crosshair distance.",
+      "scrambled_effect": "Options: (1) Animated sprite with scrambling frames, (2) Particle system with chaotic motion, (3) Dynamic geometry with vertex jittering. Recommend particle-based for authentic 'energy ball' feel."
+    },
+    "existing_patterns_to_leverage": {
+      "VFXSystem_Explosion": "Particle system with velocities, colors, and BufferGeometry - can adapt for projectile effect",
+      "PhotonTorpedo_glow": "Transparent overlapping spheres for glow - foundation for energy appearance",
+      "Player_geometry": "Wing positions at X offsets ±3 and ±4 (pixelSize 0.25) define cannon locations"
+    }
+  },
+
+  "recommended_phases": [
+    "discovery",
+    "requirements",
+    "context",
+    "spec_writing",
+    "planning",
+    "validation"
+  ],
+
+  "flags": {
+    "needs_research": false,
+    "needs_self_critique": false,
+    "needs_infrastructure_setup": false
+  },
+
+  "validation_recommendations": {
+    "risk_level": "low",
+    "skip_validation": false,
+    "minimal_mode": true,
+    "test_types_required": ["unit"],
+    "security_scan_required": false,
+    "staging_deployment_required": false,
+    "reasoning": "Frontend game visual/mechanics change with no security implications. Changes are immediately visible and manually testable. Unit tests for trajectory math calculations if they exist, but primary validation is visual gameplay testing."
+  },
+
+  "created_at": "2025-01-02T12:00:00Z"
+}

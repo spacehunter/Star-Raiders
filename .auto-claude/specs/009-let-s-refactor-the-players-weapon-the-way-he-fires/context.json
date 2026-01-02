@@ -1,0 +1,48 @@
+{
+  "task_description": "Refactor weapon system from single center beam to dual 'photon cannons' firing from port/starboard sides with converging trajectories and scrambled energy ball visual effect.",
+  "scoped_services": ["main"],
+  "files_to_modify": {
+    "main": [
+      "src/entities/PhotonTorpedo.ts",
+      "src/game/Game.ts"
+    ]
+  },
+  "files_to_reference": [
+    "src/systems/VFXSystem.ts",
+    "src/entities/Player.ts",
+    "src/views/AttackComputer.ts",
+    "src/systems/CombatSystem.ts"
+  ],
+  "patterns": {
+    "particle_system": {
+      "source": "src/systems/VFXSystem.ts (Explosion class)",
+      "pattern": "Use THREE.BufferGeometry with position and color Float32Arrays, THREE.Points with PointsMaterial, update via needsUpdate = true"
+    },
+    "projectile_lifecycle": {
+      "source": "src/entities/PhotonTorpedo.ts",
+      "pattern": "isActive flag, update(deltaTime), checkCollision(pos, radius), dispose(), age tracking with maxAge"
+    },
+    "firing_logic": {
+      "source": "src/game/Game.ts (fireTorpedo method)",
+      "pattern": "Get player position/direction, handle aft view (negate direction), create torpedo, add to array and scene"
+    }
+  },
+  "existing_implementations": {
+    "description": "Codebase has particle systems (VFXSystem Explosion), glow effects (PhotonTorpedo), and Three.js BufferGeometry animations",
+    "relevant_files": [
+      "src/systems/VFXSystem.ts",
+      "src/entities/PhotonTorpedo.ts"
+    ]
+  },
+  "technical_constants": {
+    "ship_wing_position_x": 0.6,
+    "ship_forward_offset_z": -0.5,
+    "convergence_distance": 50,
+    "particle_count": 20,
+    "particle_scatter_radius": 0.3,
+    "projectile_speed": 200,
+    "photon_color": "#00FFFF"
+  },
+  "created_at": "2026-01-02T11:04:47.374962",
+  "updated_at": "2026-01-02T11:15:00.000000"
+}

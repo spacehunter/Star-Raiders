@@ -1,0 +1,15 @@
+{
+  "discovered_files": {
+    "src/entities/PhotonTorpedo.ts": {
+      "description": "PhotonTorpedo now uses THREE.Points with BufferGeometry for particle-based rendering. Center position tracked separately for collision detection. Particles randomized each frame for scrambled effect.",
+      "category": "architecture",
+      "discovered_at": "2026-01-02T17:15:09.530105+00:00"
+    },
+    "src/game/Game.ts": {
+      "description": "VFXSystem exists in src/systems/VFXSystem.ts but is NOT imported or used in Game.ts. Enemy destruction shows message but no explosion particles. This is a pre-existing gap, not introduced by dual cannon changes.",
+      "category": "integration_gap",
+      "discovered_at": "2026-01-02T17:26:09.728012+00:00"
+    }
+  },
+  "last_updated": "2026-01-02T17:26:09.728019+00:00"
+}

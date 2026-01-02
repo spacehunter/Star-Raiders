@@ -1000,7 +1000,7 @@ export class Game {
   }
 
   /**
-   * Fire a photon torpedo
+   * Fire dual photon torpedoes from port and starboard cannons
    */
   private fireTorpedo(): void {
     if (
@@ -1024,18 +1024,62 @@ export class Game {
       return;
     }
 
-    const position = this.player.getObject().position.clone();
+    const playerPos = this.player.getObject().position.clone();
     let direction = this.player.getForwardDirection();
 
     if (this.gameState.currentView === ViewMode.AFT) {
       direction.negate();
     }
 
-    position.add(direction.clone().multiplyScalar(2));
+    // Get player's rotation quaternions for transforming offset positions
+    const pitchQuaternion = this.player.getCameraTarget().quaternion;
+    const yawQuaternion = this.player.getObject().quaternion;
 
-    const torpedo = new PhotonTorpedo(position, direction);
-    this.torpedoes.push(torpedo);
-    this.scene.add(torpedo.getObject());
+    // Define cannon offsets relative to ship center
+    // Port (left) and starboard (right) positions
+    // Y offset is large negative to make torpedoes appear from VERY BOTTOM of screen
+    // (near the player status bar showing velocity/energy)
+    // Z offset is 0 to start at camera's Z plane for closest bottom-edge appearance
+    const portOffset = new THREE.Vector3(-0.6, -1.4, 0.0);
+    const starboardOffset = new THREE.Vector3(0.6, -1.4, 0.0);
+
+    // For aft view, we need a slight negative Z to fire from behind
+    if (this.gameState.currentView === ViewMode.AFT) {
+      portOffset.z = -0.1;
+      starboardOffset.z = -0.1;
+    }
+
+    // Apply player rotation to offsets (pitch first, then yaw - same as getForwardDirection)
+    portOffset.applyQuaternion(pitchQuaternion);
+    portOffset.applyQuaternion(yawQuaternion);
+    starboardOffset.applyQuaternion(pitchQuaternion);
+    starboardOffset.applyQuaternion(yawQuaternion);
+
+    // Calculate final firing positions - start close to player (bottom of screen)
+    const portPosition = playerPos.clone().add(portOffset);
+    const starboardPosition = playerPos.clone().add(starboardOffset);
+
+    // Minimal forward offset - torpedoes should start very close to camera at bottom of screen
+    portPosition.add(direction.clone().multiplyScalar(0.2));
+    starboardPosition.add(direction.clone().multiplyScalar(0.2));
+
+    // Calculate convergence point - where both trajectories meet at crosshair
+    // Convergence distance of 50 units places the intersection at crosshair depth
+    const CONVERGENCE_DISTANCE = 50;
+    const convergencePoint = playerPos.clone().add(direction.clone().multiplyScalar(CONVERGENCE_DISTANCE));
+
+    // Calculate converging trajectories - each torpedo angles toward the convergence point
+    const portDirection = convergencePoint.clone().sub(portPosition).normalize();
+    const starboardDirection = convergencePoint.clone().sub(starboardPosition).normalize();
+
+    // Create dual torpedoes with converging trajectories
+    const portTorpedo = new PhotonTorpedo(portPosition, portDirection);
+    const starboardTorpedo = new PhotonTorpedo(starboardPosition, starboardDirection);
+
+    this.torpedoes.push(portTorpedo);
+    this.torpedoes.push(starboardTorpedo);
+    this.scene.add(portTorpedo.getObject());
+    this.scene.add(starboardTorpedo.getObject());
   }
 
   /**
