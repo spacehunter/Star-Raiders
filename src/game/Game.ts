@@ -551,11 +551,11 @@ export class Game {
         }
       }
 
-      // 4. Move Torpedoes (They fly relative to space, so if we move "space", we move them?)
-      // Actually, torpedoes have their own velocity in world space.
-      // If the coordinate system is shifting around the player, they need to be shifted too.
+      // 4. Move Torpedoes - apply displacement to their internal centerPosition
+      // Torpedoes track position via centerPosition (not THREE.Points position)
+      // This keeps torpedoes in correct world-space as player moves
       // Note: Torpedoes don't wrap - they should expire if they leave the sector
-      this.torpedoes.forEach(t => t.getObject().position.add(displacement));
+      this.torpedoes.forEach(t => t.applyDisplacement(displacement));
     }
   }
 
@@ -1036,12 +1036,13 @@ export class Game {
     const yawQuaternion = this.player.getObject().quaternion;
 
     // Define cannon offsets relative to ship center
-    // Port (left) and starboard (right) positions
-    // Y offset is large negative to make torpedoes appear from VERY BOTTOM of screen
+    // Port (left) and starboard (right) positions at the WINGS
+    // X offset: ±2.0 creates visible spread angle (~2.3 degrees) toward crosshair
+    // Y offset: large negative to make torpedoes appear from VERY BOTTOM of screen
     // (near the player status bar showing velocity/energy)
-    // Z offset is 0 to start at camera's Z plane for closest bottom-edge appearance
-    const portOffset = new THREE.Vector3(-0.6, -1.4, 0.0);
-    const starboardOffset = new THREE.Vector3(0.6, -1.4, 0.0);
+    // Z offset: 0 to start at camera's Z plane for closest bottom-edge appearance
+    const portOffset = new THREE.Vector3(-2.0, -1.4, 0.0);
+    const starboardOffset = new THREE.Vector3(2.0, -1.4, 0.0);
 
     // For aft view, we need a slight negative Z to fire from behind
     if (this.gameState.currentView === ViewMode.AFT) {

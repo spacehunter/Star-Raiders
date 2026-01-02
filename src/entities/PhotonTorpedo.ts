@@ -180,6 +180,14 @@ export class PhotonTorpedo {
   }
 
   /**
+   * Apply displacement to torpedo position (for player movement compensation)
+   * This keeps torpedoes in the correct world-space position relative to player
+   */
+  public applyDisplacement(displacement: THREE.Vector3): void {
+    this.centerPosition.add(displacement);
+  }
+
+  /**
    * Dispose of resources
    * Ensures clean memory release: geometry and material
    */
