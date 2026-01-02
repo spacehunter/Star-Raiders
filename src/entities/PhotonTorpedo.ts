@@ -7,8 +7,8 @@ import * as THREE from 'three';
  * Visual design:
  * - Multi-colored particles (red, white, blue, purple, cyan) for photon energy
  * - Chaotic scrambling animation - particles randomly reposition each frame
- * - Starts large and diminishes as it travels (perspective effect)
- * - Spherical 360-degree energy ball appearance
+ * - Small, tightly-packed particles for pure energy appearance
+ * - Compact spherical cluster encapsulated within a small circle
  */
 export class PhotonTorpedo {
   private particles: THREE.Points;
@@ -17,15 +17,15 @@ export class PhotonTorpedo {
   private age: number = 0;
   private maxAge: number = 3; // Seconds before despawning
   private speed: number = 200; // Units per second
-  private particleCount: number = 25; // More particles for fuller sphere
+  private particleCount: number = 35; // More particles for denser cluster
   public isActive: boolean = true;
 
   // Performance: Reusable temp vector (avoid per-frame allocation)
   private tempVector: THREE.Vector3 = new THREE.Vector3();
 
-  // Size scaling: starts large, shrinks with distance
-  private initialSize: number = 0.5; // Large starting size
-  private minSize: number = 0.08; // Minimum size at max range
+  // Size scaling: small particles for pure energy look
+  private initialSize: number = 0.12; // Small particles for pure energy appearance
+  private minSize: number = 0.04; // Minimum size at max range
 
   // Color palette for scrambled energy effect (rgb values)
   private colorPalette: number[][] = [
@@ -48,8 +48,8 @@ export class PhotonTorpedo {
     const positions = new Float32Array(this.particleCount * 3);
     const colors = new Float32Array(this.particleCount * 3);
 
-    // Larger initial sphere radius for starting visual
-    const sphereRadius = 0.6;
+    // Compact sphere radius - particles tightly encapsulated within a circle
+    const sphereRadius = 0.2;
 
     // Initialize particles in random spherical positions with random colors
     for (let i = 0; i < this.particleCount; i++) {
@@ -119,8 +119,8 @@ export class PhotonTorpedo {
     // Calculate progress through lifetime (0 to 1)
     const lifeProgress = this.age / this.maxAge;
 
-    // Sphere radius shrinks as torpedo travels (perspective diminishing effect)
-    const currentRadius = 0.6 * (1 - lifeProgress * 0.7); // 0.6 -> 0.18
+    // Compact sphere radius - particles stay tightly packed as torpedo travels
+    const currentRadius = 0.2 * (1 - lifeProgress * 0.5); // 0.2 -> 0.1
 
     // Update particle positions with TRUE chaotic scramble - random each frame!
     const positions = this.particles.geometry.attributes.position.array as Float32Array;
@@ -169,7 +169,7 @@ export class PhotonTorpedo {
    */
   public checkCollision(targetPosition: THREE.Vector3, targetRadius: number): boolean {
     const distance = this.centerPosition.distanceTo(targetPosition);
-    return distance < targetRadius + 0.3; // 0.3 is the particle scatter radius
+    return distance < targetRadius + 0.2; // 0.2 is the compact particle cluster radius
   }
 
   /**
