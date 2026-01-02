@@ -645,6 +645,64 @@ export class Game {
         this.enemyProjectiles.splice(i, 1);
       }
     }
+
+    // Check for collisions with player
+    this.checkEnemyProjectileCollisions();
+  }
+
+  /**
+   * Check enemy projectile collisions with player
+   * Player is at origin (0,0,0) since world moves around player
+   */
+  private checkEnemyProjectileCollisions(): void {
+    const PLAYER_COLLISION_RADIUS = 2.5; // Player ship hitbox radius
+    const playerPos = new THREE.Vector3(0, 0, 0);
+
+    for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
+      const projectile = this.enemyProjectiles[i];
+      if (!projectile.isActive) continue;
+
+      if (projectile.checkCollision(playerPos, PLAYER_COLLISION_RADIUS)) {
+        // Hit! Apply damage to player
+        const damage = projectile.getDamage();
+        const result = this.gameState.applyEnemyDamage(
+          damage,
+          this.gameState.shieldsActive,
+          this.gameState.difficulty
+        );
+
+        // Deactivate and remove the projectile
+        projectile.deactivate();
+        this.scene.remove(projectile.getObject());
+        projectile.dispose();
+        this.enemyProjectiles.splice(i, 1);
+
+        // Display hit message
+        if (result.systemDamaged) {
+          const systemName = this.getSystemDisplayName(result.systemDamaged);
+          this.controlPanel.showMessage(`HIT! ${systemName} DAMAGED! (-${result.energyLost} ENERGY)`);
+        } else if (this.gameState.shieldsActive && !this.gameState.damage.shields) {
+          this.controlPanel.showMessage(`SHIELDS ABSORBED HIT (-${result.energyLost} ENERGY)`);
+        } else {
+          this.controlPanel.showMessage(`ZYLON HIT! (-${result.energyLost} ENERGY)`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Get display name for a damaged system
+   */
+  private getSystemDisplayName(systemKey: string): string {
+    const displayNames: Record<string, string> = {
+      engines: 'ENGINES',
+      shields: 'SHIELDS',
+      photonTorpedoes: 'PHOTON TORPEDOES',
+      subSpaceRadio: 'SUB-SPACE RADIO',
+      longRangeScan: 'LONG RANGE SCAN',
+      attackComputer: 'ATTACK COMPUTER',
+    };
+    return displayNames[systemKey] || systemKey.toUpperCase();
   }
 
 

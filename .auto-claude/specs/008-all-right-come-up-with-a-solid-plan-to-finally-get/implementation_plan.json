@@ -202,7 +202,9 @@
             "type": "manual",
             "instructions": "Projectiles should move and eventually disappear after maxAge"
           },
-          "status": "pending"
+          "status": "completed",
+          "notes": "Added updateEnemyProjectiles method following the updateTorpedoes pattern. The method iterates through enemy projectiles, updates their position/age, and removes expired ones from the scene. Also added cleanup in dispose() and clearSectorContents() for proper resource management.",
+          "updated_at": "2026-01-02T17:23:01.766250+00:00"
         },
         {
           "id": "subtask-3-4",
@@ -462,5 +464,5 @@
     }
   },
   "qa_signoff": null,
-  "last_updated": "2026-01-02T17:19:35.973701+00:00"
+  "last_updated": "2026-01-02T17:23:01.766258+00:00"
 }
