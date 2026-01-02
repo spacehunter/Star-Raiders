@@ -95,11 +95,12 @@ export class SectorSystem {
     const positions: [number, number][] = [];
 
     // Divide galaxy into regions for even distribution
+    // Use coordinates 1-6 to prevent starbases from spawning on edges
     const regions = [
-      { minX: 0, maxX: 3, minY: 0, maxY: 3 },
-      { minX: 4, maxX: 7, minY: 0, maxY: 3 },
-      { minX: 0, maxX: 3, minY: 4, maxY: 7 },
-      { minX: 4, maxX: 7, minY: 4, maxY: 7 },
+      { minX: 1, maxX: 3, minY: 1, maxY: 3 },
+      { minX: 4, maxX: 6, minY: 1, maxY: 3 },
+      { minX: 1, maxX: 3, minY: 4, maxY: 6 },
+      { minX: 4, maxX: 6, minY: 4, maxY: 6 },
     ];
 
     for (let i = 0; i < count && i < regions.length; i++) {
