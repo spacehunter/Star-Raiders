@@ -85,8 +85,8 @@ export class SectorSystem {
     // Place enemies (avoid player starting position)
     this.placeEnemies(enemyCount);
 
-    // Mark starting sector as visited
-    this.sectors[4][4].visited = true;
+    // Mark starting sector as visited (8, 4 = center of 16x8 grid)
+    this.sectors[4][8].visited = true;
   }
 
   /**
@@ -116,7 +116,7 @@ export class SectorSystem {
         x = region.minX + Math.floor(Math.random() * (region.maxX - region.minX + 1));
         y = region.minY + Math.floor(Math.random() * (region.maxY - region.minY + 1));
         attempts++;
-      } while ((x === 4 && y === 4) && attempts < 20); // Avoid player start
+      } while ((x === 8 && y === 4) && attempts < 20); // Avoid player start (8, 4)
 
       if (!positions.some(([px, py]) => px === x && py === y)) {
         positions.push([x, y]);
@@ -138,8 +138,8 @@ export class SectorSystem {
       const x = Math.floor(Math.random() * SectorSystem.GRID_WIDTH);
       const y = Math.floor(Math.random() * SectorSystem.GRID_HEIGHT);
 
-      // Skip player starting position initially
-      if (x === 4 && y === 4) {
+      // Skip player starting position (8, 4)
+      if (x === 8 && y === 4) {
         attempt++;
         continue;
       }

@@ -243,7 +243,7 @@ export class GalacticChart {
         grid-template-columns: repeat(16, 1fr);
         grid-template-rows: repeat(8, 1fr);
         height: 65vh; /* Larger grid */
-        width: 80vh;  /* Wide aspect ratio */
+        width: 140vh;  /* Wide enough for 16 cells with 8x8 sprites */
         background: transparent;
         border: 0.4vh solid #55AAFF;
         margin-top: 0.4vh; /* Up 1px */
@@ -304,17 +304,18 @@ export class GalacticChart {
       .dc-char.destroyed { color: #000000; text-shadow: none; }
 
       /* --- SPRITES --- */
-      /* 
-         Sprite Container: Explicit 8x8 Grid Size 
+      /*
+         Sprite Container: Explicit 8x8 Grid Size
          Grid Unit = 0.4vh
          Size = 8 * 0.4vh = 3.2vh
+         Cells are now ~8.75vh wide, so scale to fit comfortably
       */
       .sprite {
         position: relative; /* Relative to cell (which is flex centered) */
-        width: 3.2vh; 
+        width: 3.2vh;
         height: 3.2vh;
         background: transparent;
-        transform: scale(2.8); /* Scale the whole 8x8 grid */
+        transform: scale(2.0); /* Scale to ~6.4vh to fit 8.75vh cells */
         top: -0.4vh; /* Counteract grid 0.4vh */
         left: -0.4vh; /* Counteract grid 0.4vh */
       }
