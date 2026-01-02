@@ -344,12 +344,12 @@ export class ControlPanel {
       }
 
       .message-display:not(:empty) {
-        animation: blink-alert 0.8s infinite steps(2);
+        animation: blink-alert 2s infinite steps(2);
       }
 
       @keyframes blink-alert {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0; }
+        0%, 50% { opacity: 1; }
+        50.01%, 100% { opacity: 0; }
       }
 
       /* CHUNKY BLOCKY CROSSHAIR - Pixelated style */
