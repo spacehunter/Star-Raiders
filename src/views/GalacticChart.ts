@@ -43,7 +43,6 @@ export class GalacticChart {
   }
 
   /**
-  /**
    * Create the chart HTML structure
    */
   private createChart(): HTMLElement {

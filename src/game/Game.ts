@@ -783,9 +783,9 @@ export class Game {
         // Random adjacent sector
         arrivalX += Math.floor(Math.random() * 3) - 1;
         arrivalY += Math.floor(Math.random() * 3) - 1;
-        // Clamp to grid
-        arrivalX = Math.max(0, Math.min(7, arrivalX));
-        arrivalY = Math.max(0, Math.min(7, arrivalY));
+        // Clamp to grid (16×8)
+        arrivalX = Math.max(0, Math.min(SectorSystem.GRID_WIDTH - 1, arrivalX));
+        arrivalY = Math.max(0, Math.min(SectorSystem.GRID_HEIGHT - 1, arrivalY));
       }
 
       this.gameState.sectorX = arrivalX;
