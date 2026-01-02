@@ -1,0 +1,51 @@
+{
+  "task_description": "Fix galactic chart grid dimensions from 8×8 to 16×8 (16 columns by 8 rows) to match original Atari 800 Star Raiders",
+  "scoped_services": ["main"],
+  "files_to_modify": {
+    "main": [
+      "src/systems/SectorSystem.ts",
+      "src/views/GalacticChart.ts",
+      "src/game/GameState.ts"
+    ]
+  },
+  "files_to_reference": [
+    "src/systems/StarbaseAttackSystem.ts",
+    "src/views/LongRangeScan.ts",
+    "src/systems/EnergySystem.ts"
+  ],
+  "patterns": {
+    "grid_constant_pattern": "Uses static readonly constants in SectorSystem class (GRID_SIZE = 8)",
+    "grid_iteration_pattern": "Nested loops: outer Y loop (0 to HEIGHT), inner X loop (0 to WIDTH)",
+    "css_grid_pattern": "Uses repeat(N, 1fr) for grid template",
+    "dom_creation_pattern": "Uses document.createElement with className and dataset attributes"
+  },
+  "existing_implementations": {
+    "description": "SectorSystem manages 2D grid of sectors using GRID_SIZE = 8. GalacticChart renders 8×8 grid with CSS grid layout. GameState stores player position at (4,4). StarbaseAttackSystem uses GRID_SIZE for bounds checking.",
+    "relevant_files": [
+      "src/systems/SectorSystem.ts",
+      "src/views/GalacticChart.ts",
+      "src/game/GameState.ts",
+      "src/systems/StarbaseAttackSystem.ts"
+    ]
+  },
+  "key_changes": {
+    "SectorSystem.ts": {
+      "line_17": "Change GRID_SIZE = 8 to GRID_WIDTH = 16 and GRID_HEIGHT = 8",
+      "lines_31-33": "Update grid initialization loop to use GRID_HEIGHT for Y, GRID_WIDTH for X",
+      "lines_98-103": "Expand starbase placement regions for 16-column grid",
+      "lines_133-134": "Update enemy placement to use GRID_WIDTH and GRID_HEIGHT",
+      "line_156": "Update bounds checking to use GRID_WIDTH for X, GRID_HEIGHT for Y",
+      "lines_218-219": "Update iteration in getStarbasesUnderAttack"
+    },
+    "GalacticChart.ts": {
+      "lines_92-93": "Update grid creation from 8×8 to 16×8",
+      "lines_244-245": "Update CSS repeat(8, 1fr) to repeat(16, 1fr) for columns",
+      "lines_452-453": "Update cursor bounds from max 7 to max 15 for X"
+    },
+    "GameState.ts": {
+      "lines_73-74": "Change sectorX from 4 to 8 (center of 16-column grid)",
+      "lines_95-96": "Change reset() sectorX from 4 to 8"
+    }
+  },
+  "created_at": "2026-01-02T11:00:00.000Z"
+}

@@ -4,8 +4,8 @@ import { EnergySystem } from '../systems/EnergySystem';
 import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';
 
 /**
- * GalacticChart - 2D overlay displaying the 8x8 sector grid
- *authentic Atari 800 style
+ * GalacticChart - 2D overlay displaying the 16x8 sector grid
+ * authentic Atari 800 style
  */
 export class GalacticChart {
   private container: HTMLElement;
@@ -42,7 +42,6 @@ export class GalacticChart {
     this.hide();
   }
 
-  /**
   /**
    * Create the chart HTML structure
    */
@@ -89,8 +88,8 @@ export class GalacticChart {
 
     // Create grid cells
     const grid = chart.querySelector('.chart-grid')!;
-    for (let y = 0; y < 8; y++) {
-      for (let x = 0; x < 8; x++) {
+    for (let y = 0; y < SectorSystem.GRID_HEIGHT; y++) {
+      for (let x = 0; x < SectorSystem.GRID_WIDTH; x++) {
         const cell = document.createElement('div');
         cell.className = 'chart-cell';
         cell.dataset.x = x.toString();
@@ -241,18 +240,18 @@ export class GalacticChart {
 
       .chart-grid {
         display: grid;
-        grid-template-columns: repeat(8, 1fr);
+        grid-template-columns: repeat(16, 1fr);
         grid-template-rows: repeat(8, 1fr);
         height: 65vh; /* Larger grid */
-        width: 80vh;  /* Wide aspect ratio */
+        width: 140vh;  /* Wide enough for 16 cells with 8x8 sprites */
         background: transparent;
-        border: 0.4vh solid #55AAFF;
-        margin-top: 0.4vh; /* Up 1px */
-        margin-left: 0.4vh; /* Right 1px (Adjusted from 0.8vh) */
+        border: 0.2vh solid #55AAFF;
+        margin-top: 0.2vh; /* Up 1px */
+        margin-left: 0.2vh; /* Right 1px (Adjusted from 0.8vh) */
       }
 
       .chart-cell {
-        border: 0.4vh solid #55AAFF;
+        border: 0.2vh solid #55AAFF;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -305,19 +304,20 @@ export class GalacticChart {
       .dc-char.destroyed { color: #000000; text-shadow: none; }
 
       /* --- SPRITES --- */
-      /* 
-         Sprite Container: Explicit 8x8 Grid Size 
+      /*
+         Sprite Container: Explicit 8x8 Grid Size
          Grid Unit = 0.4vh
          Size = 8 * 0.4vh = 3.2vh
+         Cells are now ~8.75vh wide, so scale to fit comfortably
       */
       .sprite {
         position: relative; /* Relative to cell (which is flex centered) */
-        width: 3.2vh; 
+        width: 3.2vh;
         height: 3.2vh;
         background: transparent;
-        transform: scale(2.8); /* Scale the whole 8x8 grid */
-        top: -0.4vh; /* Counteract grid 0.4vh */
-        left: -0.4vh; /* Counteract grid 0.4vh */
+        transform: scale(2.0); /* Scale to ~6.4vh to fit 8.75vh cells */
+        top: -0.2vh; /* Counteract grid 0.2vh */
+        left: -0.2vh; /* Counteract grid 0.2vh */
       }
       
       /* The Pixel Renderer */
@@ -449,8 +449,8 @@ export class GalacticChart {
    * Move cursor
    */
   public moveCursor(dx: number, dy: number): void {
-    const newX = Math.max(0, Math.min(7, this.cursorX + dx));
-    const newY = Math.max(0, Math.min(7, this.cursorY + dy));
+    const newX = Math.max(0, Math.min(SectorSystem.GRID_WIDTH - 1, this.cursorX + dx));
+    const newY = Math.max(0, Math.min(SectorSystem.GRID_HEIGHT - 1, this.cursorY + dy));
     this.cursorX = newX;
     this.cursorY = newY;
     this.update();

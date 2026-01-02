@@ -70,7 +70,7 @@ export class GameState {
   };
 
   // Current sector position
-  public sectorX: number = 4;
+  public sectorX: number = 8;
   public sectorY: number = 4;
 
   // Starbases
@@ -92,7 +92,7 @@ export class GameState {
     this.isGameOver = false;
     this.isVictory = false;
     this.difficulty = difficulty;
-    this.sectorX = 4;
+    this.sectorX = 8;
     this.sectorY = 4;
 
     // Reset damage

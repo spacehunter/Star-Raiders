@@ -1,0 +1,80 @@
+{
+  "complexity": "standard",
+  "workflow_type": "investigation",
+  "confidence": 0.85,
+  "reasoning": "This is an investigation task to understand the codebase and locate the galactic chart grid configuration, followed by a straightforward dimension fix (8×8 → 16×8). Single service, likely 3-6 files to investigate/modify, no external integrations or infrastructure changes needed.",
+
+  "analysis": {
+    "scope": {
+      "estimated_files": 4,
+      "estimated_services": 1,
+      "is_cross_cutting": false,
+      "notes": "Galactic chart is a specific game component. Changes likely localized to chart rendering and possibly a constants/config file. May also need to update coordinate systems if grid positions are used elsewhere."
+    },
+    "integrations": {
+      "external_services": [],
+      "new_dependencies": [],
+      "research_needed": false,
+      "notes": "No new integrations. Three.js is already in use for rendering. Standard grid/coordinate math."
+    },
+    "infrastructure": {
+      "docker_changes": false,
+      "database_changes": false,
+      "config_changes": false,
+      "notes": "Pure frontend game logic change. No infrastructure impact."
+    },
+    "knowledge": {
+      "patterns_exist": true,
+      "research_required": false,
+      "unfamiliar_tech": [],
+      "notes": "Galactic chart already exists - this is fixing existing dimensions. Three.js patterns already established in codebase."
+    },
+    "risk": {
+      "level": "low",
+      "concerns": [
+        "Grid coordinate systems may need updating if positions are stored/referenced elsewhere",
+        "Rendering logic may have hardcoded assumptions about 8×8 dimensions",
+        "Game logic may depend on current grid size for enemy placement, navigation, etc."
+      ],
+      "notes": "Primary risk is breaking dependencies on current grid dimensions. Investigation phase will identify all affected code paths."
+    }
+  },
+
+  "recommended_phases": [
+    "discovery",
+    "requirements",
+    "context",
+    "spec_writing",
+    "planning",
+    "validation"
+  ],
+
+  "flags": {
+    "needs_research": false,
+    "needs_self_critique": false,
+    "needs_infrastructure_setup": false
+  },
+
+  "validation_recommendations": {
+    "risk_level": "low",
+    "skip_validation": false,
+    "minimal_mode": true,
+    "test_types_required": ["unit"],
+    "security_scan_required": false,
+    "staging_deployment_required": false,
+    "reasoning": "Simple dimension change with no security implications. Minimal validation with unit tests to verify correct grid dimensions. Manual visual testing recommended to confirm 16×8 rendering."
+  },
+
+  "investigation_notes": {
+    "primary_goal": "Understand project architecture and locate galactic chart grid configuration",
+    "key_questions": [
+      "Where is the galactic chart component/file located?",
+      "Where are grid dimensions configured (constants, config, or hardcoded)?",
+      "What rendering logic controls the grid layout?",
+      "Are there dependencies on current 8×8 size in game logic?"
+    ],
+    "search_terms": ["galactic", "chart", "grid", "GRID_SIZE", "COLS", "ROWS", "8"]
+  },
+
+  "created_at": "2025-01-02T00:00:00.000Z"
+}

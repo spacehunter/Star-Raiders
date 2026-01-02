@@ -1,0 +1,10 @@
+{
+  "discovered_files": {
+    "src/systems/SectorSystem.ts": {
+      "description": "SectorSystem uses 16x8 grid (GRID_WIDTH=16, GRID_HEIGHT=8). All grid loops correctly use GRID_HEIGHT for Y outer loop and GRID_WIDTH for X inner loop. Constants defined at lines 17-18.",
+      "category": "architecture",
+      "discovered_at": "2026-01-02T17:10:17.964087+00:00"
+    }
+  },
+  "last_updated": "2026-01-02T17:10:17.964094+00:00"
+}

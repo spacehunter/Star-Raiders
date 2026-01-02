@@ -1,16 +1,16 @@
 {
   "active": true,
-  "spec": "002-verify-changes",
+  "spec": "005-come-to-speed-on-the-project-make-sure-you-have-a-",
   "state": "building",
   "subtasks": {
-    "completed": 1,
-    "total": 2,
+    "completed": 8,
+    "total": 9,
     "in_progress": 1,
     "failed": 0
   },
   "phase": {
-    "current": "Verification",
-    "id": 1,
+    "current": "Integration Verification",
+    "id": null,
     "total": 2
   },
   "workers": {
@@ -18,8 +18,8 @@
     "max": 1
   },
   "session": {
-    "number": 2,
-    "started_at": "2026-01-01T11:49:02.134681"
+    "number": 9,
+    "started_at": "2026-01-02T11:07:22.656649"
   },
-  "last_update": "2026-01-01T11:52:04.784958"
+  "last_update": "2026-01-02T11:20:33.127188"
 }

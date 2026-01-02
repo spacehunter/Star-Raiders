@@ -1,7 +1,7 @@
 import { DifficultyLevel } from '../game/GameState';
 
 /**
- * SectorSystem - Manages the 8x8 galactic grid and sector contents
+ * SectorSystem - Manages the 16x8 galactic grid and sector contents
  */
 
 export interface SectorData {
@@ -14,7 +14,8 @@ export interface SectorData {
 }
 
 export class SectorSystem {
-  public static readonly GRID_SIZE = 8;
+  public static readonly GRID_WIDTH = 16;
+  public static readonly GRID_HEIGHT = 8;
   private sectors: SectorData[][] = [];
   private totalEnemies: number = 0;
   private totalStarbases: number = 0;
@@ -28,9 +29,9 @@ export class SectorSystem {
    */
   private initializeGrid(): void {
     this.sectors = [];
-    for (let y = 0; y < SectorSystem.GRID_SIZE; y++) {
+    for (let y = 0; y < SectorSystem.GRID_HEIGHT; y++) {
       this.sectors[y] = [];
-      for (let x = 0; x < SectorSystem.GRID_SIZE; x++) {
+      for (let x = 0; x < SectorSystem.GRID_WIDTH; x++) {
         this.sectors[y][x] = {
           x,
           y,
@@ -84,8 +85,8 @@ export class SectorSystem {
     // Place enemies (avoid player starting position)
     this.placeEnemies(enemyCount);
 
-    // Mark starting sector as visited
-    this.sectors[4][4].visited = true;
+    // Mark starting sector as visited (8, 4 = center of 16x8 grid)
+    this.sectors[4][8].visited = true;
   }
 
   /**
@@ -94,13 +95,16 @@ export class SectorSystem {
   private placeStarbases(count: number): void {
     const positions: [number, number][] = [];
 
-    // Divide galaxy into regions for even distribution
-    // Use coordinates 1-6 to prevent starbases from spawning on edges
+    // Divide galaxy into regions for even distribution (full 16x8 grid)
     const regions = [
-      { minX: 1, maxX: 3, minY: 1, maxY: 3 },
-      { minX: 4, maxX: 6, minY: 1, maxY: 3 },
-      { minX: 1, maxX: 3, minY: 4, maxY: 6 },
-      { minX: 4, maxX: 6, minY: 4, maxY: 6 },
+      { minX: 0, maxX: 3, minY: 0, maxY: 3 },
+      { minX: 4, maxX: 7, minY: 0, maxY: 3 },
+      { minX: 8, maxX: 11, minY: 0, maxY: 3 },
+      { minX: 12, maxX: 15, minY: 0, maxY: 3 },
+      { minX: 0, maxX: 3, minY: 4, maxY: 7 },
+      { minX: 4, maxX: 7, minY: 4, maxY: 7 },
+      { minX: 8, maxX: 11, minY: 4, maxY: 7 },
+      { minX: 12, maxX: 15, minY: 4, maxY: 7 },
     ];
 
     for (let i = 0; i < count && i < regions.length; i++) {
@@ -112,7 +116,7 @@ export class SectorSystem {
         x = region.minX + Math.floor(Math.random() * (region.maxX - region.minX + 1));
         y = region.minY + Math.floor(Math.random() * (region.maxY - region.minY + 1));
         attempts++;
-      } while ((x === 4 && y === 4) && attempts < 20); // Avoid player start
+      } while ((x === 8 && y === 4) && attempts < 20); // Avoid player start (8, 4)
 
       if (!positions.some(([px, py]) => px === x && py === y)) {
         positions.push([x, y]);
@@ -131,11 +135,11 @@ export class SectorSystem {
     let attempt = 0;
 
     while (placed < count && attempt < attempts) {
-      const x = Math.floor(Math.random() * SectorSystem.GRID_SIZE);
-      const y = Math.floor(Math.random() * SectorSystem.GRID_SIZE);
+      const x = Math.floor(Math.random() * SectorSystem.GRID_WIDTH);
+      const y = Math.floor(Math.random() * SectorSystem.GRID_HEIGHT);
 
-      // Skip player starting position initially
-      if (x === 4 && y === 4) {
+      // Skip player starting position (8, 4)
+      if (x === 8 && y === 4) {
         attempt++;
         continue;
       }
@@ -154,7 +158,7 @@ export class SectorSystem {
    * Get sector data
    */
   public getSector(x: number, y: number): SectorData | null {
-    if (x < 0 || x >= SectorSystem.GRID_SIZE || y < 0 || y >= SectorSystem.GRID_SIZE) {
+    if (x < 0 || x >= SectorSystem.GRID_WIDTH || y < 0 || y >= SectorSystem.GRID_HEIGHT) {
       return null;
     }
     return this.sectors[y][x];
@@ -216,8 +220,8 @@ export class SectorSystem {
    */
   public getStarbasesUnderAttack(): SectorData[] {
     const underAttack: SectorData[] = [];
-    for (let y = 0; y < SectorSystem.GRID_SIZE; y++) {
-      for (let x = 0; x < SectorSystem.GRID_SIZE; x++) {
+    for (let y = 0; y < SectorSystem.GRID_HEIGHT; y++) {
+      for (let x = 0; x < SectorSystem.GRID_WIDTH; x++) {
         if (this.isStarbaseUnderAttack(x, y)) {
           underAttack.push(this.sectors[y][x]);
         }

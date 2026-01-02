@@ -73,7 +73,7 @@ export class StarbaseAttackSystem {
       const nx = x + dir.dx;
       const ny = y + dir.dy;
       // Check bounds
-      if (nx >= 0 && nx < SectorSystem.GRID_SIZE && ny >= 0 && ny < SectorSystem.GRID_SIZE) {
+      if (nx >= 0 && nx < SectorSystem.GRID_WIDTH && ny >= 0 && ny < SectorSystem.GRID_HEIGHT) {
         adjacent.push({ x: nx, y: ny });
       }
     }
@@ -110,8 +110,8 @@ export class StarbaseAttackSystem {
     const sectors = this.sectorSystem.getAllSectors();
     let bestTarget: { x: number; y: number; score: number } | null = null;
 
-    for (let y = 0; y < SectorSystem.GRID_SIZE; y++) {
-      for (let x = 0; x < SectorSystem.GRID_SIZE; x++) {
+    for (let y = 0; y < SectorSystem.GRID_HEIGHT; y++) {
+      for (let x = 0; x < SectorSystem.GRID_WIDTH; x++) {
         const sector = sectors[y][x];
 
         if (sector.hasStarbase && !sector.starbaseDestroyed) {
@@ -210,8 +210,8 @@ export class StarbaseAttackSystem {
     const sectors = this.sectorSystem.getAllSectors();
     let best: { x: number; y: number; distance: number; enemies: number } | null = null;
 
-    for (let y = 0; y < SectorSystem.GRID_SIZE; y++) {
-      for (let x = 0; x < SectorSystem.GRID_SIZE; x++) {
+    for (let y = 0; y < SectorSystem.GRID_HEIGHT; y++) {
+      for (let x = 0; x < SectorSystem.GRID_WIDTH; x++) {
         const sector = sectors[y][x];
 
         // Skip if no enemies, is the starbase sector, or is the destination
