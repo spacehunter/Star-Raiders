@@ -79,6 +79,10 @@ export class CombatSystem {
       );
 
       const enemy = new Enemy(type, position);
+      // Set difficulty for enemy AI scaling
+      enemy.setDifficulty(this.gameState.difficulty);
+      // Activate honing behavior to ensure enemies pursue player after hyperwarp
+      enemy.activateHoning();
       this.enemies.push(enemy);
       this.scene.add(enemy.getObject());
     }
@@ -241,6 +245,19 @@ export class CombatSystem {
    */
   public getActiveEnemyCount(): number {
     return this.enemies.filter((e) => e.isActive).length;
+  }
+
+  /**
+   * Check for near misses that may provoke Cruisers
+   */
+  public checkNearMisses(torpedoPosition: THREE.Vector3): void {
+    const NEAR_MISS_DISTANCE = 50; // Units within which a torpedo provokes
+
+    for (const enemy of this.enemies) {
+      if (enemy.isActive) {
+        enemy.checkNearMiss(torpedoPosition, NEAR_MISS_DISTANCE);
+      }
+    }
   }
 
   /**
