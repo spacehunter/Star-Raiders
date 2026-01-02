@@ -4,8 +4,8 @@ import { EnergySystem } from '../systems/EnergySystem';
 import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';
 
 /**
- * GalacticChart - 2D overlay displaying the 8x8 sector grid
- *authentic Atari 800 style
+ * GalacticChart - 2D overlay displaying the 16x8 sector grid
+ * authentic Atari 800 style
  */
 export class GalacticChart {
   private container: HTMLElement;
@@ -89,8 +89,8 @@ export class GalacticChart {
 
     // Create grid cells
     const grid = chart.querySelector('.chart-grid')!;
-    for (let y = 0; y < 8; y++) {
-      for (let x = 0; x < 8; x++) {
+    for (let y = 0; y < SectorSystem.GRID_HEIGHT; y++) {
+      for (let x = 0; x < SectorSystem.GRID_WIDTH; x++) {
         const cell = document.createElement('div');
         cell.className = 'chart-cell';
         cell.dataset.x = x.toString();
@@ -241,8 +241,8 @@ export class GalacticChart {
 
       .chart-grid {
         display: grid;
-        grid-template-columns: repeat(8, 1fr);
-        grid-template-rows: repeat(8, 1fr);
+        grid-template-columns: repeat(${SectorSystem.GRID_WIDTH}, 1fr);
+        grid-template-rows: repeat(${SectorSystem.GRID_HEIGHT}, 1fr);
         height: 65vh; /* Larger grid */
         width: 80vh;  /* Wide aspect ratio */
         background: transparent;
@@ -449,8 +449,8 @@ export class GalacticChart {
    * Move cursor
    */
   public moveCursor(dx: number, dy: number): void {
-    const newX = Math.max(0, Math.min(7, this.cursorX + dx));
-    const newY = Math.max(0, Math.min(7, this.cursorY + dy));
+    const newX = Math.max(0, Math.min(SectorSystem.GRID_WIDTH - 1, this.cursorX + dx));
+    const newY = Math.max(0, Math.min(SectorSystem.GRID_HEIGHT - 1, this.cursorY + dy));
     this.cursorX = newX;
     this.cursorY = newY;
     this.update();
