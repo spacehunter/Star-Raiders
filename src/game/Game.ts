@@ -1060,9 +1060,18 @@ export class Game {
     portPosition.add(direction.clone().multiplyScalar(2));
     starboardPosition.add(direction.clone().multiplyScalar(2));
 
-    // Create dual torpedoes
-    const portTorpedo = new PhotonTorpedo(portPosition, direction.clone());
-    const starboardTorpedo = new PhotonTorpedo(starboardPosition, direction.clone());
+    // Calculate convergence point - where both trajectories meet at crosshair
+    // Convergence distance of 50 units places the intersection at crosshair depth
+    const CONVERGENCE_DISTANCE = 50;
+    const convergencePoint = playerPos.clone().add(direction.clone().multiplyScalar(CONVERGENCE_DISTANCE));
+
+    // Calculate converging trajectories - each torpedo angles toward the convergence point
+    const portDirection = convergencePoint.clone().sub(portPosition).normalize();
+    const starboardDirection = convergencePoint.clone().sub(starboardPosition).normalize();
+
+    // Create dual torpedoes with converging trajectories
+    const portTorpedo = new PhotonTorpedo(portPosition, portDirection);
+    const starboardTorpedo = new PhotonTorpedo(starboardPosition, starboardDirection);
 
     this.torpedoes.push(portTorpedo);
     this.torpedoes.push(starboardTorpedo);

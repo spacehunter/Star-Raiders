@@ -1,0 +1,15 @@
+{
+  "discovered_files": {
+    "src/entities/PhotonTorpedo.ts": {
+      "description": "PhotonTorpedo now uses THREE.Points with BufferGeometry for particle-based rendering. Center position tracked separately for collision detection. Particles randomized each frame for scrambled effect.",
+      "category": "architecture",
+      "discovered_at": "2026-01-02T17:15:09.530105+00:00"
+    },
+    "src/game/Game.ts": {
+      "description": "fireTorpedo() now creates dual torpedoes from port/starboard wing positions. Uses player's pitchObject and yawObject quaternions to transform offset vectors (-0.6, 0, -0.5) and (0.6, 0, -0.5) relative to ship rotation.",
+      "category": "implementation",
+      "discovered_at": "2026-01-02T17:21:13.064001+00:00"
+    }
+  },
+  "last_updated": "2026-01-02T17:21:13.064008+00:00"
+}

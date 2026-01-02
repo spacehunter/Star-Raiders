@@ -1,0 +1,307 @@
+{
+  "feature": "Dual Photon Cannon Weapon System",
+  "workflow_type": "feature",
+  "workflow_rationale": "This is a significant visual and mechanical enhancement to an existing weapon system. It requires new animation logic using particle systems, trajectory calculations for converging fire, and modifications to the rendering approach while maintaining integration with existing collision and VFX systems.",
+  "phases": [
+    {
+      "id": "phase-1-torpedo-visual",
+      "name": "Photon Torpedo Visual Overhaul",
+      "type": "implementation",
+      "description": "Replace the current elongated sphere torpedo with a scrambled energy particle system that creates the distinctive 'photon cannon' visual effect",
+      "depends_on": [],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-1-1",
+          "description": "Replace PhotonTorpedo mesh with particle system using THREE.Points and BufferGeometry",
+          "service": "main",
+          "files_to_modify": [
+            "src/entities/PhotonTorpedo.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/systems/VFXSystem.ts"
+          ],
+          "implementation_notes": [
+            "Replace THREE.SphereGeometry with THREE.BufferGeometry",
+            "Create Float32Array for positions (20 particles * 3 = 60 floats)",
+            "Create Float32Array for colors (cyan/blue range)",
+            "Use THREE.Points with PointsMaterial (size: 0.1-0.15)",
+            "Remove the glow child mesh, particle system creates its own glow effect"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "cd /Users/moog/Documents/Star-Raiders && npx tsc --noEmit src/entities/PhotonTorpedo.ts",
+            "expected": "No TypeScript errors"
+          },
+          "status": "completed",
+          "notes": "Replaced THREE.Mesh with THREE.Points using BufferGeometry. Created 20 particles with Float32Array for positions and colors. Implemented cyan/blue color scheme and spherical random offsets for scrambled energy ball effect. Updated collision detection to use centerPosition tracking. Committed as b75011a.",
+          "updated_at": "2026-01-02T17:15:09.514977+00:00"
+        },
+        {
+          "id": "subtask-1-2",
+          "description": "Implement scrambled animation effect - particles randomly reposition around center each frame",
+          "service": "main",
+          "files_to_modify": [
+            "src/entities/PhotonTorpedo.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/systems/VFXSystem.ts"
+          ],
+          "implementation_notes": [
+            "In update(), randomize particle positions around projectile center",
+            "Use spherical coordinates: random theta (0-2\u03c0), random phi (acos), random radius (0-0.3)",
+            "Set geometry.attributes.position.needsUpdate = true each frame",
+            "Optional: slight color variation each frame for extra energy effect",
+            "Maintain fade-out opacity as projectile ages (existing pattern)"
+          ],
+          "verification": {
+            "type": "browser",
+            "url": "http://localhost:5173",
+            "checks": [
+              "Torpedo displays as animated particle cluster",
+              "Particles visibly scramble during flight",
+              "No console errors"
+            ]
+          },
+          "status": "completed",
+          "notes": "Added color variation to scrambled particle effect. Each frame, particles randomly vary their green channel (0.5-1.0) for enhanced energy shimmer effect. Both position and color buffers are updated each frame with needsUpdate = true. Committed as a946aed.",
+          "updated_at": "2026-01-02T17:17:46.472716+00:00"
+        }
+      ]
+    },
+    {
+      "id": "phase-2-dual-firing",
+      "name": "Dual Cannon Firing System",
+      "type": "implementation",
+      "description": "Modify the torpedo firing logic to create two projectiles from port and starboard positions with converging trajectories toward the crosshair",
+      "depends_on": [
+        "phase-1-torpedo-visual"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-2-1",
+          "description": "Calculate port and starboard firing positions relative to player ship rotation",
+          "service": "main",
+          "files_to_modify": [
+            "src/game/Game.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/entities/Player.ts"
+          ],
+          "implementation_notes": [
+            "Define offset vectors: port = (-0.6, 0, -0.5), starboard = (0.6, 0, -0.5)",
+            "Apply player's yawObject and pitchObject quaternions to offsets",
+            "Add rotated offsets to player position for final firing positions",
+            "Both cannons fire from slightly forward of wings (z = -0.5)"
+          ],
+          "verification": {
+            "type": "browser",
+            "url": "http://localhost:5173",
+            "checks": [
+              "Two torpedoes appear when firing",
+              "Torpedoes originate from left and right of ship center"
+            ]
+          },
+          "status": "completed",
+          "notes": "Implemented dual cannon firing positions in Game.ts. Modified fireTorpedo() to create two PhotonTorpedo instances from port (-0.6, 0, -0.5) and starboard (0.6, 0, -0.5) offsets. Offsets are correctly transformed using player's pitch and yaw quaternions. Aft view handling included. Committed as ee27f01.",
+          "updated_at": "2026-01-02T17:21:04.462897+00:00"
+        },
+        {
+          "id": "subtask-2-2",
+          "description": "Implement converging trajectory calculation - both projectiles angle toward screen center",
+          "service": "main",
+          "files_to_modify": [
+            "src/game/Game.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/game/Game.ts"
+          ],
+          "implementation_notes": [
+            "Calculate convergence point: playerPos + forward * 50 units",
+            "Port trajectory: (convergencePoint - portPosition).normalize()",
+            "Starboard trajectory: (convergencePoint - starboardPosition).normalize()",
+            "For aft view: convergence point is behind player, negate forward direction",
+            "Both torpedoes should converge at crosshair location"
+          ],
+          "verification": {
+            "type": "browser",
+            "url": "http://localhost:5173",
+            "checks": [
+              "Torpedoes visibly angle toward center",
+              "Trajectories converge at crosshair distance",
+              "Works in both front and aft view"
+            ]
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-3-integration",
+      "name": "Integration and Polish",
+      "type": "integration",
+      "description": "Verify complete integration with collision system, VFX, and gameplay flow",
+      "depends_on": [
+        "phase-2-dual-firing"
+      ],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-3-1",
+          "description": "Verify collision detection works with both projectiles",
+          "service": "main",
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/systems/CombatSystem.ts"
+          ],
+          "implementation_notes": [
+            "No code changes expected - collision uses existing checkCollision() method",
+            "Verify each torpedo independently triggers collision",
+            "Confirm explosion VFX triggers at correct impact locations",
+            "Test rapid fire scenarios with multiple salvos"
+          ],
+          "verification": {
+            "type": "e2e",
+            "steps": [
+              "Start game and switch to front view (F key)",
+              "Locate enemy on radar",
+              "Align crosshair with enemy",
+              "Fire photon cannons (spacebar)",
+              "Verify enemy explodes on hit",
+              "Verify explosion VFX appears at impact location"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-3-2",
+          "description": "Performance validation and cleanup optimization",
+          "service": "main",
+          "files_to_modify": [
+            "src/entities/PhotonTorpedo.ts"
+          ],
+          "files_to_create": [],
+          "patterns_from": [
+            "src/systems/VFXSystem.ts"
+          ],
+          "implementation_notes": [
+            "Verify dispose() properly cleans up BufferGeometry and PointsMaterial",
+            "Test with rapid fire (many projectiles active simultaneously)",
+            "Confirm no memory leaks via browser dev tools",
+            "Ensure 60fps maintained with 10+ active projectiles"
+          ],
+          "verification": {
+            "type": "browser",
+            "url": "http://localhost:5173",
+            "checks": [
+              "Maintains 60fps with multiple salvos",
+              "No memory leaks detected",
+              "Clean disposal on projectile expiry"
+            ]
+          },
+          "status": "pending"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_phases": 3,
+    "total_subtasks": 6,
+    "services_involved": [
+      "main"
+    ],
+    "parallelism": {
+      "max_parallel_phases": 1,
+      "parallel_groups": [],
+      "recommended_workers": 1,
+      "speedup_estimate": "Sequential execution optimal - phases have dependencies"
+    },
+    "startup_command": "cd /Users/moog/Documents/Star-Raiders && npm run dev"
+  },
+  "verification_strategy": {
+    "risk_level": "low",
+    "skip_validation": false,
+    "test_creation_phase": "post_implementation",
+    "test_types_required": [
+      "unit"
+    ],
+    "security_scanning_required": false,
+    "staging_deployment_required": false,
+    "acceptance_criteria": [
+      "Two photon projectiles fire per spacebar press",
+      "Projectiles originate from port and starboard wing positions",
+      "Projectiles converge toward screen center crosshair",
+      "Animated scrambled pixel effect visible during flight",
+      "Collision detection triggers enemy explosions",
+      "Works in front and aft view modes",
+      "No console errors during gameplay",
+      "60fps maintained with multiple projectiles"
+    ],
+    "verification_steps": [
+      {
+        "name": "TypeScript Compilation",
+        "command": "cd /Users/moog/Documents/Star-Raiders && npx tsc --noEmit",
+        "expected_outcome": "No TypeScript errors",
+        "type": "build",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Visual Gameplay Test",
+        "command": "manual browser verification at http://localhost:5173",
+        "expected_outcome": "Dual cannons fire, converge, and animate correctly",
+        "type": "e2e",
+        "required": true,
+        "blocking": true
+      }
+    ],
+    "reasoning": "Low risk frontend game visual/mechanics change. Primary validation is visual gameplay testing since this is a graphical effect. TypeScript compilation ensures no syntax errors."
+  },
+  "qa_acceptance": {
+    "unit_tests": {
+      "required": false,
+      "commands": [],
+      "minimum_coverage": null,
+      "notes": "No existing test framework detected. Primary validation is visual/gameplay testing."
+    },
+    "integration_tests": {
+      "required": false,
+      "commands": [],
+      "services_to_test": []
+    },
+    "e2e_tests": {
+      "required": false,
+      "commands": [],
+      "flows": []
+    },
+    "browser_verification": {
+      "required": true,
+      "pages": [
+        {
+          "url": "http://localhost:5173",
+          "checks": [
+            "Game loads without errors",
+            "Dual torpedoes fire from wing positions",
+            "Projectiles show scrambled particle animation",
+            "Projectiles converge toward crosshair",
+            "Collision detection triggers explosions",
+            "Front and Aft view firing works",
+            "60fps performance maintained"
+          ]
+        }
+      ]
+    },
+    "database_verification": {
+      "required": false,
+      "checks": []
+    }
+  },
+  "qa_signoff": null,
+  "last_updated": "2026-01-02T17:21:04.462905+00:00"
+}

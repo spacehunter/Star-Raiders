@@ -1,0 +1,65 @@
+{
+  "project_root": "/Users/moog/Documents/Star-Raiders",
+  "project_type": "single",
+  "services": {
+    "main": {
+      "name": "main",
+      "path": "/Users/moog/Documents/Star-Raiders",
+      "language": "TypeScript",
+      "framework": "Three.js",
+      "type": "game",
+      "package_manager": "npm",
+      "build_tool": "Vite",
+      "default_port": 5173,
+      "dev_command": "npm run dev",
+      "test_command": null,
+      "key_directories": {
+        "src": {
+          "path": "src",
+          "purpose": "Source code"
+        },
+        "entities": {
+          "path": "src/entities",
+          "purpose": "Game objects (Player, Enemy, Torpedo, etc.)"
+        },
+        "game": {
+          "path": "src/game",
+          "purpose": "Core game logic (Game, GameLoop, GameState)"
+        },
+        "systems": {
+          "path": "src/systems",
+          "purpose": "Game systems (Combat, Energy, VFX, etc.)"
+        },
+        "views": {
+          "path": "src/views",
+          "purpose": "UI overlays (AttackComputer, GalacticChart, etc.)"
+        }
+      },
+      "entry_point": "src/main.ts",
+      "dependencies": [
+        "@types/three",
+        "three"
+      ],
+      "dev_dependencies": [
+        "typescript",
+        "vite"
+      ]
+    }
+  },
+  "infrastructure": {
+    "docker": false,
+    "database": null,
+    "ci_cd": false
+  },
+  "conventions": {
+    "typescript": true,
+    "linter": null,
+    "formatter": null,
+    "testing": null,
+    "patterns": {
+      "entity_pattern": "Class with getObject(), update(deltaTime), dispose() methods",
+      "system_pattern": "Class managing multiple entities with update() and dispose()",
+      "vfx_pattern": "BufferGeometry + Points for particle effects"
+    }
+  }
+}
