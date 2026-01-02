@@ -83,8 +83,9 @@ export class PhotonTorpedo {
     // Move center position
     this.centerPosition.add(this.velocity.clone().multiplyScalar(deltaTime));
 
-    // Update particle positions with scrambled effect
+    // Update particle positions and colors with scrambled effect
     const positions = this.particles.geometry.attributes.position.array as Float32Array;
+    const colors = this.particles.geometry.attributes.color.array as Float32Array;
 
     for (let i = 0; i < this.particleCount; i++) {
       const i3 = i * 3;
@@ -97,9 +98,15 @@ export class PhotonTorpedo {
       positions[i3] = this.centerPosition.x + radius * Math.sin(phi) * Math.cos(theta);
       positions[i3 + 1] = this.centerPosition.y + radius * Math.sin(phi) * Math.sin(theta);
       positions[i3 + 2] = this.centerPosition.z + radius * Math.cos(phi);
+
+      // Slight color variation for extra energy effect (cyan/blue range)
+      colors[i3] = 0; // R stays 0
+      colors[i3 + 1] = 0.5 + Math.random() * 0.5; // G varies (0.5-1.0)
+      colors[i3 + 2] = 1; // B stays 1
     }
 
     this.particles.geometry.attributes.position.needsUpdate = true;
+    this.particles.geometry.attributes.color.needsUpdate = true;
 
     // Age the torpedo
     this.age += deltaTime;
