@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Auto Claude metadata
+.auto-claude/
+.auto-claude-status
+.claude_settings.json
+.worktrees/
