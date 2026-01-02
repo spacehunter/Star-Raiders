@@ -1036,14 +1036,16 @@ export class Game {
     const yawQuaternion = this.player.getObject().quaternion;
 
     // Define cannon offsets relative to ship center
-    // Port (left) and starboard (right) wing positions, slightly forward
-    const portOffset = new THREE.Vector3(-0.6, 0, -0.5);
-    const starboardOffset = new THREE.Vector3(0.6, 0, -0.5);
+    // Port (left) and starboard (right) positions
+    // Y offset is negative to make torpedoes appear from bottom of screen (near player status)
+    // Z offset is small so they start close to player view
+    const portOffset = new THREE.Vector3(-0.8, -0.6, 0.2);
+    const starboardOffset = new THREE.Vector3(0.8, -0.6, 0.2);
 
-    // For aft view, flip the z offset (fire from rear of wings)
+    // For aft view, flip the z offset (fire from rear)
     if (this.gameState.currentView === ViewMode.AFT) {
-      portOffset.z = 0.5;
-      starboardOffset.z = 0.5;
+      portOffset.z = -0.2;
+      starboardOffset.z = -0.2;
     }
 
     // Apply player rotation to offsets (pitch first, then yaw - same as getForwardDirection)
@@ -1052,13 +1054,13 @@ export class Game {
     starboardOffset.applyQuaternion(pitchQuaternion);
     starboardOffset.applyQuaternion(yawQuaternion);
 
-    // Calculate final firing positions
+    // Calculate final firing positions - start close to player (bottom of screen)
     const portPosition = playerPos.clone().add(portOffset);
     const starboardPosition = playerPos.clone().add(starboardOffset);
 
-    // Add forward offset to both positions
-    portPosition.add(direction.clone().multiplyScalar(2));
-    starboardPosition.add(direction.clone().multiplyScalar(2));
+    // Small forward offset only - torpedoes should start at bottom of screen, not middle
+    portPosition.add(direction.clone().multiplyScalar(0.5));
+    starboardPosition.add(direction.clone().multiplyScalar(0.5));
 
     // Calculate convergence point - where both trajectories meet at crosshair
     // Convergence distance of 50 units places the intersection at crosshair depth

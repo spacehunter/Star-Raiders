@@ -4,10 +4,11 @@ import * as THREE from 'three';
  * PhotonTorpedo - Projectile fired by the player
  * Uses particle system for scrambled energy ball visual effect
  *
- * Performance optimizations:
- * - Pre-computed particle offsets avoid per-frame trig calculations
- * - Reusable temp vector prevents per-frame allocations
- * - Time-based animation uses cached values with phase offsets
+ * Visual design:
+ * - Multi-colored particles (red, white, blue, purple, cyan) for photon energy
+ * - Chaotic scrambling animation - particles randomly reposition each frame
+ * - Starts large and diminishes as it travels (perspective effect)
+ * - Spherical 360-degree energy ball appearance
  */
 export class PhotonTorpedo {
   private particles: THREE.Points;
@@ -16,15 +17,26 @@ export class PhotonTorpedo {
   private age: number = 0;
   private maxAge: number = 3; // Seconds before despawning
   private speed: number = 200; // Units per second
-  private particleCount: number = 20;
+  private particleCount: number = 25; // More particles for fuller sphere
   public isActive: boolean = true;
 
-  // Performance: Pre-computed particle offsets (avoid per-frame random/trig)
-  private particleOffsets: Float32Array;
   // Performance: Reusable temp vector (avoid per-frame allocation)
   private tempVector: THREE.Vector3 = new THREE.Vector3();
-  // Performance: Phase offsets for time-based scramble animation
-  private phaseOffsets: Float32Array;
+
+  // Size scaling: starts large, shrinks with distance
+  private initialSize: number = 0.5; // Large starting size
+  private minSize: number = 0.08; // Minimum size at max range
+
+  // Color palette for scrambled energy effect (rgb values)
+  private colorPalette: number[][] = [
+    [1.0, 0.2, 0.2],   // Red
+    [1.0, 1.0, 1.0],   // White
+    [0.3, 0.3, 1.0],   // Blue
+    [0.8, 0.2, 1.0],   // Purple
+    [0.0, 1.0, 1.0],   // Cyan
+    [1.0, 0.5, 0.8],   // Pink
+    [0.5, 0.0, 1.0],   // Violet
+  ];
 
   constructor(position: THREE.Vector3, direction: THREE.Vector3) {
     // Store center position for collision detection and particle positioning
@@ -36,48 +48,40 @@ export class PhotonTorpedo {
     const positions = new Float32Array(this.particleCount * 3);
     const colors = new Float32Array(this.particleCount * 3);
 
-    // Pre-compute particle offsets for performance (computed once, reused each frame)
-    this.particleOffsets = new Float32Array(this.particleCount * 3);
-    this.phaseOffsets = new Float32Array(this.particleCount);
+    // Larger initial sphere radius for starting visual
+    const sphereRadius = 0.6;
 
-    // Initialize particles around the center position
+    // Initialize particles in random spherical positions with random colors
     for (let i = 0; i < this.particleCount; i++) {
       const i3 = i * 3;
 
-      // Pre-compute random spherical coordinates
+      // Random spherical coordinates for true 360-degree ball
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
-      const radius = 0.15 + Math.random() * 0.15; // 0.15-0.3 range
+      const radius = Math.random() * sphereRadius;
 
-      // Store pre-computed cartesian offsets
-      this.particleOffsets[i3] = radius * Math.sin(phi) * Math.cos(theta);
-      this.particleOffsets[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
-      this.particleOffsets[i3 + 2] = radius * Math.cos(phi);
+      // Cartesian offsets from center
+      positions[i3] = this.centerPosition.x + radius * Math.sin(phi) * Math.cos(theta);
+      positions[i3 + 1] = this.centerPosition.y + radius * Math.sin(phi) * Math.sin(theta);
+      positions[i3 + 2] = this.centerPosition.z + radius * Math.cos(phi);
 
-      // Store random phase offset for time-based animation
-      this.phaseOffsets[i] = Math.random() * Math.PI * 2;
-
-      // Initial positions
-      positions[i3] = this.centerPosition.x + this.particleOffsets[i3];
-      positions[i3 + 1] = this.centerPosition.y + this.particleOffsets[i3 + 1];
-      positions[i3 + 2] = this.centerPosition.z + this.particleOffsets[i3 + 2];
-
-      // Cyan/blue colors for photon energy (#00FFFF to #0088FF range)
-      // Colors are static per particle for performance
-      colors[i3] = 0; // R
-      colors[i3 + 1] = 0.5 + Math.random() * 0.5; // G (0.5-1.0)
-      colors[i3 + 2] = 1; // B
+      // Random color from palette for each particle
+      const colorIndex = Math.floor(Math.random() * this.colorPalette.length);
+      const color = this.colorPalette[colorIndex];
+      colors[i3] = color[0];     // R
+      colors[i3 + 1] = color[1]; // G
+      colors[i3 + 2] = color[2]; // B
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-    // Create PointsMaterial for particle rendering
+    // Create PointsMaterial for particle rendering - starts large
     const material = new THREE.PointsMaterial({
-      size: 0.12,
+      size: this.initialSize,
       vertexColors: true,
       transparent: true,
-      opacity: 0.9,
+      opacity: 1.0,
     });
 
     this.particles = new THREE.Points(geometry, material);
@@ -101,8 +105,9 @@ export class PhotonTorpedo {
   }
 
   /**
-   * Update torpedo position
-   * Performance optimized: uses pre-computed offsets with time-based animation
+   * Update torpedo position with chaotic scramble animation
+   * Particles randomly reposition each frame for true energy ball effect
+   * Size diminishes as torpedo travels (perspective effect)
    */
   public update(deltaTime: number): void {
     if (!this.isActive) return;
@@ -111,27 +116,43 @@ export class PhotonTorpedo {
     this.tempVector.copy(this.velocity).multiplyScalar(deltaTime);
     this.centerPosition.add(this.tempVector);
 
-    // Update particle positions with scrambled effect using pre-computed offsets
-    const positions = this.particles.geometry.attributes.position.array as Float32Array;
+    // Calculate progress through lifetime (0 to 1)
+    const lifeProgress = this.age / this.maxAge;
 
-    // Time-based scramble factor (varies smoothly, avoids per-frame random)
-    const time = this.age * 15; // Animation speed multiplier
+    // Sphere radius shrinks as torpedo travels (perspective diminishing effect)
+    const currentRadius = 0.6 * (1 - lifeProgress * 0.7); // 0.6 -> 0.18
+
+    // Update particle positions with TRUE chaotic scramble - random each frame!
+    const positions = this.particles.geometry.attributes.position.array as Float32Array;
+    const colors = this.particles.geometry.attributes.color.array as Float32Array;
 
     for (let i = 0; i < this.particleCount; i++) {
       const i3 = i * 3;
 
-      // Use pre-computed offset with time-based rotation for scramble effect
-      // This creates smooth animated chaos without expensive per-frame randoms
-      const phase = this.phaseOffsets[i] + time;
-      const scrambleFactor = Math.sin(phase) * 0.5 + 0.5; // 0-1 range
+      // CHAOTIC SCRAMBLE: New random spherical position each frame
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const radius = Math.random() * currentRadius;
 
-      positions[i3] = this.centerPosition.x + this.particleOffsets[i3] * scrambleFactor;
-      positions[i3 + 1] = this.centerPosition.y + this.particleOffsets[i3 + 1] * scrambleFactor;
-      positions[i3 + 2] = this.centerPosition.z + this.particleOffsets[i3 + 2] * scrambleFactor;
+      // Position particles around current center
+      positions[i3] = this.centerPosition.x + radius * Math.sin(phi) * Math.cos(theta);
+      positions[i3 + 1] = this.centerPosition.y + radius * Math.sin(phi) * Math.sin(theta);
+      positions[i3 + 2] = this.centerPosition.z + radius * Math.cos(phi);
+
+      // SCRAMBLE COLORS: Random color from palette each frame for energy shimmer
+      const colorIndex = Math.floor(Math.random() * this.colorPalette.length);
+      const color = this.colorPalette[colorIndex];
+      colors[i3] = color[0];
+      colors[i3 + 1] = color[1];
+      colors[i3 + 2] = color[2];
     }
 
     this.particles.geometry.attributes.position.needsUpdate = true;
-    // Note: Colors are static per particle, no need to update
+    this.particles.geometry.attributes.color.needsUpdate = true;
+
+    // Size diminishes as torpedo travels (perspective effect: large when close, small when far)
+    const material = this.particles.material as THREE.PointsMaterial;
+    material.size = this.initialSize * (1 - lifeProgress * 0.85) + this.minSize;
 
     // Age the torpedo
     this.age += deltaTime;
@@ -139,9 +160,8 @@ export class PhotonTorpedo {
       this.isActive = false;
     }
 
-    // Fade out as it ages
-    const material = this.particles.material as THREE.PointsMaterial;
-    material.opacity = 0.9 * (1 - this.age / this.maxAge);
+    // Slight fade at very end of life
+    material.opacity = lifeProgress > 0.8 ? 1.0 - ((lifeProgress - 0.8) / 0.2) : 1.0;
   }
 
   /**
@@ -161,16 +181,11 @@ export class PhotonTorpedo {
 
   /**
    * Dispose of resources
-   * Ensures clean memory release: geometry, material, and typed arrays
+   * Ensures clean memory release: geometry and material
    */
   public dispose(): void {
     // Dispose Three.js resources (required to free GPU memory)
     this.particles.geometry.dispose();
     (this.particles.material as THREE.Material).dispose();
-
-    // Clear references to typed arrays (allows garbage collection)
-    // Note: TypedArrays are cleared by setting to null-equivalent empty arrays
-    this.particleOffsets = new Float32Array(0);
-    this.phaseOffsets = new Float32Array(0);
   }
 }
