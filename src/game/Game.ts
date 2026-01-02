@@ -331,6 +331,16 @@ export class Game {
     const playerPos = this.player.getObject().position.clone();
     this.combatSystem.update(deltaTime, playerPos);
 
+    // Spawn enemy projectiles
+    const firingEnemy = this.combatSystem.getEnemyFiring(this.gameTime, playerPos);
+    if (firingEnemy) {
+      const projectilePosition = firingEnemy.getPosition();
+      const firingDirection = firingEnemy.getFiringDirection(playerPos);
+      const projectile = new EnemyProjectile(projectilePosition, firingDirection, firingEnemy.getType());
+      this.enemyProjectiles.push(projectile);
+      this.scene.add(projectile.getObject());
+    }
+
     // Update starbase attack system (enemy strategic AI)
     this.starbaseAttackSystem.update(
       deltaTime,

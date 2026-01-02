@@ -151,7 +151,9 @@
             "command": "npx tsc --noEmit src/game/Game.ts",
             "expected": "No TypeScript errors"
           },
-          "status": "pending"
+          "status": "completed",
+          "notes": "Added import for EnemyProjectile class and enemyProjectiles array to Game.ts. Follows existing torpedoes array pattern.",
+          "updated_at": "2026-01-02T17:17:44.632395+00:00"
         },
         {
           "id": "subtask-3-2",
@@ -458,5 +460,5 @@
     }
   },
   "qa_signoff": null,
-  "last_updated": "2026-01-02T17:16:06.520920+00:00"
+  "last_updated": "2026-01-02T17:17:44.632400+00:00"
 }

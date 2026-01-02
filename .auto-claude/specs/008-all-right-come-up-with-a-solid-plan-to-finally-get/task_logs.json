@@ -1,7 +1,7 @@
 {
   "spec_id": "008-all-right-come-up-with-a-solid-plan-to-finally-get",
   "created_at": "2026-01-02T17:00:53.401479+00:00",
-  "updated_at": "2026-01-02T17:17:35.076370+00:00",
+  "updated_at": "2026-01-02T17:19:28.788668+00:00",
   "phases": {
     "planning": {
       "phase": "planning",
@@ -1777,6 +1777,293 @@
           "tool_input": "git add . && git commit -m \"auto-claude: subtas...",
           "subtask_id": "subtask-3-1",
           "session": 3
+        },
+        {
+          "timestamp": "2026-01-02T17:17:36.163617+00:00",
+          "type": "tool_end",
+          "content": "[Bash] Done",
+          "phase": "coding",
+          "tool_name": "Bash",
+          "subtask_id": "subtask-3-1",
+          "session": 3,
+          "detail": "[auto-claude/008-all-right-come-up-with-a-solid-plan-to-finally-get f82f374] auto-claude: subtask-3-1 - Add enemyProjectiles array and import EnemyProjectile\n 19 files changed, 3263 insertions(+)\n create mode 100644 .auto-claude-status\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/build-progress.txt\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/complexity_assessment.json\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/context.json\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/implementation_plan.json\n create mode 100755 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/init.sh\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/memory/attempt_history.json\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/memory/build_commits.json\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/memory/codebase_map.json\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/memory/session_insights/session_001.json\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/memory/session_insights/session_002.json\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/project_index.json\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/requirements.json\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/review_state.json\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/spec.md\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/task_logs.json\n create mode 100644 .auto-claude/specs/008-all-right-come-up-with-a-solid-plan-to-finally-get/task_metadata.json\n create mode 100644 .claude_settings.json",
+          "collapsed": true
+        },
+        {
+          "timestamp": "2026-01-02T17:17:43.679309+00:00",
+          "type": "text",
+          "content": "Now let me update the subtask status to completed:",
+          "phase": "coding",
+          "subtask_id": "subtask-3-1",
+          "session": 3
+        },
+        {
+          "timestamp": "2026-01-02T17:17:44.628380+00:00",
+          "type": "tool_start",
+          "content": "[mcp__auto-claude__update_subtask_status]",
+          "phase": "coding",
+          "tool_name": "mcp__auto-claude__update_subtask_status",
+          "subtask_id": "subtask-3-1",
+          "session": 3
+        },
+        {
+          "timestamp": "2026-01-02T17:17:44.649559+00:00",
+          "type": "tool_end",
+          "content": "[mcp__auto-claude__update_subtask_status] Done",
+          "phase": "coding",
+          "tool_name": "mcp__auto-claude__update_subtask_status",
+          "subtask_id": "subtask-3-1",
+          "session": 3,
+          "collapsed": true
+        },
+        {
+          "timestamp": "2026-01-02T17:17:53.568991+00:00",
+          "type": "text",
+          "content": "**Subtask 3-1 Complete** ✅\n\n**Changes made to `src/game/Game.ts`:**\n\n1. **Added import** (line 13):\n   ```typescript\n   import { EnemyProjectile } from '../entities/EnemyProjectile';\n   ```\n\n2. **Added enemyProjectiles array** (line 62):\n   ```typescript\n   private enemyProjectiles: EnemyProjectile[] = [];\n   ```\n\nThe changes follow the existing pattern used for `torpedoes: PhotonTorpedo[]` array and position the new array logically in the \"Game entities\" section.",
+          "phase": "coding",
+          "subtask_id": "subtask-3-1",
+          "session": 3
+        },
+        {
+          "timestamp": "2026-01-02T17:18:15.420308+00:00",
+          "type": "text",
+          "content": "I'll start by reading the full Game.ts file and the CombatSystem to understand the current implementation and where to add enemy projectile spawning.",
+          "phase": "coding",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:18:15.984858+00:00",
+          "type": "tool_start",
+          "content": "[Read] ./src/game/Game.ts",
+          "phase": "coding",
+          "tool_name": "Read",
+          "tool_input": "./src/game/Game.ts",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:18:17.594025+00:00",
+          "type": "tool_start",
+          "content": "[Read] ./src/systems/CombatSystem.ts",
+          "phase": "coding",
+          "tool_name": "Read",
+          "tool_input": "./src/systems/CombatSystem.ts",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:18:17.615259+00:00",
+          "type": "tool_start",
+          "content": "[mcp__auto-claude__get_session_context]",
+          "phase": "coding",
+          "tool_name": "mcp__auto-claude__get_session_context",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:18:17.739347+00:00",
+          "type": "tool_end",
+          "content": "[mcp__auto-claude__get_session_context] Done",
+          "phase": "coding",
+          "tool_name": "mcp__auto-claude__get_session_context",
+          "subtask_id": "subtask-3-2",
+          "session": 4,
+          "collapsed": true
+        },
+        {
+          "timestamp": "2026-01-02T17:18:25.702778+00:00",
+          "type": "text",
+          "content": "Let me also read the EnemyProjectile entity and the Enemy entity to understand how enemy firing works:",
+          "phase": "coding",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:18:26.288402+00:00",
+          "type": "tool_start",
+          "content": "[Read] ./src/entities/EnemyProjectile.ts",
+          "phase": "coding",
+          "tool_name": "Read",
+          "tool_input": "./src/entities/EnemyProjectile.ts",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:18:26.723463+00:00",
+          "type": "tool_start",
+          "content": "[Read] ./src/entities/Enemy.ts",
+          "phase": "coding",
+          "tool_name": "Read",
+          "tool_input": "./src/entities/Enemy.ts",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:18:26.771715+00:00",
+          "type": "tool_end",
+          "content": "[Read] Done",
+          "phase": "coding",
+          "tool_name": "Read",
+          "subtask_id": "subtask-3-2",
+          "session": 4,
+          "detail": "     1→import * as THREE from 'three';\n     2→import { EnemyType } from './Enemy';\n     3→\n     4→/**\n     5→ * Configuration for enemy projectiles per enemy type\n     6→ */\n     7→export interface EnemyProjectileConfig {\n     8→  speed: number;\n     9→  damage: number;\n    10→  color: number;\n    11→  size: number;\n    12→}\n    13→\n    14→/**\n    15→ * Projectile configurations for each enemy type\n    16→ * - Fighter: Fast, small green projectiles, lower damage\n    17→ * - Cruiser: Medium speed, purple projectiles, medium damage\n    18→ * - Basestar: Slower, large gold projectiles, high damage\n    19→ */\n    20→export const PROJECTILE_CONFIGS: Record<EnemyType, EnemyProjectileConfig> = {\n    21→  FIGHTER: { speed: 180, damage: 100, color: 0x00ff88, size: 0.12 },\n    22→  CRUISER: { speed: 150, damage: 200, color: 0xff00ff, size: 0.18 },\n    23→  BASESTAR: { speed: 120, damage: 350, color: 0xffd700, size: 0.25 },\n    24→};\n    25→\n    26→// Make globally accessible for console testing/tuning\n    27→if (typeof window !== 'undefined') {\n    28→  (window as any).PROJECTILE_CONFIGS = PROJECTILE_CONFIGS;\n    29→}\n    30→\n    31→/**\n    32→ * EnemyProjectile - Projectile fired by enemy ships at the player\n    33→ */\n    34→export class EnemyProjectile {\n    35→  private mesh: THREE.Mesh;\n    36→  private velocity: THREE.Vector3;\n    37→  private age: number = 0;\n    38→  private maxAge: number = 4; // Seconds before despawning (longer than player torpedoes)\n    39→  private damage: number;\n    40→  public isActive: boolean = true;\n    41→  public sourceType: EnemyType;\n    42→\n    43→  constructor(position: THREE.Vector3, direction: THREE.Vector3, enemyType: EnemyType) {\n    44→    this.sourceType = enemyType;\n    45→    const config = PROJECTILE_CONFIGS[enemyType];\n    46→    this.damage = config.damage;\n    47→\n    48→    // Create projectile geometry - elongated sphere with glow effect\n    49→    const geometry = new THREE.SphereGeometry(config.size, 8, 8);\n    50→    geometry.scale(1, 1, 2); // Elongate\n    51→\n    52→    // Bright emissive material with type-specific color\n    53→    const material = new THREE.MeshBasicMaterial({\n    54→      color: config.color,\n    55→      transparent: true,\n    56→      opacity: 0.9,\n    57→    });\n    58→\n    59→    this.mesh = new THREE.Mesh(geometry, material);\n    60→    this.mesh.position.copy(position);\n    61→\n    62→    // Align projectile to face direction of travel\n    63→    const quaternion = new THREE.Quaternion();\n    64→    quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.normalize());\n    65→    this.mesh.quaternion.copy(quaternion);\n    66→\n    67→    // Set velocity\n    68→    this.velocity = direction.normalize().multiplyScalar(config.speed);\n    69→\n    70→    // Add glow effect using a larger transparent sphere\n    71→    const glowGeometry = new THREE.SphereGeometry(config.size * 2.5, 8, 8);\n    72→    const glowMaterial = new THREE.MeshBasicMaterial({\n    73→      color: config.color,\n    74→      transparent: true,\n    75→      opacity: 0.35,\n    76→    });\n    77→    const glow = new THREE.Mesh(glowGeometry, glowMaterial);\n    78→    this.mesh.add(glow);\n    79→  }\n    80→\n    81→  /**\n    82→   * Get the Three.js object\n    83→   */\n    84→  public getObject(): THREE.Object3D {\n    85→    return this.mesh;\n    86→  }\n    87→\n    88→  /**\n    89→   * Get current position\n    90→   */\n    91→  public getPosition(): THREE.Vector3 {\n    92→    return this.mesh.position.clone();\n    93→  }\n    94→\n    95→  /**\n    96→   * Get damage value for this projectile\n    97→   */\n    98→  public getDamage(): number {\n    99→    return this.damage;\n   100→  }\n   101→\n   102→  /**\n   103→   * Update projectile position\n   104→   */\n   105→  public update(deltaTime: number): void {\n   106→    if (!this.isActive) return;\n   107→\n   108→    // Move projectile\n   109→    this.mesh.position.add(this.velocity.clone().multiplyScalar(deltaTime));\n   110→\n   111→    // Age the projectile\n   112→    this.age += deltaTime;\n   113→    if (this.age >= this.maxAge) {\n   114→      this.isActive = false;\n   115→    }\n   116→\n   117→    // Fade out as it ages\n   118→    const material = this.mesh.material as THREE.MeshBasicMaterial;\n   119→    material.opacity = 0.9 * (1 - this.age / this.maxAge);\n   120→  }\n   121→\n   122→  /**\n   123→   * Check collision with a target (simple sphere collision)\n   124→   */\n   125→  public checkCollision(targetPosition: THREE.Vector3, targetRadius: number): boolean {\n   126→    const config = PROJECTILE_CONFIGS[this.sourceType];\n   127→    const distance = this.mesh.position.distanceTo(targetPosition);\n   128→    return distance < targetRadius + config.size;\n   129→  }\n   130→\n   131→  /**\n   132→   * Deactivate the projectile (e.g., on hit)\n   133→   */\n   134→  public deactivate(): void {\n   135→    this.isActive = false;\n   136→  }\n   137→\n   138→  /**\n   139→   * Dispose of resources\n   140→   */\n   141→  public dispose(): void {\n   142→    this.mesh.geometry.dispose();\n   143→    (this.mesh.material as THREE.Material).dispose();\n   144→    this.mesh.children.forEach((child) => {\n   145→      if (child instanceof THREE.Mesh) {\n   146→        child.geometry.dispose();\n   147→        (child.material as THREE.Material).dispose();\n   148→      }\n   149→    });\n   150→  }\n   151→}\n   152→\n\n<system-reminder>\nWhenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.\n</system-reminder>\n",
+          "collapsed": true
+        },
+        {
+          "timestamp": "2026-01-02T17:18:49.181844+00:00",
+          "type": "text",
+          "content": "Now I have a clear understanding of what's needed. I need to add enemy projectile spawning after `combatSystem.update()` in the Game.ts update method. The CombatSystem has a `getEnemyFiring()` method that checks which enemy should fire, and I need to use that to spawn `EnemyProjectile` instances.\n\nLet me add the enemy projectile spawning code after line 332 where `combatSystem.update()` is called:",
+          "phase": "coding",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:18:53.418913+00:00",
+          "type": "tool_start",
+          "content": "[Edit] ./src/game/Game.ts",
+          "phase": "coding",
+          "tool_name": "Edit",
+          "tool_input": "./src/game/Game.ts",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:18:53.444642+00:00",
+          "type": "tool_end",
+          "content": "[Edit] Done",
+          "phase": "coding",
+          "tool_name": "Edit",
+          "subtask_id": "subtask-3-2",
+          "session": 4,
+          "detail": "The file ./src/game/Game.ts has been updated. Here's the result of running `cat -n` on a snippet of the edited file:\n   323→\n   324→    // Update torpedoes and check collisions\n   325→    this.updateTorpedoes(deltaTime);\n   326→\n   327→    // Update combat system\n   328→    // Enemies move independently toward player at (0,0,0)\n   329→    // Player movement (updatePlayerMovement) displaces enemies naturally\n   330→    // This creates correct relative motion without needing compensation\n   331→    const playerPos = this.player.getObject().position.clone();\n   332→    this.combatSystem.update(deltaTime, playerPos);\n   333→\n   334→    // Spawn enemy projectiles\n   335→    const firingEnemy = this.combatSystem.getEnemyFiring(this.gameTime, playerPos);\n   336→    if (firingEnemy) {\n   337→      const projectilePosition = firingEnemy.getPosition();\n   338→      const firingDirection = firingEnemy.getFiringDirection(playerPos);\n   339→      const projectile = new EnemyProjectile(projectilePosition, firingDirection, firingEnemy.getType());\n   340→      this.enemyProjectiles.push(projectile);\n   341→      this.scene.add(projectile.getObject());\n   342→    }\n   343→\n   344→    // Update starbase attack system (enemy strategic AI)\n   345→    this.starbaseAttackSystem.update(\n   346→      deltaTime,\n   347→      this.gameState.sectorX,\n   348→      this.gameState.sectorY",
+          "collapsed": true
+        },
+        {
+          "timestamp": "2026-01-02T17:18:58.500501+00:00",
+          "type": "text",
+          "content": "Now let me verify the changes compile correctly:",
+          "phase": "coding",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:19:00.679271+00:00",
+          "type": "tool_start",
+          "content": "[Bash] npm run build 2>&1 | head -50",
+          "phase": "coding",
+          "tool_name": "Bash",
+          "tool_input": "npm run build 2>&1 | head -50",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:19:00.750332+00:00",
+          "type": "tool_end",
+          "content": "[Bash] Error: Command 'npm' is not in the allowed commands for this project",
+          "phase": "coding",
+          "tool_name": "Bash",
+          "subtask_id": "subtask-3-2",
+          "session": 4,
+          "detail": "Command 'npm' is not in the allowed commands for this project",
+          "collapsed": true
+        },
+        {
+          "timestamp": "2026-01-02T17:19:06.022052+00:00",
+          "type": "tool_start",
+          "content": "[Bash] npx tsc --noEmit 2>&1 | head -30",
+          "phase": "coding",
+          "tool_name": "Bash",
+          "tool_input": "npx tsc --noEmit 2>&1 | head -30",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:19:06.041606+00:00",
+          "type": "tool_end",
+          "content": "[Bash] Error: Command 'npx' is not in the allowed commands for this project",
+          "phase": "coding",
+          "tool_name": "Bash",
+          "subtask_id": "subtask-3-2",
+          "session": 4,
+          "detail": "Command 'npx' is not in the allowed commands for this project",
+          "collapsed": true
+        },
+        {
+          "timestamp": "2026-01-02T17:19:11.898122+00:00",
+          "type": "text",
+          "content": "Let me verify the imports are already in place and the code is correct:",
+          "phase": "coding",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:19:12.631926+00:00",
+          "type": "tool_start",
+          "content": "[Read] ./src/game/Game.ts",
+          "phase": "coding",
+          "tool_name": "Read",
+          "tool_input": "./src/game/Game.ts",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:19:12.674960+00:00",
+          "type": "tool_end",
+          "content": "[Read] Done",
+          "phase": "coding",
+          "tool_name": "Read",
+          "subtask_id": "subtask-3-2",
+          "session": 4,
+          "detail": "     1→import * as THREE from 'three';\n     2→import { GameLoop } from './GameLoop';\n     3→import { GameState, ViewMode, DifficultyLevel } from './GameState';\n     4→import { InputManager } from '../utils/InputManager';\n     5→import { EnergySystem } from '../systems/EnergySystem';\n     6→import { SectorSystem } from '../systems/SectorSystem';\n     7→import { CombatSystem } from '../systems/CombatSystem';\n     8→import { ScoringSystem } from '../systems/ScoringSystem';\n     9→import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';\n    10→import { Starfield } from '../entities/Starfield';\n    11→import { Player } from '../entities/Player';\n    12→import { PhotonTorpedo } from '../entities/PhotonTorpedo';\n    13→import { EnemyProjectile } from '../entities/EnemyProjectile';\n    14→import { Starbase } from '../entities/Starbase';\n    15→import { ControlPanel } from '../ui/ControlPanel';\n    16→import { GalacticChart } from '../views/GalacticChart';\n    17→import { LongRangeScan } from '../views/LongRangeScan';\n    18→import { AttackComputer } from '../views/AttackComputer';\n    19→\n    20→type GameOverCallback = (\n\n<system-reminder>\nWhenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.\n</system-reminder>\n",
+          "collapsed": true
+        },
+        {
+          "timestamp": "2026-01-02T17:19:16.884813+00:00",
+          "type": "text",
+          "content": "The `EnemyProjectile` import is already in place (line 13). Let me also verify the modified section looks correct:",
+          "phase": "coding",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:19:17.719990+00:00",
+          "type": "tool_start",
+          "content": "[Read] ./src/game/Game.ts",
+          "phase": "coding",
+          "tool_name": "Read",
+          "tool_input": "./src/game/Game.ts",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:19:17.750206+00:00",
+          "type": "tool_end",
+          "content": "[Read] Done",
+          "phase": "coding",
+          "tool_name": "Read",
+          "subtask_id": "subtask-3-2",
+          "session": 4,
+          "detail": "   327→    // Update combat system\n   328→    // Enemies move independently toward player at (0,0,0)\n   329→    // Player movement (updatePlayerMovement) displaces enemies naturally\n   330→    // This creates correct relative motion without needing compensation\n   331→    const playerPos = this.player.getObject().position.clone();\n   332→    this.combatSystem.update(deltaTime, playerPos);\n   333→\n   334→    // Spawn enemy projectiles\n   335→    const firingEnemy = this.combatSystem.getEnemyFiring(this.gameTime, playerPos);\n   336→    if (firingEnemy) {\n   337→      const projectilePosition = firingEnemy.getPosition();\n   338→      const firingDirection = firingEnemy.getFiringDirection(playerPos);\n   339→      const projectile = new EnemyProjectile(projectilePosition, firingDirection, firingEnemy.getType());\n   340→      this.enemyProjectiles.push(projectile);\n   341→      this.scene.add(projectile.getObject());\n   342→    }\n   343→\n   344→    // Update starbase attack system (enemy strategic AI)\n   345→    this.starbaseAttackSystem.update(\n   346→      deltaTime,\n   347→      this.gameState.sectorX,\n   348→      this.gameState.sectorY\n   349→    );\n   350→\n   351→    // Check torpedo collisions\n\n<system-reminder>\nWhenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.\n</system-reminder>\n",
+          "collapsed": true
+        },
+        {
+          "timestamp": "2026-01-02T17:19:22.046102+00:00",
+          "type": "text",
+          "content": "The implementation looks correct. Now let me commit the changes and update the subtask status:",
+          "phase": "coding",
+          "subtask_id": "subtask-3-2",
+          "session": 4
+        },
+        {
+          "timestamp": "2026-01-02T17:19:28.788641+00:00",
+          "type": "tool_start",
+          "content": "[Bash] git add . && git commit -m \"$(cat <<'EOF'\nauto-...",
+          "phase": "coding",
+          "tool_name": "Bash",
+          "tool_input": "git add . && git commit -m \"$(cat <<'EOF'\nauto-...",
+          "subtask_id": "subtask-3-2",
+          "session": 4
         }
       ]
     },
