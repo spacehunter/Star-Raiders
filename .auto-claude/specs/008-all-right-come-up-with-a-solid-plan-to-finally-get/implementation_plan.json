@@ -231,7 +231,9 @@
             "type": "manual",
             "instructions": "Stand still, let enemies fire, verify collision detection (energy should decrease)"
           },
-          "status": "pending"
+          "status": "completed",
+          "notes": "Added checkEnemyProjectileCollisions() method that checks for collisions between enemy projectiles and the player (at origin with 2.5 unit collision radius). Integrated into updateEnemyProjectiles() loop. Uses gameState.applyEnemyDamage() for proper shield absorption and random system damage. Added getSystemDisplayName() helper for formatted messages. Shows appropriate control panel messages for shield hits, system damage, and normal hits.",
+          "updated_at": "2026-01-02T17:25:16.264585+00:00"
         },
         {
           "id": "subtask-3-5",
@@ -464,5 +466,5 @@
     }
   },
   "qa_signoff": null,
-  "last_updated": "2026-01-02T17:23:01.766258+00:00"
+  "last_updated": "2026-01-02T17:25:16.264593+00:00"
 }

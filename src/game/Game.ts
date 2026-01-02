@@ -578,6 +578,11 @@ export class Game {
       // If the coordinate system is shifting around the player, they need to be shifted too.
       // Note: Torpedoes don't wrap - they should expire if they leave the sector
       this.torpedoes.forEach(t => t.getObject().position.add(displacement));
+
+      // 5. Move Enemy Projectiles - same treatment as torpedoes
+      // They fly through world space, so player movement displaces them
+      // Note: Enemy projectiles don't wrap - they should expire naturally
+      this.enemyProjectiles.forEach(p => p.getObject().position.add(displacement));
     }
   }
 
