@@ -81,6 +81,8 @@ export class CombatSystem {
       const enemy = new Enemy(type, position);
       // Set difficulty for enemy AI scaling
       enemy.setDifficulty(this.gameState.difficulty);
+      // Activate honing behavior to ensure enemies pursue player after hyperwarp
+      enemy.activateHoning();
       this.enemies.push(enemy);
       this.scene.add(enemy.getObject());
     }

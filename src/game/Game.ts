@@ -307,6 +307,9 @@ export class Game {
     this.updateTorpedoes(deltaTime);
 
     // Update combat system
+    // Enemies move independently toward player at (0,0,0)
+    // Player movement (updatePlayerMovement) displaces enemies naturally
+    // This creates correct relative motion without needing compensation
     const playerPos = this.player.getObject().position.clone();
     this.combatSystem.update(deltaTime, playerPos);
 
@@ -316,10 +319,11 @@ export class Game {
       this.controlPanel.showMessage(`ZYLON DESTROYED! (${this.sectorSystem.getRemainingEnemies()} remaining)`);
     }
 
-    // Update attack computer
+    // Update attack computer (with all enemies for proximity radar)
     const target = this.combatSystem.getCurrentTarget();
+    const allEnemies = this.combatSystem.getEnemies();
     this.attackComputer.setTarget(target);
-    this.attackComputer.update(playerPos, this.player.getForwardDirection());
+    this.attackComputer.update(playerPos, this.player.getForwardDirection(), allEnemies);
 
     // Calculate and update targeting data for control panel (θ, Φ, R)
     this.updateTargetingData(playerPos, target);
@@ -516,7 +520,7 @@ export class Game {
         this.wrapPositionInSector(this.currentStarbase.getObject().position);
       }
 
-      // 3. Move Enemies - they wrap within sector boundaries
+      // 3. Move Enemies - wrap within sector boundaries
       this.combatSystem.applyPlayerMovement(displacement);
       for (const enemy of this.combatSystem.getEnemies()) {
         if (enemy.isActive) {
@@ -539,19 +543,29 @@ export class Game {
   private wrapPositionInSector(position: THREE.Vector3): void {
     // Match LRS RANGE of 500 - sector is ±500 units
     const SECTOR_HALF_SIZE = 500;
+    let wrapped = false;
 
     // Wrap X
     if (position.x > SECTOR_HALF_SIZE) {
       position.x -= SECTOR_HALF_SIZE * 2;
+      wrapped = true;
     } else if (position.x < -SECTOR_HALF_SIZE) {
       position.x += SECTOR_HALF_SIZE * 2;
+      wrapped = true;
     }
 
     // Wrap Z (forward/back axis)
     if (position.z > SECTOR_HALF_SIZE) {
       position.z -= SECTOR_HALF_SIZE * 2;
+      wrapped = true;
     } else if (position.z < -SECTOR_HALF_SIZE) {
       position.z += SECTOR_HALF_SIZE * 2;
+      wrapped = true;
+    }
+
+    // Debug: Log when wrapping occurs
+    if (wrapped) {
+      console.log(`⚠️ Entity wrapped - new position: (${position.x.toFixed(1)}, ${position.z.toFixed(1)})`);
     }
     // Y (vertical) stays unchanged - space is flat in this game
   }

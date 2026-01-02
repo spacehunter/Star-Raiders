@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ENEMY_CONFIG } from '../config/EnemyConfig';
 
 /**
  * Enemy types
@@ -100,6 +101,22 @@ export class Enemy {
   // Basestar-specific
   protected shieldRegenTimer: number = 0;
 
+  // Smooth movement system - prevents teleporting
+  protected currentVelocity: THREE.Vector3 = new THREE.Vector3();
+  protected targetVelocity: THREE.Vector3 = new THREE.Vector3();
+  protected maxAcceleration: number = 50; // Units per second squared
+
+  // Evasive maneuver state (smooth instead of instant)
+  protected isEvading: boolean = false;
+  protected evadeTarget: THREE.Vector3 | null = null;
+  protected evadeTimer: number = 0;
+
+  // Honing behavior for sector entry
+  protected isHoningIn: boolean = false;
+  protected honeInTimer: number = 0;
+  protected honeInDuration: number = 20; // Seconds to home in on player (aggressive pursuit)
+  protected honeInMinDistance: number = 80; // Stop honing when within attack range
+
   // Difficulty settings
   protected difficultySettings: DifficultySettings = DIFFICULTY_SETTINGS.PILOT;
 
@@ -122,23 +139,26 @@ export class Enemy {
     switch (type) {
       case EnemyType.FIGHTER:
         this.health = this.maxHealth = 2;
-        this.speed = 7 * 50; // Impulse 7 equivalent (350 units/sec)
+        this.speed = ENEMY_CONFIG.speeds.FIGHTER * ENEMY_CONFIG.UNITS_PER_IMPULSE;
         this.fireRate = 1.5;
         this.attackRange = 80;
+        console.log(`🔴 Fighter spawned - impulse: ${ENEMY_CONFIG.speeds.FIGHTER}, speed: ${this.speed} units/sec`);
         break;
       case EnemyType.CRUISER:
         this.health = this.maxHealth = 4;
-        this.speed = 5 * 50; // Impulse 5 equivalent (250 units/sec)
+        this.speed = ENEMY_CONFIG.speeds.CRUISER * ENEMY_CONFIG.UNITS_PER_IMPULSE;
         this.fireRate = 2.5;
         this.attackRange = 120;
+        console.log(`🟣 Cruiser spawned - impulse: ${ENEMY_CONFIG.speeds.CRUISER}, speed: ${this.speed} units/sec`);
         break;
       case EnemyType.BASESTAR:
         this.health = this.maxHealth = 8;
-        this.speed = 0; // Stationary
+        this.speed = ENEMY_CONFIG.speeds.BASESTAR * ENEMY_CONFIG.UNITS_PER_IMPULSE;
         this.fireRate = 3;
         this.hasShields = true;
         this.shieldsActive = true;
         this.attackRange = 150;
+        console.log(`🟡 Basestar spawned - impulse: ${ENEMY_CONFIG.speeds.BASESTAR}, speed: ${this.speed} units/sec`);
         break;
     }
 
@@ -147,10 +167,21 @@ export class Enemy {
       // Randomize orbit direction
       this.orbitDirection = Math.random() < 0.5 ? 1 : -1;
       this.orbitAngle = Math.random() * Math.PI * 2;
+      // Fighters are fast and agile
+      this.maxAcceleration = 80;
     } else if (type === EnemyType.CRUISER) {
       // Generate patrol waypoints
       this.generatePatrolWaypoints();
+      // Cruisers are slower to accelerate
+      this.maxAcceleration = 40;
+    } else if (type === EnemyType.BASESTAR) {
+      // Basestars are stationary
+      this.maxAcceleration = 0;
     }
+
+    // Start in honing mode - enemies approach player when sector is entered
+    this.isHoningIn = true;
+    this.honeInTimer = 0;
 
     this.mesh = this.createModel();
     this.mesh.position.copy(position);
@@ -171,6 +202,15 @@ export class Enemy {
     ) {
       this.provoked = true;
     }
+  }
+
+  /**
+   * Activate honing behavior - makes enemies aggressively pursue player
+   * Called when player enters a sector to ensure enemies always find the player
+   */
+  public activateHoning(): void {
+    this.isHoningIn = true;
+    this.honeInTimer = 0;
   }
 
   /**
@@ -453,13 +493,30 @@ export class Enemy {
     // Calculate distance to player
     const distanceToPlayer = this.mesh.position.distanceTo(playerPosition);
 
-    // Pursuit range - enemies only actively move when within this range
-    const PURSUIT_RANGE = 200;
+    // Update honing behavior - stop when close enough OR time expires
+    if (this.isHoningIn) {
+      this.honeInTimer += deltaTime;
+      // Stop honing when close enough OR timer expires
+      if (distanceToPlayer < this.honeInMinDistance || this.honeInTimer >= this.honeInDuration) {
+        this.isHoningIn = false;
+      }
+    }
 
-    // Update state based on type and distance
-    this.updateState(distanceToPlayer, PURSUIT_RANGE);
+    // Update evasion state
+    if (this.isEvading) {
+      this.evadeTimer -= deltaTime;
+      if (this.evadeTimer <= 0) {
+        this.isEvading = false;
+        this.evadeTarget = null;
+      }
+    }
 
-    // Update based on type-specific behavior
+    // Update state based on type and distance (no pursuit range limit - always pursue)
+    this.updateState(distanceToPlayer);
+
+    // Calculate desired velocity based on type-specific behavior
+    this.targetVelocity.set(0, 0, 0);
+
     switch (this.type) {
       case EnemyType.FIGHTER:
         this.updateFighter(deltaTime, playerPosition, distanceToPlayer);
@@ -472,6 +529,18 @@ export class Enemy {
         break;
     }
 
+    // NO compensation needed - enemies move independently
+    // Player movement displacement naturally creates relative motion
+    // If enemy pursues at 400 u/s and player moves at 450 u/s:
+    // - Enemy moves 400 u/s toward player
+    // - Displacement pushes enemy 450 u/s away
+    // - Net: enemy falls behind at 50 u/s (player escapes)
+    // Compensation would prevent player from ever escaping!
+    // this.targetVelocity.add(playerVelocity); // REMOVED
+
+    // Apply smooth velocity interpolation (prevents teleporting)
+    this.applySmoothedMovement(deltaTime);
+
     // Basestar shields regenerate with difficulty-scaled chance
     if (this.hasShields && !this.shieldsActive) {
       if (Math.random() < this.difficultySettings.shieldRegenChance) {
@@ -482,9 +551,31 @@ export class Enemy {
   }
 
   /**
+   * Apply smoothed velocity-based movement to prevent teleporting
+   */
+  private applySmoothedMovement(deltaTime: number): void {
+    // Skip for stationary enemies
+    if (this.type === EnemyType.BASESTAR) return;
+
+    // Smoothly interpolate current velocity toward target velocity
+    const velocityDiff = this.targetVelocity.clone().sub(this.currentVelocity);
+    const maxChange = this.maxAcceleration * deltaTime;
+
+    if (velocityDiff.length() > maxChange) {
+      velocityDiff.normalize().multiplyScalar(maxChange);
+    }
+
+    this.currentVelocity.add(velocityDiff);
+
+    // Apply velocity to position
+    const movement = this.currentVelocity.clone().multiplyScalar(deltaTime);
+    this.mesh.position.add(movement);
+  }
+
+  /**
    * Update state based on distance and type
    */
-  private updateState(distanceToPlayer: number, pursuitRange: number): void {
+  private updateState(distanceToPlayer: number): void {
     if (this.type === EnemyType.BASESTAR) {
       // Basestar is always stationary but enters attack mode when player is close
       this.state =
@@ -494,18 +585,20 @@ export class Enemy {
 
     if (this.type === EnemyType.CRUISER && !this.provoked) {
       // Unprovoked Cruisers only patrol, never attack
+      // Always patrol (no IDLE) - enemies never give up pursuit
       this.state =
-        distanceToPlayer < pursuitRange ? EnemyState.PATROL : EnemyState.IDLE;
+        distanceToPlayer < this.attackRange ? EnemyState.ATTACK : EnemyState.PATROL;
       return;
     }
 
-    // Fighters and provoked Cruisers
+    // Fighters and provoked Cruisers - ALWAYS pursue, never go IDLE
+    // Enemies in the same sector as the player should always be hunting
     if (distanceToPlayer < this.attackRange) {
       this.state = EnemyState.ATTACK;
-    } else if (distanceToPlayer < pursuitRange) {
-      this.state = EnemyState.PATROL;
     } else {
-      this.state = EnemyState.IDLE;
+      // Always PATROL (pursuit) - no distance limit
+      // This prevents enemies from getting stuck when far away
+      this.state = EnemyState.PATROL;
     }
   }
 
@@ -517,10 +610,23 @@ export class Enemy {
     playerPosition: THREE.Vector3,
     distanceToPlayer: number
   ): void {
+    // Handle honing behavior - approach player aggressively when entering sector
+    // Removed distance threshold - honing now works at any distance
+    if (this.isHoningIn) {
+      this.updateHoningBehavior(playerPosition);
+      return;
+    }
+
+    // Handle active evasion
+    if (this.isEvading && this.evadeTarget) {
+      this.updateFighterEvade(deltaTime);
+      return;
+    }
+
     switch (this.state) {
       case EnemyState.IDLE:
-        // Gentle bobbing when far away
-        this.mesh.rotation.y += deltaTime * 0.5;
+        // Should never happen now, but if it does, pursue anyway
+        this.updateFighterPursuit(deltaTime, playerPosition, distanceToPlayer);
         break;
 
       case EnemyState.PATROL:
@@ -534,13 +640,52 @@ export class Enemy {
         break;
     }
 
-    // Evasive maneuvers (difficulty-scaled)
+    // Trigger evasive maneuvers (difficulty-scaled) - now smooth instead of instant
     if (
       this.state === EnemyState.ATTACK &&
-      Math.random() < this.difficultySettings.evasionChance
+      !this.isEvading &&
+      Math.random() < this.difficultySettings.evasionChance * deltaTime
     ) {
-      this.performEvasiveManeuver();
+      this.initiateEvasiveManeuver();
     }
+  }
+
+  /**
+   * Universal honing behavior - aggressively approach player at max speed
+   * Used when player enters a sector to ensure enemies always find the player
+   */
+  private updateHoningBehavior(playerPosition: THREE.Vector3): void {
+    // Calculate direction to player
+    const toPlayer = playerPosition.clone().sub(this.mesh.position);
+    const direction = toPlayer.normalize();
+
+    // Move toward player at boosted speed (1.5x base speed for aggressive pursuit)
+    // Fighter: 400 * 1.5 = 600 u/s (faster than player max speed of 450)
+    // Cruiser: 300 * 1.5 = 450 u/s (matches player max speed)
+    this.targetVelocity.copy(direction).multiplyScalar(this.speed * 1.5);
+
+    // Face player
+    this.mesh.lookAt(playerPosition);
+  }
+
+  /**
+   * Fighter evasion - smooth movement to evade target
+   */
+  private updateFighterEvade(_deltaTime: number): void {
+    if (!this.evadeTarget) return;
+
+    const toTarget = this.evadeTarget.clone().sub(this.mesh.position);
+    const distance = toTarget.length();
+
+    if (distance < 2) {
+      // Reached evade position
+      this.isEvading = false;
+      this.evadeTarget = null;
+      return;
+    }
+
+    // Move toward evade target at high speed
+    this.targetVelocity.copy(toTarget.normalize()).multiplyScalar(this.speed * 1.5);
   }
 
   /**
@@ -552,22 +697,20 @@ export class Enemy {
     _distanceToPlayer: number
   ): void {
     // Update weave phase
-    this.weavePhase += deltaTime * 4; // 4 rad/s = ~0.6Hz weave frequency
+    this.weavePhase += deltaTime * 3; // 3 rad/s = smoother weave frequency
 
     // Calculate direction to player
     const toPlayer = playerPosition.clone().sub(this.mesh.position);
     const direction = toPlayer.normalize();
 
     // Add sinusoidal weaving perpendicular to approach direction
-    const weaveAmplitude = 15;
+    // Weave is now a velocity component, not a position offset
+    const weaveAmplitude = 20; // Units per second lateral velocity
     const perpendicular = new THREE.Vector3(-direction.z, 0, direction.x).normalize();
-    const weaveOffset = perpendicular.multiplyScalar(
-      Math.sin(this.weavePhase) * weaveAmplitude * deltaTime
-    );
+    const weaveVelocity = perpendicular.multiplyScalar(Math.sin(this.weavePhase) * weaveAmplitude);
 
-    // Move toward player with weaving
-    const movement = direction.multiplyScalar(this.speed * deltaTime);
-    this.mesh.position.add(movement).add(weaveOffset);
+    // Set target velocity: approach + weave
+    this.targetVelocity.copy(direction).multiplyScalar(this.speed).add(weaveVelocity);
 
     // Face player
     this.mesh.lookAt(playerPosition);
@@ -581,8 +724,8 @@ export class Enemy {
     playerPosition: THREE.Vector3,
     _distanceToPlayer: number
   ): void {
-    const ORBIT_RADIUS = 30; // Desired orbit distance
-    const ORBIT_SPEED = 2.5; // Radians per second
+    const ORBIT_RADIUS = ENEMY_CONFIG.distances.FIGHTER_ORBIT_RADIUS; // Desired orbit distance
+    const ORBIT_SPEED = 1.5; // Radians per second (reduced for smoother orbits)
 
     // Update orbit angle
     this.orbitAngle += this.orbitDirection * ORBIT_SPEED * deltaTime;
@@ -595,37 +738,50 @@ export class Enemy {
 
     const targetOrbitPos = new THREE.Vector3(orbitX, orbitY, orbitZ);
 
-    // Move toward orbit position
+    // Calculate velocity to move toward orbit position
     const toOrbit = targetOrbitPos.clone().sub(this.mesh.position);
     const orbitDistance = toOrbit.length();
 
-    if (orbitDistance > 1) {
-      const moveSpeed = Math.min(this.speed * deltaTime, orbitDistance);
-      this.mesh.position.add(toOrbit.normalize().multiplyScalar(moveSpeed));
+    // Calculate tangent velocity (for smooth orbiting)
+    const tangent = new THREE.Vector3(
+      -Math.sin(this.orbitAngle),
+      0,
+      Math.cos(this.orbitAngle)
+    ).multiplyScalar(this.orbitDirection);
+
+    if (orbitDistance > 15) {
+      // Too far from orbit - move toward it at reduced speed to prevent overshoot
+      this.targetVelocity.copy(toOrbit.normalize()).multiplyScalar(this.speed * 0.7);
+    } else {
+      // Near orbit - combine tangent motion with stronger pull toward ideal radius
+      const radialCorrection = toOrbit.clone().multiplyScalar(1.5); // Stronger correction
+      this.targetVelocity.copy(tangent).multiplyScalar(this.speed * 0.6).add(radialCorrection);
     }
 
     // Always face the player
     this.mesh.lookAt(playerPosition);
 
-    // Occasionally change orbit direction
-    if (Math.random() < 0.005) {
+    // Occasionally change orbit direction (less frequent)
+    if (Math.random() < 0.002 * deltaTime * 60) {
       this.orbitDirection *= -1;
     }
   }
 
   /**
-   * Perform evasive maneuver
+   * Initiate a smooth evasive maneuver (replaces instant teleport)
    */
-  private performEvasiveManeuver(): void {
-    // Quick lateral dodge
-    const dodgeDistance = 8 + Math.random() * 7; // 8-15 units
-    this.mesh.position.add(
-      new THREE.Vector3(
-        (Math.random() - 0.5) * dodgeDistance,
-        (Math.random() - 0.5) * dodgeDistance * 0.5,
-        (Math.random() - 0.5) * dodgeDistance
-      )
+  private initiateEvasiveManeuver(): void {
+    // Set evade target position (relative to current position)
+    const dodgeDistance = 15 + Math.random() * 15; // 15-30 units
+    const dodgeOffset = new THREE.Vector3(
+      (Math.random() - 0.5) * dodgeDistance,
+      (Math.random() - 0.5) * dodgeDistance * 0.3, // Less vertical
+      (Math.random() - 0.5) * dodgeDistance
     );
+
+    this.evadeTarget = this.mesh.position.clone().add(dodgeOffset);
+    this.isEvading = true;
+    this.evadeTimer = 0.8 + Math.random() * 0.4; // 0.8-1.2 seconds
   }
 
   /**
@@ -636,10 +792,17 @@ export class Enemy {
     playerPosition: THREE.Vector3,
     distanceToPlayer: number
   ): void {
+    // Handle honing behavior - approach player when entering sector
+    // Removed distance threshold - honing now works at any distance
+    if (this.isHoningIn) {
+      this.updateHoningBehavior(playerPosition);
+      return;
+    }
+
     switch (this.state) {
       case EnemyState.IDLE:
-        // Slow rotation when idle
-        this.mesh.rotation.y += deltaTime * 0.3;
+        // Should never happen now, but if it does, patrol anyway
+        this.updateCruiserPatrol(deltaTime);
         break;
 
       case EnemyState.PATROL:
@@ -658,12 +821,17 @@ export class Enemy {
    * Cruiser patrol - follow waypoint pattern
    */
   private updateCruiserPatrol(deltaTime: number): void {
-    if (this.patrolWaypoints.length === 0) return;
+    if (this.patrolWaypoints.length === 0) {
+      this.targetVelocity.set(0, 0, 0);
+      return;
+    }
 
-    // Check if pausing at waypoint
+    // Check if pausing at waypoint (smooth deceleration instead of hard stop)
     if (this.waypointPauseTimer > 0) {
       this.waypointPauseTimer -= deltaTime;
       this.mesh.rotation.y += deltaTime * 0.2; // Slight rotation while paused
+      // Decelerate to stop
+      this.targetVelocity.set(0, 0, 0);
       return;
     }
 
@@ -671,16 +839,16 @@ export class Enemy {
     const toWaypoint = targetWaypoint.clone().sub(this.mesh.position);
     const distance = toWaypoint.length();
 
-    if (distance < 5) {
-      // Reached waypoint - pause briefly then move to next
-      this.waypointPauseTimer = 0.5; // 0.5 second pause
+    if (distance < 8) {
+      // Near waypoint - brief pause then move to next
+      this.waypointPauseTimer = 0.3; // Shorter pause for smoother flow
       this.currentWaypointIndex =
         (this.currentWaypointIndex + 1) % this.patrolWaypoints.length;
+      this.targetVelocity.set(0, 0, 0);
     } else {
-      // Move toward waypoint at patrol speed (slower than attack speed)
-      const patrolSpeed = this.speed * 0.6;
-      const direction = toWaypoint.normalize();
-      this.mesh.position.add(direction.multiplyScalar(patrolSpeed * deltaTime));
+      // Set target velocity toward waypoint at patrol speed
+      const patrolSpeed = this.speed * ENEMY_CONFIG.multipliers.CRUISER_PATROL;
+      this.targetVelocity.copy(toWaypoint.normalize()).multiplyScalar(patrolSpeed);
 
       // Smoothly rotate to face waypoint
       this.mesh.lookAt(targetWaypoint);
@@ -691,29 +859,27 @@ export class Enemy {
    * Cruiser attack - maintain tactical distance
    */
   private updateCruiserAttack(
-    deltaTime: number,
+    _deltaTime: number,
     playerPosition: THREE.Vector3,
     distanceToPlayer: number
   ): void {
-    const PREFERRED_MIN = 40;
-    const PREFERRED_MAX = 60;
+    const PREFERRED_MIN = ENEMY_CONFIG.distances.CRUISER_PREFERRED_MIN;
+    const PREFERRED_MAX = ENEMY_CONFIG.distances.CRUISER_PREFERRED_MAX;
 
     const toPlayer = playerPosition.clone().sub(this.mesh.position);
 
     if (distanceToPlayer < PREFERRED_MIN) {
       // Too close - back off
       const direction = toPlayer.normalize().negate();
-      this.mesh.position.add(direction.multiplyScalar(this.speed * 0.5 * deltaTime));
+      this.targetVelocity.copy(direction).multiplyScalar(this.speed * ENEMY_CONFIG.multipliers.CRUISER_BACKOFF);
     } else if (distanceToPlayer > PREFERRED_MAX) {
       // Too far - approach
       const direction = toPlayer.normalize();
-      this.mesh.position.add(direction.multiplyScalar(this.speed * deltaTime));
+      this.targetVelocity.copy(direction).multiplyScalar(this.speed);
     } else {
       // In preferred range - strafe slowly
       const perpendicular = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x).normalize();
-      this.mesh.position.add(
-        perpendicular.multiplyScalar(this.speed * 0.3 * deltaTime)
-      );
+      this.targetVelocity.copy(perpendicular).multiplyScalar(this.speed * ENEMY_CONFIG.multipliers.CRUISER_STRAFE);
     }
 
     // Always face the player
