@@ -179,7 +179,9 @@
             "type": "manual",
             "instructions": "Run game, enter sector with enemies, observe console logs for projectile spawning"
           },
-          "status": "pending"
+          "status": "completed",
+          "notes": "Added enemy projectile spawning in Game.ts update loop after combatSystem.update(). Checks if any enemy should fire using getEnemyFiring(), creates EnemyProjectile with position, direction, and enemy type, then adds to scene and enemyProjectiles array.",
+          "updated_at": "2026-01-02T17:19:35.973693+00:00"
         },
         {
           "id": "subtask-3-3",
@@ -460,5 +462,5 @@
     }
   },
   "qa_signoff": null,
-  "last_updated": "2026-01-02T17:17:44.632400+00:00"
+  "last_updated": "2026-01-02T17:19:35.973701+00:00"
 }

@@ -250,6 +250,13 @@ export class Game {
       this.currentStarbase.dispose();
       this.currentStarbase = null;
     }
+
+    // Clear enemy projectiles when leaving sector
+    for (const projectile of this.enemyProjectiles) {
+      this.scene.remove(projectile.getObject());
+      projectile.dispose();
+    }
+    this.enemyProjectiles = [];
   }
 
   /**
@@ -340,6 +347,9 @@ export class Game {
       this.enemyProjectiles.push(projectile);
       this.scene.add(projectile.getObject());
     }
+
+    // Update enemy projectiles
+    this.updateEnemyProjectiles(deltaTime);
 
     // Update starbase attack system (enemy strategic AI)
     this.starbaseAttackSystem.update(
@@ -617,6 +627,22 @@ export class Game {
         this.scene.remove(torpedo.getObject());
         torpedo.dispose();
         this.torpedoes.splice(i, 1);
+      }
+    }
+  }
+
+  /**
+   * Update enemy projectiles - move, age, and remove expired projectiles
+   */
+  private updateEnemyProjectiles(deltaTime: number): void {
+    for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
+      const projectile = this.enemyProjectiles[i];
+      projectile.update(deltaTime);
+
+      if (!projectile.isActive) {
+        this.scene.remove(projectile.getObject());
+        projectile.dispose();
+        this.enemyProjectiles.splice(i, 1);
       }
     }
   }
@@ -1105,6 +1131,12 @@ export class Game {
       torpedo.dispose();
     }
     this.torpedoes = [];
+
+    for (const projectile of this.enemyProjectiles) {
+      this.scene.remove(projectile.getObject());
+      projectile.dispose();
+    }
+    this.enemyProjectiles = [];
 
     this.renderer.dispose();
     window.removeEventListener('resize', this.handleResize);
