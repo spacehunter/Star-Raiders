@@ -1,5 +1,5 @@
 {
-  "feature": "Fix Galactic Chart Grid Dimensions (8×8 → 16×8)",
+  "feature": "Fix Galactic Chart Grid Dimensions (8\u00d78 \u2192 16\u00d78)",
   "workflow_type": "feature",
   "workflow_rationale": "This is a targeted fix requiring coordinated changes across multiple files (system, view, and state) while preserving existing functionality. The changes follow a natural dependency order: core constants first, then rendering, then state.",
   "phases": [
@@ -15,9 +15,13 @@
           "id": "subtask-1-1",
           "description": "Replace GRID_SIZE constant with GRID_WIDTH (16) and GRID_HEIGHT (8) in SectorSystem",
           "service": "main",
-          "files_to_modify": ["src/systems/SectorSystem.ts"],
+          "files_to_modify": [
+            "src/systems/SectorSystem.ts"
+          ],
           "files_to_create": [],
-          "patterns_from": ["src/systems/SectorSystem.ts"],
+          "patterns_from": [
+            "src/systems/SectorSystem.ts"
+          ],
           "verification": {
             "type": "command",
             "command": "grep -n 'GRID_WIDTH\\|GRID_HEIGHT' src/systems/SectorSystem.ts | head -5",
@@ -28,15 +32,21 @@
             "Add: 'public static readonly GRID_WIDTH = 16'",
             "Add: 'public static readonly GRID_HEIGHT = 8'"
           ],
-          "status": "pending"
+          "status": "completed",
+          "notes": "Replaced GRID_SIZE = 8 with GRID_WIDTH = 16 and GRID_HEIGHT = 8. Updated all usages to use the appropriate dimension (WIDTH for x, HEIGHT for y) in initializeGrid(), placeEnemies(), getSector(), and getStarbasesUnderAttack(). Updated docstring to reflect 16x8 grid.",
+          "updated_at": "2026-01-02T17:08:55.832864+00:00"
         },
         {
           "id": "subtask-1-2",
           "description": "Update all grid iteration loops in SectorSystem to use GRID_WIDTH for X and GRID_HEIGHT for Y",
           "service": "main",
-          "files_to_modify": ["src/systems/SectorSystem.ts"],
+          "files_to_modify": [
+            "src/systems/SectorSystem.ts"
+          ],
           "files_to_create": [],
-          "patterns_from": ["src/systems/SectorSystem.ts"],
+          "patterns_from": [
+            "src/systems/SectorSystem.ts"
+          ],
           "verification": {
             "type": "command",
             "command": "grep -c 'GRID_SIZE' src/systems/SectorSystem.ts",
@@ -48,15 +58,21 @@
             "Line 156: getSector() bounds check - X check uses GRID_WIDTH, Y check uses GRID_HEIGHT",
             "Lines 218-219: getStarbasesUnderAttack() - Y loop uses GRID_HEIGHT, X loop uses GRID_WIDTH"
           ],
-          "status": "pending"
+          "status": "completed",
+          "notes": "Verified SectorSystem.ts already correctly uses GRID_WIDTH for X and GRID_HEIGHT for Y in all grid iteration loops. Verification confirmed 0 GRID_SIZE references exist. No changes were needed - file was already in correct state.",
+          "updated_at": "2026-01-02T17:10:17.948926+00:00"
         },
         {
           "id": "subtask-1-3",
           "description": "Expand starbase placement regions to cover full 16-column grid",
           "service": "main",
-          "files_to_modify": ["src/systems/SectorSystem.ts"],
+          "files_to_modify": [
+            "src/systems/SectorSystem.ts"
+          ],
           "files_to_create": [],
-          "patterns_from": ["src/systems/SectorSystem.ts"],
+          "patterns_from": [
+            "src/systems/SectorSystem.ts"
+          ],
           "verification": {
             "type": "command",
             "command": "grep -A 8 'const regions = \\[' src/systems/SectorSystem.ts",
@@ -75,17 +91,23 @@
       "id": "phase-2-rendering",
       "name": "Rendering Updates",
       "type": "implementation",
-      "description": "Update GalacticChart view to render 16×8 grid and handle cursor navigation correctly",
-      "depends_on": ["phase-1-core-system"],
+      "description": "Update GalacticChart view to render 16\u00d78 grid and handle cursor navigation correctly",
+      "depends_on": [
+        "phase-1-core-system"
+      ],
       "parallel_safe": false,
       "subtasks": [
         {
           "id": "subtask-2-1",
-          "description": "Update GalacticChart grid creation loop from 8×8 to 16×8",
+          "description": "Update GalacticChart grid creation loop from 8\u00d78 to 16\u00d78",
           "service": "main",
-          "files_to_modify": ["src/views/GalacticChart.ts"],
+          "files_to_modify": [
+            "src/views/GalacticChart.ts"
+          ],
           "files_to_create": [],
-          "patterns_from": ["src/views/GalacticChart.ts"],
+          "patterns_from": [
+            "src/views/GalacticChart.ts"
+          ],
           "verification": {
             "type": "command",
             "command": "grep -n 'for.*y.*<.*8\\|for.*x.*<.*8' src/views/GalacticChart.ts | head -5",
@@ -100,11 +122,15 @@
         },
         {
           "id": "subtask-2-2",
-          "description": "Update CSS grid template to 16 columns × 8 rows",
+          "description": "Update CSS grid template to 16 columns \u00d7 8 rows",
           "service": "main",
-          "files_to_modify": ["src/views/GalacticChart.ts"],
+          "files_to_modify": [
+            "src/views/GalacticChart.ts"
+          ],
           "files_to_create": [],
-          "patterns_from": ["src/views/GalacticChart.ts"],
+          "patterns_from": [
+            "src/views/GalacticChart.ts"
+          ],
           "verification": {
             "type": "command",
             "command": "grep 'repeat(16' src/views/GalacticChart.ts",
@@ -121,9 +147,13 @@
           "id": "subtask-2-3",
           "description": "Update cursor navigation bounds to allow X: 0-15, Y: 0-7",
           "service": "main",
-          "files_to_modify": ["src/views/GalacticChart.ts"],
+          "files_to_modify": [
+            "src/views/GalacticChart.ts"
+          ],
           "files_to_create": [],
-          "patterns_from": ["src/views/GalacticChart.ts"],
+          "patterns_from": [
+            "src/views/GalacticChart.ts"
+          ],
           "verification": {
             "type": "command",
             "command": "grep -n 'Math.min(15\\|GRID_WIDTH - 1' src/views/GalacticChart.ts",
@@ -142,17 +172,23 @@
       "id": "phase-3-state",
       "name": "Game State Updates",
       "type": "implementation",
-      "description": "Update player starting position to center of 16×8 grid",
-      "depends_on": ["phase-1-core-system"],
+      "description": "Update player starting position to center of 16\u00d78 grid",
+      "depends_on": [
+        "phase-1-core-system"
+      ],
       "parallel_safe": true,
       "subtasks": [
         {
           "id": "subtask-3-1",
           "description": "Update initial player sector position from (4,4) to (8,4)",
           "service": "main",
-          "files_to_modify": ["src/game/GameState.ts"],
+          "files_to_modify": [
+            "src/game/GameState.ts"
+          ],
           "files_to_create": [],
-          "patterns_from": ["src/game/GameState.ts"],
+          "patterns_from": [
+            "src/game/GameState.ts"
+          ],
           "verification": {
             "type": "command",
             "command": "grep -n 'sectorX.*= 8' src/game/GameState.ts",
@@ -172,7 +208,10 @@
       "name": "Integration Verification",
       "type": "integration",
       "description": "Verify all components work together - visual check and navigation test",
-      "depends_on": ["phase-2-rendering", "phase-3-state"],
+      "depends_on": [
+        "phase-2-rendering",
+        "phase-3-state"
+      ],
       "parallel_safe": false,
       "subtasks": [
         {
@@ -195,7 +234,7 @@
         },
         {
           "id": "subtask-4-2",
-          "description": "Visual verification of 16×8 grid display",
+          "description": "Visual verification of 16\u00d78 grid display",
           "service": "main",
           "all_services": true,
           "files_to_modify": [],
@@ -226,12 +265,17 @@
   "summary": {
     "total_phases": 4,
     "total_subtasks": 8,
-    "services_involved": ["main"],
+    "services_involved": [
+      "main"
+    ],
     "parallelism": {
       "max_parallel_phases": 2,
       "parallel_groups": [
         {
-          "phases": ["phase-2-rendering", "phase-3-state"],
+          "phases": [
+            "phase-2-rendering",
+            "phase-3-state"
+          ],
           "reason": "Both depend only on phase-1-core-system, modify different files"
         }
       ],
@@ -244,11 +288,13 @@
     "risk_level": "low",
     "skip_validation": false,
     "test_creation_phase": "post_implementation",
-    "test_types_required": ["unit"],
+    "test_types_required": [
+      "unit"
+    ],
     "security_scanning_required": false,
     "staging_deployment_required": false,
     "acceptance_criteria": [
-      "Grid displays 16 columns × 8 rows",
+      "Grid displays 16 columns \u00d7 8 rows",
       "Cursor can navigate to all 128 sectors (0-15 X, 0-7 Y)",
       "Player starts at sector (8, 4)",
       "Starbases spawn across full 16-column width",
@@ -267,7 +313,7 @@
       {
         "name": "Visual Grid Check",
         "command": "Manual browser verification",
-        "expected_outcome": "16×8 grid visible, cursor navigates correctly",
+        "expected_outcome": "16\u00d78 grid visible, cursor navigates correctly",
         "type": "manual",
         "required": true,
         "blocking": true
@@ -299,7 +345,7 @@
           "url": "http://localhost:5173",
           "action": "Press G in game",
           "checks": [
-            "Grid shows 16 columns × 8 rows",
+            "Grid shows 16 columns \u00d7 8 rows",
             "Cursor navigates to (0,0), (15,0), (0,7), (15,7)",
             "Player starts at (8,4)",
             "Starbases appear across full width",
@@ -313,5 +359,6 @@
       "checks": []
     }
   },
-  "qa_signoff": null
+  "qa_signoff": null,
+  "last_updated": "2026-01-02T17:10:17.948933+00:00"
 }

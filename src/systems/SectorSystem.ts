@@ -95,12 +95,16 @@ export class SectorSystem {
   private placeStarbases(count: number): void {
     const positions: [number, number][] = [];
 
-    // Divide galaxy into regions for even distribution
+    // Divide galaxy into regions for even distribution (full 16x8 grid)
     const regions = [
       { minX: 0, maxX: 3, minY: 0, maxY: 3 },
       { minX: 4, maxX: 7, minY: 0, maxY: 3 },
+      { minX: 8, maxX: 11, minY: 0, maxY: 3 },
+      { minX: 12, maxX: 15, minY: 0, maxY: 3 },
       { minX: 0, maxX: 3, minY: 4, maxY: 7 },
       { minX: 4, maxX: 7, minY: 4, maxY: 7 },
+      { minX: 8, maxX: 11, minY: 4, maxY: 7 },
+      { minX: 12, maxX: 15, minY: 4, maxY: 7 },
     ];
 
     for (let i = 0; i < count && i < regions.length; i++) {
