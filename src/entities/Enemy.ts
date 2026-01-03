@@ -173,7 +173,7 @@ export class Enemy {
       // Generate patrol waypoints
       this.generatePatrolWaypoints();
       // Cruisers are slower to accelerate
-      this.maxAcceleration = 40;
+      this.maxAcceleration = 30;
     } else if (type === EnemyType.BASESTAR) {
       // Basestars are stationary
       this.maxAcceleration = 0;
