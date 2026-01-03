@@ -725,7 +725,7 @@ export class Enemy {
     _distanceToPlayer: number
   ): void {
     const ORBIT_RADIUS = ENEMY_CONFIG.distances.FIGHTER_ORBIT_RADIUS; // Desired orbit distance
-    const ORBIT_SPEED = 1.5; // Radians per second (reduced for smoother orbits)
+    const ORBIT_SPEED = 1.0; // Radians per second (reduced for trackable circle-strafing)
 
     // Update orbit angle
     this.orbitAngle += this.orbitDirection * ORBIT_SPEED * deltaTime;
