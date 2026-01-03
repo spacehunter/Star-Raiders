@@ -705,17 +705,13 @@ export class Game {
 
         // Apply damage differently based on shield status
         if (this.gameState.shieldsActive && !this.gameState.damage.shields) {
-          // Shields active - reduce damage and show shield effects
-          const reducedDamage = Math.floor(damage * 0.3); // 70% absorbed
-
-          // Apply hull damage (shields protect but don't prevent all damage)
-          this.gameState.takeDamage(reducedDamage);
+          // Shields active - energy drain only, no hull damage
 
           // Shield audio and visual feedback
           this.soundManager.playShieldHit();
           this.vfxSystem.createShieldHit(hitPosition);
 
-          // Apply energy damage too (from branch 008's system)
+          // Apply energy damage (shields reduce drain by 70%)
           this.gameState.applyEnemyDamage(
             damage,
             this.gameState.shieldsActive,
@@ -723,17 +719,16 @@ export class Game {
           );
 
           this.controlPanel.showDamageMessage(
-            `SHIELDS ABSORBING FIRE! Hull: ${Math.floor(this.gameState.hull)}%`,
+            `SHIELDS ABSORBING FIRE! Energy: ${Math.floor(this.gameState.energy)}`,
             'shield'
           );
         } else {
-          // No shields - full damage to hull
-          const destroyed = this.gameState.takeDamage(damage);
+          // No shields - energy damage only (no hull damage from enemy combat)
 
           // Player hit audio
           this.soundManager.playPlayerHit();
 
-          // Also apply energy damage and potential system damage
+          // Apply energy damage and potential system damage
           const result = this.gameState.applyEnemyDamage(
             damage,
             false,
@@ -741,17 +736,15 @@ export class Game {
           );
 
           // Display appropriate message
-          if (destroyed) {
-            this.controlPanel.showDamageMessage('SHIP DESTROYED!', 'critical');
-          } else if (result.systemDamaged) {
+          if (result.systemDamaged) {
             const systemName = this.getSystemDisplayName(result.systemDamaged);
             this.controlPanel.showDamageMessage(
-              `${systemName} DAMAGED! Hull: ${Math.floor(this.gameState.hull)}%`,
+              `${systemName} DAMAGED! Energy: ${Math.floor(this.gameState.energy)}`,
               'system'
             );
           } else {
             this.controlPanel.showDamageMessage(
-              `HULL DAMAGE! ${Math.floor(this.gameState.hull)}% remaining`,
+              `TAKING DAMAGE! Energy: ${Math.floor(this.gameState.energy)} remaining`,
               'damage'
             );
           }
