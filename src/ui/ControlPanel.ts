@@ -151,7 +151,7 @@ export class ControlPanel {
         bottom: 0;
         left: 0;
         width: 100vw;
-        background: #000000;
+        background: #3388cc;
         border-top: 0.8vh solid #00FFFF;
         z-index: 100;
         /* CRITICAL: Pixelated rendering for chunky blocky aesthetic */
@@ -167,7 +167,7 @@ export class ControlPanel {
       .panel-content {
         padding: 2.8vh 3vw 3.2vh 3vw;
         position: relative;
-        background: #000000;
+        background: #3388cc;
       }
 
       /* ENHANCED CRT scanline effect - more prominent for retro feel */
