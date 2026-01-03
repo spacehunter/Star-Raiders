@@ -16,7 +16,7 @@ export class PhotonTorpedo {
   private velocity: THREE.Vector3;
   private age: number = 0;
   private maxAge: number = 3; // Seconds before despawning
-  private speed: number = 200; // Units per second
+  private speed: number = 110; // Units per second - reduced for visual tracking
   private particleCount: number = 35; // More particles for denser cluster
   public isActive: boolean = true;
 
