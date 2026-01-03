@@ -290,8 +290,17 @@ export class GalacticChart {
         align-items: center;
       }
 
+      /* Warp Energy - cyan (default) */
       .label { color: #CEFFFF; }
-      .value { color: #CEFFFF; } 
+      .value { color: #CEFFFF; }
+
+      /* Targets - yellow */
+      .info-group:has(.total-enemies) .label { color: #FFD700; }
+      .total-enemies { color: #FFD700; }
+
+      /* Star Date - pink */
+      .info-group:has(.star-date) .label { color: #FF69B4; }
+      .star-date { color: #FF69B4; } 
 
       /* DC Indicators */
       .dc-group { display: flex; gap: 1vw; }
