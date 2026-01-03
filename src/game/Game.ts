@@ -723,13 +723,12 @@ export class Game {
             'shield'
           );
         } else {
-          // No shields - full damage to hull
-          const destroyed = this.gameState.takeDamage(damage);
+          // No shields - energy damage only (no hull damage from enemy combat)
 
           // Player hit audio
           this.soundManager.playPlayerHit();
 
-          // Also apply energy damage and potential system damage
+          // Apply energy damage and potential system damage
           const result = this.gameState.applyEnemyDamage(
             damage,
             false,
@@ -737,17 +736,15 @@ export class Game {
           );
 
           // Display appropriate message
-          if (destroyed) {
-            this.controlPanel.showDamageMessage('SHIP DESTROYED!', 'critical');
-          } else if (result.systemDamaged) {
+          if (result.systemDamaged) {
             const systemName = this.getSystemDisplayName(result.systemDamaged);
             this.controlPanel.showDamageMessage(
-              `${systemName} DAMAGED! Hull: ${Math.floor(this.gameState.hull)}%`,
+              `${systemName} DAMAGED! Energy: ${Math.floor(this.gameState.energy)}`,
               'system'
             );
           } else {
             this.controlPanel.showDamageMessage(
-              `HULL DAMAGE! ${Math.floor(this.gameState.hull)}% remaining`,
+              `TAKING DAMAGE! Energy: ${Math.floor(this.gameState.energy)} remaining`,
               'damage'
             );
           }
