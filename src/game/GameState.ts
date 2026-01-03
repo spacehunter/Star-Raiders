@@ -172,11 +172,29 @@ export class GameState {
     hasShields: boolean,
     difficulty: DifficultyLevel
   ): { energyLost: number; systemDamaged: string | null } {
-    let actualDamage = amount;
+    // Apply difficulty-based damage multiplier
+    let difficultyMultiplier: number;
+    switch (difficulty) {
+      case DifficultyLevel.NOVICE:
+        difficultyMultiplier = 0.5; // Half damage - very forgiving
+        break;
+      case DifficultyLevel.PILOT:
+        difficultyMultiplier = 0.75;
+        break;
+      case DifficultyLevel.WARRIOR:
+        difficultyMultiplier = 1.0; // Current baseline
+        break;
+      case DifficultyLevel.COMMANDER:
+        difficultyMultiplier = 1.5; // Punishing
+        break;
+      default:
+        difficultyMultiplier = 1.0;
+    }
+    let actualDamage = Math.floor(amount * difficultyMultiplier);
 
     // Shields reduce damage by 70% when active and not damaged
     if (hasShields && !this.damage.shields) {
-      actualDamage = Math.floor(amount * 0.3);
+      actualDamage = Math.floor(actualDamage * 0.3);
     }
 
     // Apply damage to energy
