@@ -12,24 +12,25 @@
  *   - Player impulse 9 = 450 units/sec (maximum)
  *
  * Enemy speeds designed so:
- *   - Player impulse 9 = can escape
- *   - Player impulse 8 = enemies match speed (neither gain nor lose)
- *   - Player impulse < 8 = enemies catch up
+ *   - Player impulse 6+ = can escape or outrun enemies
+ *   - Player impulse 5 = fighters match speed
+ *   - Player impulse 4 = cruisers match speed
+ *   - Player impulse < 4 = enemies catch up
  */
 export const ENEMY_CONFIG = {
   speeds: {
     // Enemies now use same UNITS_PER_IMPULSE as player for consistent speed scaling
-    // Fighter pursuit speed matches player impulse 8 (400 u/s)
-    FIGHTER: 8,    // 400 units/sec - matches player impulse 8
-    CRUISER: 6,    // 300 units/sec - slower but still fast
+    // Fighter pursuit speed matches player impulse 5 (250 u/s)
+    FIGHTER: 5,    // 250 units/sec - matches player impulse 5
+    CRUISER: 4,    // 200 units/sec - slower but still threatening
     BASESTAR: 0,   // stationary
   },
 
   // Speed multipliers for different behaviors
   multipliers: {
-    CRUISER_PATROL: 0.6,    // Cruisers patrol at 60% speed (180 u/s)
-    CRUISER_BACKOFF: 0.5,   // Cruisers back off at 50% speed (150 u/s)
-    CRUISER_STRAFE: 0.3,    // Cruisers strafe at 30% speed (90 u/s)
+    CRUISER_PATROL: 0.6,    // Cruisers patrol at 60% speed (120 u/s)
+    CRUISER_BACKOFF: 0.5,   // Cruisers back off at 50% speed (100 u/s)
+    CRUISER_STRAFE: 0.3,    // Cruisers strafe at 30% speed (60 u/s)
   },
 
   // Combat distances - comfortable engagement ranges
@@ -41,7 +42,7 @@ export const ENEMY_CONFIG = {
 
   // Units per impulse level - NOW MATCHES PLAYER
   // Same as player (50) for consistent speed comparison
-  // Fighter impulse 8 = 400 units/sec (matches player impulse 8)
+  // Fighter impulse 5 = 250 units/sec (matches player impulse 5)
   UNITS_PER_IMPULSE: 50,
 };
 
