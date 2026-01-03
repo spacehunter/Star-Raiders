@@ -705,17 +705,13 @@ export class Game {
 
         // Apply damage differently based on shield status
         if (this.gameState.shieldsActive && !this.gameState.damage.shields) {
-          // Shields active - reduce damage and show shield effects
-          const reducedDamage = Math.floor(damage * 0.3); // 70% absorbed
-
-          // Apply hull damage (shields protect but don't prevent all damage)
-          this.gameState.takeDamage(reducedDamage);
+          // Shields active - energy drain only, no hull damage
 
           // Shield audio and visual feedback
           this.soundManager.playShieldHit();
           this.vfxSystem.createShieldHit(hitPosition);
 
-          // Apply energy damage too (from branch 008's system)
+          // Apply energy damage (shields reduce drain by 70%)
           this.gameState.applyEnemyDamage(
             damage,
             this.gameState.shieldsActive,
@@ -723,7 +719,7 @@ export class Game {
           );
 
           this.controlPanel.showDamageMessage(
-            `SHIELDS ABSORBING FIRE! Hull: ${Math.floor(this.gameState.hull)}%`,
+            `SHIELDS ABSORBING FIRE! Energy: ${Math.floor(this.gameState.energy)}`,
             'shield'
           );
         } else {
