@@ -168,7 +168,7 @@ export class Enemy {
       this.orbitDirection = Math.random() < 0.5 ? 1 : -1;
       this.orbitAngle = Math.random() * Math.PI * 2;
       // Fighters are fast and agile
-      this.maxAcceleration = 80;
+      this.maxAcceleration = 50;
     } else if (type === EnemyType.CRUISER) {
       // Generate patrol waypoints
       this.generatePatrolWaypoints();
