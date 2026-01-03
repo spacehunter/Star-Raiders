@@ -659,10 +659,10 @@ export class Enemy {
     const toPlayer = playerPosition.clone().sub(this.mesh.position);
     const direction = toPlayer.normalize();
 
-    // Move toward player at boosted speed (1.5x base speed for aggressive pursuit)
-    // Fighter: 400 * 1.5 = 600 u/s (faster than player max speed of 450)
-    // Cruiser: 300 * 1.5 = 450 u/s (matches player max speed)
-    this.targetVelocity.copy(direction).multiplyScalar(this.speed * 1.5);
+    // Move toward player at slightly boosted speed (1.1x base speed for trackable pursuit)
+    // Fighter: 400 * 1.1 = 440 u/s (slightly slower than player max speed of 450)
+    // Cruiser: 300 * 1.1 = 330 u/s (slower than player max speed)
+    this.targetVelocity.copy(direction).multiplyScalar(this.speed * 1.1);
 
     // Face player
     this.mesh.lookAt(playerPosition);
