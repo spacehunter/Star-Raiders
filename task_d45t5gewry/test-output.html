@@ -1,0 +1,77 @@
+<!doctype html><meta charset="utf-8"><title>Phase 1 rules core: npm test</title><body style="background:#111;color:#ddd;font:13px monospace"><h2>Phase 1 rules core: <code>npm test</code> (Vitest, verbose)</h2><pre>
+ RUN  v5.1.2 /home/nova/harness-work/star-raiders/task_d45t5gewry
+
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; runs at 60 loops per second 1ms
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; n steps of 1/60 s are exactly n loops 3ms
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; carries partial loops between frames 0ms
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; star date advances one digit every 41 loops 0ms
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; fleet move ticks at star date 1.00, then every 0.50 1ms
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; formats NN.NN and wraps after 99.99 0ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 continuous drains &gt; speed 6 drains 3.5 units/s (plus ¼ life support) 2ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 continuous drains &gt; every engine key drains the manual rate 13ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 continuous drains &gt; shields 2/s, computer ½/s, life support ¼/s 2ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 continuous drains &gt; ROM subunits per loop: shields 8 + computer 2 + life support 1 + engine 0ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 lump costs &gt; photon 10, hit 100, abort 100 0ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 lump costs &gt; hyperspace drains 10 per loop for WARPENERGY − 1 loops 0ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 lump costs &gt; docking refills to 9999 0ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 score: −1 per 100-unit boundary &gt; counts boundaries crossed by 1- and 10-unit steps 0ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 score: −1 per 100-unit boundary &gt; 100-unit lumps never cost score (DECENERGY digit 1) 0ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 score: −1 per 100-unit boundary &gt; equals floor(energy used / 100) for continuous use from 9999 2ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 zero energy &gt; energy reaches 0 and aborts the mission 0ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 zero energy &gt; a full tank runs dry at speed 9 with shields and computer in about 9½ minutes 4ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 zero energy &gt; a photon fired at 5 units ends the mission 0ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 zero energy &gt; nothing drains or refills after zero energy 0ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 zero energy &gt; isLow below 1000 0ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; score 90 is NOVICE class 4 1ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; score 161 is PILOT class 3 0ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; reproduces the ROM quick-lookup table for every score 0..303 5ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; classes split each manual rank into five near-equal parts, 5 lowest to 1 highest 0ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; 304 and above is STAR COMMANDER class 1; below zero is GALACTIC COOK class 5 0ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; gag ranks under 48 0ms
+ ✓ src/sim/rating.test.ts &gt; §14.1 / §17.10 running score &gt; +6 per Zylon, −3 per starbase shot, −18 per starbase lost, −1 per fleet tick and per 100 energy 0ms
+ ✓ src/sim/rating.test.ts &gt; §14.1 / §17.10 running score &gt; matches the manual formula with the M table 0ms
+ ✓ src/sim/rating.test.ts &gt; §14.1 / §17.10 running score &gt; M depends on level and outcome 1ms
+ ✓ src/sim/rating.test.ts &gt; §17.10 end-of-mission messages &gt; mission complete 0ms
+ ✓ src/sim/rating.test.ts &gt; §17.10 end-of-mission messages &gt; zero energy 0ms
+ ✓ src/sim/rating.test.ts &gt; §17.10 end-of-mission messages &gt; destroyed 0ms
+ ✓ src/rules/rules.test.ts &gt; §5.1 / §17.1 speed table &gt; V on the panel matches the manual for every key 1ms
+ ✓ src/rules/rules.test.ts &gt; §5.1 / §17.1 speed table &gt; speed 6 is V12 0ms
+ ✓ src/rules/rules.test.ts &gt; §5.1 / §17.1 speed table &gt; Zylon top speed key 7 is V25 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.2 / §17.1 engine drain &gt; manual units/second = ROM subunits per loop at 64 loops/s 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.2 / §17.1 engine drain &gt; speed 6 drains 3.5 units/s 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.2 / §17.1 engine drain &gt; manual table §12.2 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.1 / §17.1 per-loop drains &gt; shields 2/s, computer ½/s, life support ¼/s 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.1 / §17.1 per-loop drains &gt; every mission starts with 9999 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.3 / §17.5 warp energy and CALCWARP &gt; ROM table × 10 is the manual table 1ms
+ ✓ src/rules/rules.test.ts &gt; §12.3 / §17.5 warp energy and CALCWARP &gt; a 5-sector warp costs 500 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.3 / §17.5 warp energy and CALCWARP &gt; every sector distance 0..22 on the 16×8 chart costs the manual value 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.3 / §17.5 warp energy and CALCWARP &gt; a jump inside the sector costs 100 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.3 / §17.5 warp energy and CALCWARP &gt; rows count half: DISTANCE = |Δrow|/2 + |Δcol|, plus DISTANCE &amp; 3 0ms
+ ✓ src/rules/rules.test.ts &gt; §14.2 M table and §14.3 / §17.10 ranks and classes &gt; M values 0ms
+ ✓ src/rules/rules.test.ts &gt; §14.2 M table and §14.3 / §17.10 ranks and classes &gt; RANKTAB covers the manual ranges in 16-point bins 2ms
+ ✓ src/rules/rules.test.ts &gt; §14.2 M table and §14.3 / §17.10 ranks and classes &gt; CLASSTAB splits 16 class indices into classes 5..1 0ms
+ ✓ src/rules/rules.test.ts &gt; §15 / §17.4 counts per level &gt; Zylons 27/36/45/54 and starbases 3/4/5/6 0ms
+ ✓ src/rules/rules.test.ts &gt; §15 / §17.4 counts per level &gt; steering is automatic only at NOVICE 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.7 Zylon homing per level &gt; 1 / 4 / 8 / 20 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; chance 0 / 80 / 180 / 254 of 256 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; NOVICE never takes damage 1ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; one byte decides chance and slot; slots 6 and 7 harm nothing 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; PILOT harms a system on 60 of 256 bytes (80 below chance, 2 of 8 slots empty) 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; close torpedoes (life ≥ 30) destroy; messages name the system 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; computer and sector scan are never both destroyed 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; an already destroyed system makes the ROM draw again 0ms
+ ✓ src/rules/rules.test.ts &gt; message strings &gt; ROM spellings 0ms
+ ✓ src/core/rng.test.ts &gt; seeded RNG &gt; gives the same sequence for the same seed 2ms
+ ✓ src/core/rng.test.ts &gt; seeded RNG &gt; gives different sequences for different seeds 0ms
+ ✓ src/core/rng.test.ts &gt; seeded RNG &gt; returns floats in [0, 1) 45ms
+ ✓ src/core/rng.test.ts &gt; seeded RNG &gt; matches known mulberry32 output so the stream never drifts 0ms
+ ✓ src/core/rng.test.ts &gt; seeded RNG &gt; setSeed resets the shared generator 0ms
+ ✓ src/core/rng.test.ts &gt; galaxy generation &gt; is identical for the same seed 0ms
+ ✓ src/core/rng.test.ts &gt; galaxy generation &gt; differs between seeds 0ms
+
+ Test Files  5 passed (5)
+      Tests  67 passed (67)
+   Start at  14:23:44
+   Duration  124ms (tests 58%, import 22%, transform 15%, worker 5%)
+
+</pre>
