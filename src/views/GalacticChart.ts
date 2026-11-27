@@ -1,625 +1,271 @@
-import { SectorSystem } from '../systems/SectorSystem';
-import { GameState } from '../game/GameState';
-import { calcWarpSectors } from '../rules/warp';
-import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';
+/**
+ * Galactic Chart view (MANUAL_SPEC §8, §7, §5.9, §17.3, §17.4, §17.13, §18.1).
+ *
+ * The whole screen becomes the chart: the title on a black band, a blue field with a white
+ * 16 × 8 grid and the ROM's chart symbols, two dots (your position and the hyperwarp
+ * destination), and three footer lines:
+ *
+ *   WARP ENERGY:nnn0
+ *   TARGETS:n  DC:PESCLR
+ *   STAR DATE:00.00
+ *
+ * Drawn on one canvas, and only when something it shows has changed (not every frame).
+ */
+import { drawText, GLYPH_COLUMNS, GLYPH_ROWS } from '../render/font';
+import { CHART_COLORS } from '../render/palette';
+import { SUBSYSTEMS, SUBSYSTEM_LETTER, type DamageStatus } from '../rules/damage';
+import { GALAXY_COLUMNS, GALAXY_ROWS, type SectorInfo, type SectorPos } from '../sim/galaxy';
 
 /**
- * GalacticChart - 2D overlay displaying the 16x8 sector grid
- * authentic Atari 800 style
+ * §17.4 chart symbol sprites, 8 × 8: the left column and bottom row are the grid lines,
+ * so only rows 0–6 and columns 1–7 are the symbol.
  */
+export const CHART_SYMBOLS = {
+  patrol: [
+    '#.......',
+    '#.##....',
+    '#..##...',
+    '#.#####.',
+    '#..##...',
+    '#.##....',
+    '#.......',
+    '########',
+  ],
+  taskForce: [
+    '#.......',
+    '#...###.',
+    '#.......',
+    '#.###...',
+    '#.......',
+    '#..###..',
+    '#.......',
+    '########',
+  ],
+  fleet: [
+    '#.......',
+    '#..##...',
+    '#.......',
+    '#.##.##.',
+    '#.......',
+    '#...##..',
+    '#.......',
+    '########',
+  ],
+  starbase: [
+    '#.......',
+    '#.#.#.#.',
+    '#..###..',
+    '#.#####.',
+    '#..###..',
+    '#.#.#.#.',
+    '#.......',
+    '########',
+  ],
+} as const;
+
+export type ChartSymbol = keyof typeof CHART_SYMBOLS;
+
+/** §8 / §17.4: which symbol a sector shows. 1–2 ships share the patrol symbol. */
+export function chartSymbol(s: Pick<SectorInfo, 'zylons' | 'starbase'>): ChartSymbol | null {
+  if (s.starbase) return 'starbase';
+  if (s.zylons >= 4) return 'fleet';
+  if (s.zylons === 3) return 'taskForce';
+  if (s.zylons > 0) return 'patrol';
+  return null;
+}
+
+export interface ChartData {
+  /** Text on the title band: GALACTIC CHART, or a title-line message. */
+  title: string;
+  /** Bumped by RadioFeed whenever the sector map it shows changes. */
+  sectorsVersion: number;
+  sectors: () => readonly SectorInfo[];
+  player: SectorPos;
+  cursor: SectorPos;
+  /** WARP ENERGY in energy units (CALCWARP × 10). */
+  warpEnergy: number;
+  /** TARGETS: Zylons in the cursor sector. */
+  targets: number;
+  starDate: string;
+  damage: DamageStatus;
+}
+
+/** Footer line texts, exactly as drawn (§8). */
+export function footerLines(d: Pick<ChartData, 'warpEnergy' | 'targets' | 'starDate'>): [string, string, string] {
+  const warp = String(Math.max(0, Math.min(9999, Math.round(d.warpEnergy)))).padStart(4, '0');
+  return [`WARP ENERGY:${warp}`, `TARGETS:${d.targets}  DC:PESCLR`, `STAR DATE:${d.starDate}`];
+}
+
+// Layout in logical pixels: one ROM pixel = 4 logical pixels; the screen is 640 × 440.
+const W = 640;
+const H = 440;
+const U = 4; // ROM pixel
+const CELL = 8 * U;
+const BAND_H = 11 * U;
+const TITLE_PX = U;
+const GRID_X = (W - (GALAXY_COLUMNS * CELL + U)) / 2;
+const GRID_Y = BAND_H + 4 * U;
+const FOOTER_PX = 3;
+const FOOTER_Y = GRID_Y + GALAXY_ROWS * CELL + 5 * U;
+const FOOTER_PITCH = 8 * U;
+
 export class GalacticChart {
-  private container: HTMLElement;
-  private chartElement: HTMLElement;
-  private sectorSystem: SectorSystem;
-  private gameState: GameState;
-  private starbaseAttackSystem: StarbaseAttackSystem | null = null;
+  private readonly root: HTMLDivElement;
+  private readonly canvas: HTMLCanvasElement;
+  private readonly ctx: CanvasRenderingContext2D;
+  private isVisible = false;
+  private lastKey = '';
+  private last: ChartData | null = null;
+  /** Number of times the chart was actually drawn (debug/evidence). */
+  public renders = 0;
 
-  private cursorX: number = 4;
-  private cursorY: number = 4;
-  private isVisible: boolean = false;
-
-  constructor(
-    container: HTMLElement,
-    sectorSystem: SectorSystem,
-    gameState: GameState
-  ) {
-    this.container = container;
-    this.sectorSystem = sectorSystem;
-    this.gameState = gameState;
-
-    this.chartElement = this.createChart();
-    this.container.appendChild(this.chartElement);
-    this.addStyles();
-
-    // Initialize cursor to current sector
-    this.cursorX = gameState.sectorX;
-    this.cursorY = gameState.sectorY;
-
-    // Hide initially
-    this.hide();
+  constructor(container: HTMLElement) {
+    this.root = document.createElement('div');
+    this.root.className = 'galactic-chart';
+    Object.assign(this.root.style, {
+      position: 'fixed',
+      inset: '0',
+      // Above the panel's message overlay (1000): on the chart, messages use the title band.
+      zIndex: '1100',
+      display: 'none',
+      background: CHART_COLORS.field,
+    } satisfies Partial<CSSStyleDeclaration>);
+    this.canvas = document.createElement('canvas');
+    Object.assign(this.canvas.style, { width: '100%', height: '100%', display: 'block' });
+    this.root.appendChild(this.canvas);
+    container.appendChild(this.root);
+    this.ctx = this.canvas.getContext('2d')!;
+    window.addEventListener('resize', this.onResize);
   }
 
-  /**
-   * Create the chart HTML structure
-   */
-  private createChart(): HTMLElement {
-    const chart = document.createElement('div');
-    chart.className = 'galactic-chart';
-    chart.innerHTML = `
-      <div class="chart-header-bar">
-        <span class="chart-title">GALACTIC CHART</span>
-      </div>
-      <div class="chart-main">
-        <div class="chart-grid"></div>
-      </div>
-      <div class="chart-footer">
-        <div class="footer-row top-row">
-           <div class="info-group">
-             <span class="label">WARP ENERGY:</span>
-             <span class="value warp-cost">0000</span>
-           </div>
-           <div class="info-group">
-             <span class="label">TARGETS:</span>
-             <span class="value total-enemies">00</span>
-           </div>
-           <div class="info-group dc-group">
-             <span class="label">DC:</span>
-             <span class="dc-indicators">
-                <span class="dc-char" data-sys="P">P</span>
-                <span class="dc-char" data-sys="E">E</span>
-                <span class="dc-char" data-sys="S">S</span>
-                <span class="dc-char" data-sys="C">C</span>
-                <span class="dc-char" data-sys="L">L</span>
-                <span class="dc-char" data-sys="R">R</span>
-             </span>
-           </div>
-        </div>
-        <div class="footer-row bottom-row">
-           <div class="info-group centered">
-              <span class="label">STAR DATE:</span>
-              <span class="value star-date">00.00</span>
-           </div>
-        </div>
-      </div>
-    `;
-
-    // Create grid cells
-    const grid = chart.querySelector('.chart-grid')!;
-    for (let y = 0; y < SectorSystem.GRID_HEIGHT; y++) {
-      for (let x = 0; x < SectorSystem.GRID_WIDTH; x++) {
-        const cell = document.createElement('div');
-        cell.className = 'chart-cell';
-        cell.dataset.x = x.toString();
-        cell.dataset.y = y.toString();
-        grid.appendChild(cell);
-      }
-    }
-
-    return chart;
-  }
-
-  /* Sprite Patterns (8x8 grids, X = pixel, . = empty) */
-  private static readonly SPRITES = {
-    STARBASE: [ // 5x5 centered
-      ". . . . . . . .",
-      ". . . . . . . .",
-      ". . X . X . X .",
-      ". . . X X X . .",
-      ". . X X X X X .",
-      ". . . X X X . .",
-      ". . X . X . X .",
-      ". . . . . . . ."
-    ],
-    ENEMY_1: [ // Left-pointing ship (centered, shifted down +1)
-      ". . . . . . . .",
-      ". . . . . . . .",
-      ". . X X . . . .",
-      ". . . X X . . .",
-      ". . X X X X X .",
-      ". . . X X . . .",
-      ". . X X . . . .",
-      ". . . . . . . ."
-    ],
-    ENEMY_2: [ // Three dashes (centered, shifted down +1)
-      ". . . . . . . .",
-      ". . . . . . . .",
-      ". . . . X X X .",
-      ". . . . . . . .",
-      ". . X X X . . .",
-      ". . . . . . . .",
-      ". . . X X X . .",
-      ". . . . . . . ."
-    ],
-    ENEMY_3: [ // Stacked dashes (centered, shifted down +1)
-      ". . . . . . . .",
-      ". . . . . . . .",
-      ". . . X X . . .",
-      ". . . . . . . .",
-      ". . X X . X X .",
-      ". . . . . . . .",
-      ". . . . X X . .",
-      ". . . . . . . ."
-    ],
-    ENEMY_4: [ // Diamond 4-fleet (centered, shifted down +1)
-      ". . . . . . . .",
-      ". . . . . . . .",
-      ". . . X X . . .",
-      ". . X X X X . .",
-      ". X X . . X X .",
-      ". . X X X X . .",
-      ". . . X X . . .",
-      ". . . . . . . ."
-    ]
-  };
-
-  /**
-   * Helper to generate box-shadow CSS from a pattern
-   */
-  private generateBoxShadow(pattern: string[], pixelSize: number = 0.4): string {
-    let shadows: string[] = [];
-    pattern.forEach((row, y) => {
-      // Remove spaces to handle "X . X" formats if user adds extra spaces for readability
-      // But standard format is likely "X" or "." character by character?
-      // User said "string is an 8x8 string". Let's assume input is array of strings.
-      // We'll iterate characters.
-      const chars = row.replace(/\s+/g, '').split(''); // Remove whitespace delimiters if any
-
-      chars.forEach((char, x) => {
-        if (char === 'X') {
-          // x * pixelSize, y * pixelSize
-          shadows.push(`${x * pixelSize}vh ${y * pixelSize}vh 0 0 #CEFFFF`);
-        }
-      });
-    });
-    return shadows.join(',');
-  }
-
-  /**
-   * Add CSS styles
-   */
-  private addStyles(): void {
-    if (document.getElementById('galactic-chart-styles')) return;
-
-    // Generate sprite CSS
-    const starbaseShadow = this.generateBoxShadow(GalacticChart.SPRITES.STARBASE);
-    const enemy1Shadow = this.generateBoxShadow(GalacticChart.SPRITES.ENEMY_1);
-    const enemy2Shadow = this.generateBoxShadow(GalacticChart.SPRITES.ENEMY_2);
-    const enemy3Shadow = this.generateBoxShadow(GalacticChart.SPRITES.ENEMY_3);
-    const enemy4Shadow = this.generateBoxShadow(GalacticChart.SPRITES.ENEMY_4);
-
-    const style = document.createElement('style');
-    style.id = 'galactic-chart-styles';
-    style.textContent = `
-      @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-
-      .galactic-chart {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background: #2B608A; /* Authentic Atari Blue */
-        z-index: 200;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: space-between;
-        padding-bottom: 5vh;
-        box-sizing: border-box;
-        image-rendering: pixelated;
-        font-family: 'Press Start 2P', monospace;
-      }
-
-      /* Black Header Bar */
-      .chart-header-bar {
-        width: 100%;
-        background: #000000;
-        padding: 2vh 0;
-        margin-bottom: 2vh;
-        text-align: center;
-        border-bottom: 0.5vh solid #000;
-      }
-
-      .chart-title {
-        font-size: 3.5vh;
-        color: #CEFFFF; /* Light Cyan */
-        text-transform: uppercase;
-        letter-spacing: 0.5vw;
-      }
-
-      .chart-main {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-      }
-
-      .chart-grid {
-        display: grid;
-        grid-template-columns: repeat(16, 1fr);
-        grid-template-rows: repeat(8, 1fr);
-        height: 65vh; /* Larger grid */
-        width: 140vh;  /* Wide enough for 16 cells with 8x8 sprites */
-        background: transparent;
-        border: 0.2vh solid #55AAFF;
-        margin-top: 0.2vh; /* Up 1px */
-        margin-left: 0.2vh; /* Right 1px (Adjusted from 0.8vh) */
-      }
-
-      .chart-cell {
-        border: 0.2vh solid #55AAFF;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: relative;
-        background: transparent;
-      }
-
-      /* Active Cursor */
-      .chart-cell.cursor {
-        box-shadow: inset 0 0 0 0.5vh #BAFF00; /* Bright Green Highlighting */
-        background-color: rgba(186, 255, 0, 0.2);
-      }
-
-      /* Footer Styling */
-      .chart-footer {
-        width: 90%;
-        max-width: 1200px;
-        color: #CEFFFF;
-      }
-
-      .footer-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1.5vh;
-        font-size: 2.5vh;
-      }
-
-      .bottom-row {
-        justify-content: center;
-      }
-
-      .info-group {
-        display: flex;
-        gap: 1.5vw;
-        align-items: center;
-      }
-
-      /* Warp Energy - cyan (default) */
-      .label { color: #CEFFFF; }
-      .value { color: #CEFFFF; }
-
-      /* Targets - yellow */
-      .info-group:has(.total-enemies) .label { color: #FFD700; }
-      .total-enemies { color: #FFD700; }
-
-      /* Star Date - pink */
-      .info-group:has(.star-date) .label { color: #FF69B4; }
-      .star-date { color: #FF69B4; } 
-
-      /* DC Indicators */
-      .dc-group { display: flex; gap: 1vw; }
-      .dc-indicators {
-        display: flex;
-        gap: 0.5vw;
-      }
-      .dc-char { color: #CEFFFF; }
-      .dc-char.damaged { color: #FF5555; }
-      .dc-char.destroyed { color: #000000; text-shadow: none; }
-
-      /* --- SPRITES --- */
-      /*
-         Sprite Container: Explicit 8x8 Grid Size
-         Grid Unit = 0.4vh
-         Size = 8 * 0.4vh = 3.2vh
-         Cells are now ~8.75vh wide, so scale to fit comfortably
-      */
-      .sprite {
-        position: relative; /* Relative to cell (which is flex centered) */
-        width: 3.2vh;
-        height: 3.2vh;
-        background: transparent;
-        transform: scale(2.0); /* Scale to ~6.4vh to fit 8.75vh cells */
-        top: -0.2vh; /* Counteract grid 0.2vh */
-        left: -0.2vh; /* Counteract grid 0.2vh */
-      }
-      
-      /* The Pixel Renderer */
-      .sprite::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 0.4vh; 
-        height: 0.4vh;
-        background: transparent;
-        /* box-shadow will be applied here dynamically */
-      }
-
-      .starbase-sprite::after {
-        box-shadow: ${starbaseShadow};
-        color: #CEFFFF;
-      }
-      
-      .starbase-attacked .starbase-sprite::after {
-        animation: blink-shadow 0.5s infinite;
-      }
-
-      @keyframes blink-shadow {
-        0%, 100% {
-          color: #FF0000;
-          box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FF0000')};
-        }
-        50% {
-          color: #FF0000;
-          box-shadow: none;
-        }
-      }
-
-      /* Starbase being strategically targeted (enemies moving to surround) */
-      .starbase-targeted {
-        background-color: rgba(255, 165, 0, 0.15);
-      }
-
-      .starbase-targeted .starbase-sprite::after {
-        box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FFA500')};
-        animation: pulse-orange 1.5s infinite;
-      }
-
-      @keyframes pulse-orange {
-        0%, 100% {
-          box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FFA500')};
-        }
-        50% {
-          box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FF6600')};
-        }
-      }
-
-      /* Starbase surrounded (destruction countdown active) */
-      .starbase-surrounded {
-        background-color: rgba(255, 0, 0, 0.25);
-        animation: danger-pulse 0.5s infinite;
-      }
-
-      .starbase-surrounded .starbase-sprite::after {
-        box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FF0000')};
-        animation: rapid-blink 0.25s infinite;
-      }
-
-      @keyframes danger-pulse {
-        0%, 100% { background-color: rgba(255, 0, 0, 0.25); }
-        50% { background-color: rgba(255, 0, 0, 0.5); }
-      }
-
-      @keyframes rapid-blink {
-        0%, 100% {
-          box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FF0000')};
-        }
-        50% {
-          box-shadow: ${starbaseShadow.replace(/#CEFFFF/g, '#FFFF00')};
-        }
-      }
-
-      .enemy-sprite.count-1::after {
-        box-shadow: ${enemy1Shadow};
-      }
-      
-      .enemy-sprite.count-2::after {
-        box-shadow: ${enemy2Shadow};
-      }
-
-      .enemy-sprite.count-3::after {
-        box-shadow: ${enemy3Shadow};
-      }
-
-      .enemy-sprite.count-4::after {
-        box-shadow: ${enemy4Shadow};
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  /**
-   * Show the chart
-   */
   public show(): void {
     this.isVisible = true;
-    this.chartElement.style.display = 'flex';
-    this.cursorX = this.gameState.sectorX;
-    this.cursorY = this.gameState.sectorY;
-    this.update();
+    this.root.style.display = 'block';
+    this.lastKey = ''; // force a draw at the new size
   }
 
-  /**
-   * Hide the chart
-   */
   public hide(): void {
     this.isVisible = false;
-    this.chartElement.style.display = 'none';
+    this.root.style.display = 'none';
   }
 
-  /**
-   * Toggle visibility
-   */
-  public toggle(): void {
-    if (this.isVisible) {
-      this.hide();
-    } else {
-      this.show();
-    }
-  }
-
-  /**
-   * Move cursor
-   */
-  public moveCursor(dx: number, dy: number): void {
-    const newX = Math.max(0, Math.min(SectorSystem.GRID_WIDTH - 1, this.cursorX + dx));
-    const newY = Math.max(0, Math.min(SectorSystem.GRID_HEIGHT - 1, this.cursorY + dy));
-    this.cursorX = newX;
-    this.cursorY = newY;
-    this.update();
-  }
-
-  /**
-   * Get current cursor position
-   */
-  public getCursorPosition(): { x: number; y: number } {
-    return { x: this.cursorX, y: this.cursorY };
-  }
-
-  /**
-   * Check if chart is visible
-   */
   public get visible(): boolean {
     return this.isVisible;
   }
 
-  /**
-   * Set the starbase attack system reference for displaying attack status
-   */
-  public setStarbaseAttackSystem(system: StarbaseAttackSystem): void {
-    this.starbaseAttackSystem = system;
+  /** Draw if visible and anything shown has changed. Returns true when it drew. */
+  public render(d: ChartData): boolean {
+    this.last = d;
+    if (!this.isVisible) return false;
+    const key = [
+      d.title,
+      d.sectorsVersion,
+      d.player.x,
+      d.player.y,
+      d.cursor.x,
+      d.cursor.y,
+      d.warpEnergy,
+      d.targets,
+      d.starDate,
+      SUBSYSTEMS.map((s) => d.damage[s]).join(),
+      this.canvas.clientWidth,
+      this.canvas.clientHeight,
+    ].join('|');
+    if (key === this.lastKey) return false;
+    this.lastKey = key;
+    this.draw(d);
+    this.renders++;
+    return true;
   }
 
-  /**
-   * Update the chart display
-   */
-  public update(): void {
-    if (!this.isVisible) return;
+  private onResize = (): void => {
+    this.lastKey = '';
+    if (this.last) this.render(this.last);
+  };
 
-    const cells = this.chartElement.querySelectorAll('.chart-cell');
-    cells.forEach((cell) => {
-      const cellEl = cell as HTMLElement;
-      const x = parseInt(cellEl.dataset.x || '0');
-      const y = parseInt(cellEl.dataset.y || '0');
-      const sector = this.sectorSystem.getSector(x, y);
-
-      // Reset classes
-      cellEl.classList.remove('current-sector', 'cursor', 'has-starbase', 'starbase-attacked', 'starbase-targeted', 'starbase-surrounded');
-      cellEl.textContent = '';
-
-      // Clear any existing sprites
-      cellEl.querySelectorAll('.sprite').forEach(sprite => sprite.remove());
-
-      // Cursor position
-      if (x === this.cursorX && y === this.cursorY) {
-        cellEl.classList.add('cursor');
-      }
-
-      // Sector content
-      // Original uses symbols: < (enemy), * (base), . (visited?), etc.
-      // We will match the logic but use authentic styling.
-      if (sector) {
-        // Starbase
-        if (sector.hasStarbase && !sector.starbaseDestroyed) {
-          this.renderSprite(cellEl, 'starbase');
-          cellEl.classList.add('has-starbase');
-
-          // Check if this starbase is being strategically attacked
-          if (this.starbaseAttackSystem) {
-            const attack = this.starbaseAttackSystem.getCurrentAttack();
-            if (attack && attack.targetSector.x === x && attack.targetSector.y === y) {
-              cellEl.classList.add('starbase-targeted');
-              if (attack.isSurrounded) {
-                cellEl.classList.add('starbase-surrounded');
-              }
-            }
-          }
-
-          if (sector.enemies > 0) {
-            cellEl.classList.add('starbase-attacked');
-          }
-        } else if (sector.enemies > 0) {
-          // 1-3 enemies or fleet
-          // Render specific enemy count sprite
-          const count = Math.min(sector.enemies, 4); // Cap at 4 for sprite logic
-          this.renderSprite(cellEl, 'enemy', count);
-        }
-      }
-    });
-
-    // Update Footer Info
-    const warpCostEl = this.chartElement.querySelector('.warp-cost');
-    const totalEnemiesEl = this.chartElement.querySelector('.total-enemies');
-    const starDateEl = this.chartElement.querySelector('.star-date');
-
-    // Warp Cost
-    if (warpCostEl) {
-      const cost = calcWarpSectors(
-        this.gameState.sectorX,
-        this.gameState.sectorY,
-        this.cursorX,
-        this.cursorY
-      ).units;
-      warpCostEl.textContent = cost.toString().padStart(4, '0');
+  private draw(d: ChartData): void {
+    const dpr = window.devicePixelRatio || 1;
+    const cw = Math.max(1, Math.round(this.canvas.clientWidth * dpr));
+    const ch = Math.max(1, Math.round(this.canvas.clientHeight * dpr));
+    if (this.canvas.width !== cw || this.canvas.height !== ch) {
+      this.canvas.width = cw;
+      this.canvas.height = ch;
     }
-
-    // Targets (Total Enemies Remaining in Galaxy)
-    if (totalEnemiesEl) {
-      // Assume totalRemaining = total - destroyed
-      const remaining = this.gameState.totalEnemies - this.gameState.enemiesDestroyed;
-      totalEnemiesEl.textContent = remaining.toString().padStart(2, '0');
-    }
-
-    // Star Date
-    if (starDateEl) {
-      starDateEl.textContent = this.gameState.starDate;
-    }
-
-    // Damage Control (DC) Indicators
-    const dcMap: Record<string, boolean> = {
-      'P': this.gameState.damage.photonTorpedoes,
-      'E': this.gameState.damage.engines,
-      'S': this.gameState.damage.shields,
-      'C': this.gameState.damage.attackComputer,
-      'L': this.gameState.damage.longRangeScan,
-      'R': this.gameState.damage.subSpaceRadio
+    const f = Math.min(cw / W, ch / H);
+    const ox = (cw - W * f) / 2;
+    const oy = (ch - H * f) / 2;
+    const ctx = this.ctx;
+    const plot = (x: number, y: number, w: number, h: number) => {
+      const x0 = Math.round(ox + x * f);
+      const y0 = Math.round(oy + y * f);
+      ctx.fillRect(x0, y0, Math.round(ox + (x + w) * f) - x0, Math.round(oy + (y + h) * f) - y0);
     };
 
-    const dcChars = this.chartElement.querySelectorAll('.dc-char');
-    dcChars.forEach((el) => {
-      const char = (el as HTMLElement).dataset.sys!;
-      const isDamaged = dcMap[char];
+    // Field: blue, or yellow when the shields are damaged or destroyed (§5.9)
+    const shieldsHurt = d.damage.shields !== 'ok';
+    const field = shieldsHurt ? CHART_COLORS.fieldShieldsDamaged : CHART_COLORS.field;
+    this.root.style.background = field;
+    ctx.fillStyle = field;
+    ctx.fillRect(0, 0, cw, ch);
 
-      el.classList.remove('damaged', 'destroyed');
-      if (isDamaged) {
-        el.classList.add('damaged');
+    // Title band, black, reaching the top of the screen
+    ctx.fillStyle = CHART_COLORS.titleBand;
+    ctx.fillRect(0, 0, cw, Math.round(oy + BAND_H * f));
+    ctx.fillStyle = CHART_COLORS.title;
+    const title = d.title.slice(0, 20);
+    const tw = title.length * GLYPH_COLUMNS * TITLE_PX;
+    drawText(plot, title, (W - tw) / 2, (BAND_H - GLYPH_ROWS * TITLE_PX) / 2, TITLE_PX);
+
+    // Grid: left column and bottom row of every cell, plus the top and right borders
+    ctx.fillStyle = CHART_COLORS.grid;
+    const gw = GALAXY_COLUMNS * CELL;
+    const gh = GALAXY_ROWS * CELL;
+    plot(GRID_X, GRID_Y - U, gw + U, U);
+    for (let r = 0; r < GALAXY_ROWS; r++) plot(GRID_X, GRID_Y + r * CELL + 7 * U, gw + U, U);
+    for (let c = 0; c <= GALAXY_COLUMNS; c++) plot(GRID_X + c * CELL, GRID_Y - U, U, gh + U);
+
+    // Symbols
+    ctx.fillStyle = CHART_COLORS.symbol;
+    for (const s of d.sectors()) {
+      const sym = chartSymbol(s);
+      if (!sym) continue;
+      const rows = CHART_SYMBOLS[sym];
+      const cx = GRID_X + s.x * CELL;
+      const cy = GRID_Y + s.y * CELL;
+      for (let r = 0; r < 7; r++) {
+        for (let c = 1; c < 8; c++) if (rows[r][c] === '#') plot(cx + c * U, cy + r * U, U, U);
       }
+    }
+
+    // Two dots: present position and hyperwarp destination (§8)
+    ctx.fillStyle = CHART_COLORS.dot;
+    for (const p of [d.player, d.cursor]) {
+      plot(GRID_X + p.x * CELL + 4 * U, GRID_Y + p.y * CELL + 3 * U, 2 * U, 2 * U);
+    }
+
+    // Footer (§8, colours §17.3 / §17.13)
+    const [l1, l2, l3] = footerLines(d);
+    const cwid = GLYPH_COLUMNS * FOOTER_PX;
+    const line = (text: string, row: number, color: string, at = 0, centreOn = text) => {
+      const x = (W - centreOn.length * cwid) / 2 + at * cwid;
+      ctx.fillStyle = color;
+      drawText(plot, text, x, FOOTER_Y + row * FOOTER_PITCH, FOOTER_PX);
+    };
+    line(l1, 0, CHART_COLORS.warpEnergy);
+    const targets = l2.slice(0, l2.indexOf('DC:'));
+    line(targets.trimEnd(), 1, CHART_COLORS.targets, 0, l2);
+    const dcAt = l2.indexOf('DC:');
+    line('DC:', 1, CHART_COLORS.dcLabel, dcAt, l2);
+    SUBSYSTEMS.forEach((sys, i) => {
+      const st = d.damage[sys];
+      const color = st === 'ok' ? CHART_COLORS.dcOk : st === 'damaged' ? CHART_COLORS.dcDamaged : CHART_COLORS.dcDestroyed;
+      line(SUBSYSTEM_LETTER[sys], 1, color, dcAt + 3 + i, l2);
     });
+    line(l3, 2, CHART_COLORS.starDate);
   }
 
-  /**
-   * Render a pixel art sprite into a cell
-   */
-  private renderSprite(container: HTMLElement, type: 'starbase' | 'enemy', count: number = 1): void {
-    const sprite = document.createElement('div');
-    sprite.className = `sprite ${type}-sprite count-${count}`;
-
-    if (type === 'enemy') {
-      // Create pips for each enemy (up to 4 for visual stack)
-      const visualCount = Math.min(count, 4);
-      for (let i = 0; i < visualCount; i++) {
-        const pip = document.createElement('div');
-        pip.className = 'enemy-pip';
-        sprite.appendChild(pip);
-      }
-    }
-
-    container.appendChild(sprite);
-  }
-
-  /**
-   * Dispose of resources
-   */
   public dispose(): void {
-    if (this.chartElement.parentElement) {
-      this.chartElement.parentElement.removeChild(this.chartElement);
-    }
-    const styles = document.getElementById('galactic-chart-styles');
-    if (styles) {
-      styles.remove();
-    }
+    window.removeEventListener('resize', this.onResize);
+    this.root.remove();
   }
 }

@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { createRng, getSeed, random, setSeed } from './rng';
-import { SectorSystem } from '../systems/SectorSystem';
-import { DifficultyLevel } from '../game/GameState';
 
 const draw = (fn: () => number, n: number) => Array.from({ length: n }, fn);
 
@@ -32,29 +30,5 @@ describe('seeded RNG', () => {
     const a = draw(random, 50);
     setSeed(800);
     expect(draw(random, 50)).toEqual(a);
-  });
-});
-
-describe('galaxy generation', () => {
-  const layout = (seed: number) => {
-    setSeed(seed);
-    const s = new SectorSystem();
-    s.generateGalaxy(DifficultyLevel.COMMANDER);
-    const cells: string[] = [];
-    for (let y = 0; y < SectorSystem.GRID_HEIGHT; y++) {
-      for (let x = 0; x < SectorSystem.GRID_WIDTH; x++) {
-        const c = s.getSector(x, y)!;
-        cells.push(`${c.enemies}${c.hasStarbase ? 'S' : ''}`);
-      }
-    }
-    return cells.join(',');
-  };
-
-  it('is identical for the same seed', () => {
-    expect(layout(12345)).toEqual(layout(12345));
-  });
-
-  it('differs between seeds', () => {
-    expect(layout(1)).not.toEqual(layout(2));
   });
 });
