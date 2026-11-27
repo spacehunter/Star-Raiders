@@ -1,4 +1,3 @@
-import { SectorSystem } from '../systems/SectorSystem';
 import { GameState } from '../game/GameState';
 import { CombatSystem } from '../systems/CombatSystem';
 import { Starbase } from '../entities/Starbase';
@@ -28,15 +27,12 @@ export class LongRangeScan {
 
   constructor(
     container: HTMLElement,
-    sectorSystem: SectorSystem,
     gameState: GameState,
     combatSystem: CombatSystem,
     getStarbase: () => Starbase | null,
     getPlayerRotation: () => number
   ) {
     this.container = container;
-    // sectorSystem available if needed in future
-    void sectorSystem;
     this.gameState = gameState;
     this.combatSystem = combatSystem;
     this.getStarbase = getStarbase;
@@ -258,7 +254,7 @@ export class LongRangeScan {
    * Show the scan
    */
   public show(): void {
-    if (this.gameState.damage.longRangeScan) {
+    if (this.gameState.damage.sectorScan !== 'ok') {
       return; // Can't use if damaged
     }
 

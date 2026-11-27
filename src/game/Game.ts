@@ -2,9 +2,7 @@ import * as THREE from 'three';
 import { GameLoop } from './GameLoop';
 import { GameState, ViewMode, DifficultyLevel } from './GameState';
 import { InputManager } from '../utils/InputManager';
-import { SectorSystem } from '../systems/SectorSystem';
 import { CombatSystem } from '../systems/CombatSystem';
-import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';
 import { VFXSystem } from '../systems/VFXSystem';
 import { SoundManager } from '../audio/SoundManager';
 import { Starfield } from '../entities/Starfield';
@@ -23,8 +21,10 @@ import { EnergySim } from '../sim/energy';
 import { MissionScore, rateMission, type MissionRating } from '../sim/rating';
 import type { MissionOutcome } from '../rules/rating';
 import { calcWarpSectors } from '../rules/warp';
-import { rollDamage, type Subsystem } from '../rules/damage';
+import { rollDamage, SUBSYSTEMS, type Subsystem, type SubsystemStatus } from '../rules/damage';
 import { MSG } from '../rules/messages';
+import { Galaxy, RadioFeed, GALAXY_COLUMNS, GALAXY_ROWS, type GalaxyEvent, type SectorPos } from '../sim/galaxy';
+import type { Enemy } from '../entities/Enemy';
 
 export type DebugSpawnType = 'fighter' | 'cruiser' | 'basestar' | 'starbase';
 
@@ -41,19 +41,18 @@ export interface GameDebugApi {
   setEnergy(units: number): void;
   setSpeed(key: number): void;
   setShields(on: boolean): void;
+  setDamage(system: Subsystem, status: SubsystemStatus): void;
+  moveCursor(x: number, y: number): void;
+  surround(): SectorPos | null;
+  toFleetTick(n?: number): number;
+  killSector(): number;
 }
 
-type GameOverCallback = (rating: MissionRating) => void;
+/** Title-line message lengths in loops (§17.11 / OVERHAUL Phase 4: 60 short, 254 long). */
+const SHORT_MESSAGE_LOOPS = 60;
+const LONG_MESSAGE_LOOPS = 254;
 
-/** DamageState key for each ROM subsystem (rules/damage.ts). */
-const DAMAGE_KEY: Record<Subsystem, keyof GameState['damage']> = {
-  photons: 'photonTorpedoes',
-  engines: 'engines',
-  shields: 'shields',
-  computer: 'attackComputer',
-  sectorScan: 'longRangeScan',
-  radio: 'subSpaceRadio',
-};
+type GameOverCallback = (rating: MissionRating) => void;
 
 /**
  * Game - Main game controller that manages scene, rendering, and game state
@@ -71,9 +70,10 @@ export class Game {
   private clock: SimClock;
   private energy: EnergySim;
   private missionScore: MissionScore;
-  private sectorSystem: SectorSystem;
+  /** The galaxy map: the one source of Zylon counts (sim/galaxy.ts, §17.4). */
+  private galaxy: Galaxy;
+  private radioFeed: RadioFeed;
   private combatSystem: CombatSystem;
-  private starbaseAttackSystem: StarbaseAttackSystem;
   private vfxSystem: VFXSystem;
   private soundManager: SoundManager;
   private gameState: GameState;
@@ -83,6 +83,14 @@ export class Game {
   private galacticChart: GalacticChart;
   private longRangeScan: LongRangeScan;
   private attackComputer: AttackComputer;
+  /** Hyperwarp destination dot on the chart (§8); kept between visits. */
+  private chartCursor: SectorPos = { x: 8, y: 4 };
+  /** Title-line message shown on the chart's title band until `until` (loop number). */
+  private chartTitle: { text: string; until: number } | null = null;
+  /** Phrases waiting for the title line, shown one at a time. */
+  private titleQueue: Array<{ text: string; loops: number }> = [];
+  /** Ships placed by the debug hook; not part of the galaxy count. */
+  private debugExtras = new Set<Enemy>();
 
   // Game entities
   private starfield: Starfield;
@@ -165,23 +173,20 @@ export class Game {
       onScoreLoss: (points) => this.missionScore.energyUsed(points),
       onZeroEnergy: () => this.endMission('zeroEnergy'),
     });
-    this.sectorSystem = new SectorSystem();
-
-    // Generate galaxy
-    this.sectorSystem.generateGalaxy(this.gameState.difficulty);
-
-    // Initialize starbase attack system (enemy strategic AI)
-    this.starbaseAttackSystem = new StarbaseAttackSystem(
-      this.sectorSystem,
-      this.gameState.difficulty
-    );
+    // Galaxy: Zylon groups, starbases and fleet movement (§17.4)
+    this.galaxy = new Galaxy(this.gameState.difficulty, random, {
+      x: this.gameState.sectorX,
+      y: this.gameState.sectorY,
+    });
+    this.radioFeed = new RadioFeed(this.galaxy);
+    this.chartCursor = { x: this.gameState.sectorX, y: this.gameState.sectorY };
 
     // Initialize entities
     this.starfield = new Starfield(500, 2000);
     this.player = new Player();
 
     // Initialize combat system (needs scene)
-    this.combatSystem = new CombatSystem(this.scene, this.gameState, this.sectorSystem);
+    this.combatSystem = new CombatSystem(this.scene, this.gameState);
 
     // Initialize VFX and Sound systems
     this.vfxSystem = new VFXSystem(this.scene);
@@ -189,14 +194,9 @@ export class Game {
 
     // Initialize UI
     this.controlPanel = new ControlPanel(container, this.gameState);
-    this.galacticChart = new GalacticChart(
-      container,
-      this.sectorSystem,
-      this.gameState
-    );
+    this.galacticChart = new GalacticChart(container);
     this.longRangeScan = new LongRangeScan(
       container,
-      this.sectorSystem,
       this.gameState,
       this.combatSystem,
       () => this.currentStarbase,
@@ -206,19 +206,6 @@ export class Game {
 
     // Set up scene
     this.setupScene();
-
-    // Set up starbase attack system message callback
-    this.starbaseAttackSystem.setMessageCallback((message, duration) => {
-      this.controlPanel.showMessage(message, duration);
-    });
-
-    // A starbase lost to the Zylons costs 18 points (§14.1, §17.4)
-    this.starbaseAttackSystem.setStarbaseDestroyedCallback(() => {
-      this.missionScore.starbaseDestroyedByZylons();
-    });
-
-    // Connect galactic chart to starbase attack system for visual indicators
-    this.galacticChart.setStarbaseAttackSystem(this.starbaseAttackSystem);
 
     // Handle window resize
     window.addEventListener('resize', this.handleResize);
@@ -260,16 +247,13 @@ export class Game {
    * Spawn enemies and starbase for current sector
    */
   private spawnSectorContents(): void {
-    // Spawn enemies
-    this.combatSystem.spawnEnemiesForSector();
+    // Spawn exactly the Zylons the galaxy map holds for this sector
+    const { sectorX: x, sectorY: y } = this.gameState;
+    this.debugExtras.clear();
+    this.combatSystem.spawnEnemiesForSector(this.galaxy.zylonsAt(x, y));
 
     // Spawn starbase if present
-    const sector = this.sectorSystem.getSector(
-      this.gameState.sectorX,
-      this.gameState.sectorY
-    );
-
-    if (sector?.hasStarbase && !sector.starbaseDestroyed) {
+    if (this.galaxy.hasStarbase(x, y)) {
       const starbasePos = new THREE.Vector3(
         (random() - 0.5) * 100,
         (random() - 0.5) * 30,
@@ -411,19 +395,9 @@ export class Game {
     // Update VFX system (explosions, shield hits, etc.)
     this.vfxSystem.update(deltaTime);
 
-    // Update starbase attack system (enemy strategic AI)
-    this.starbaseAttackSystem.update(
-      deltaTime,
-      this.gameState.sectorX,
-      this.gameState.sectorY
-    );
-
-    // Check torpedo collisions
-    const destroyed = this.combatSystem.checkTorpedoCollisions(this.torpedoes);
-    for (let i = 0; i < destroyed.length; i++) this.missionScore.zylonDestroyed();
-    if (destroyed.length > 0) {
-      this.controlPanel.showMessage(`ZYLON DESTROYED! (${this.sectorSystem.getRemainingEnemies()} remaining)`);
-    }
+    // Check torpedo collisions; every kill comes off the galaxy map (one source, §17.4)
+    for (const enemy of this.combatSystem.checkTorpedoCollisions(this.torpedoes)) this.zylonKilled(enemy);
+    if (this.gameState.isGameOver) return;
 
     // Update attack computer (with all enemies for proximity radar)
     const target = this.combatSystem.getCurrentTarget();
@@ -441,8 +415,8 @@ export class Game {
 
     // Update UI
     this.controlPanel.update();
-    this.controlPanel.updateTargetsRemaining(this.sectorSystem.getRemainingEnemies());
-    this.galacticChart.update();
+    this.controlPanel.updateTargetsRemaining(this.galaxy.zylonsLeft);
+    this.renderChart();
     this.longRangeScan.update();
 
     // Check victory/defeat conditions
@@ -460,10 +434,103 @@ export class Game {
       computer: this.gameState.attackComputerOn,
       hyperwarp: this.isHyperwarping,
     });
-    if (events.fleetMoveTick) this.missionScore.fleetMoveTick();
+    this.radioFeed.sync(this.gameState.damage.radio);
+    if (events.fleetMoveTick) {
+      this.missionScore.fleetMoveTick();
+      const player = { x: this.gameState.sectorX, y: this.gameState.sectorY };
+      this.handleGalaxyEvents(this.galaxy.moveTick(player, this.clock.starDateTicks));
+    }
+    if (this.chartTitle && this.clock.loops >= this.chartTitle.until) {
+      const next = this.titleQueue.shift();
+      this.chartTitle = next ? { text: next.text, until: this.clock.loops + next.loops } : null;
+      if (next) this.controlPanel.showMessage(next.text);
+    }
     this.gameState.starDate = this.clock.starDate;
     this.gameState.score = this.missionScore.score;
   };
+
+  /**
+   * A Zylon ship in the player's sector was destroyed: count it and take it off the map.
+   */
+  private zylonKilled(enemy: Enemy): void {
+    this.gameState.enemiesDestroyed++;
+    this.missionScore.zylonDestroyed();
+    if (this.debugExtras.delete(enemy)) return; // debug ship: not on the map
+    this.handleGalaxyEvents(this.galaxy.destroyZylon(this.gameState.sectorX, this.gameState.sectorY));
+  }
+
+  /**
+   * React to galaxy events (§8.2, §7 Sub-Space Radio, §17.4, §17.10).
+   */
+  private handleGalaxyEvents(events: GalaxyEvent[]): void {
+    for (const e of events) {
+      switch (e.type) {
+        case 'starbaseSurrounded':
+          if (this.radioFeed.relaysMessages) {
+            this.titleMessage(MSG.STARBASE_SURROUNDED, LONG_MESSAGE_LOOPS);
+            this.soundManager.playAlert();
+          }
+          break;
+        case 'starbaseDestroyed': {
+          this.missionScore.starbaseDestroyedByZylons(); // -18 (§14.1)
+          if (this.radioFeed.relaysMessages) this.titleMessage(MSG.STARBASE_DESTROYED, LONG_MESSAGE_LOOPS);
+          if (e.x === this.gameState.sectorX && e.y === this.gameState.sectorY) {
+            // The debris becomes two Zylons right here: put them in play (§8.2).
+            if (this.currentStarbase) {
+              this.scene.remove(this.currentStarbase.getObject());
+              this.currentStarbase.dispose();
+              this.currentStarbase = null;
+            }
+            const live = this.combatSystem.getEnemies().filter((en) => en.isActive && !this.debugExtras.has(en)).length;
+            this.combatSystem.spawnMore(this.galaxy.zylonsAt(e.x, e.y) - live);
+          }
+          break;
+        }
+        case 'allZylonsDestroyed':
+          this.endMission('complete'); // §1 mission end (1)
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  /** Show a phrase on the title line (panel message and the chart's title band). */
+  private titleMessage(text: string, loops = SHORT_MESSAGE_LOOPS): void {
+    if (this.chartTitle) {
+      this.titleQueue.push({ text, loops });
+      return;
+    }
+    this.controlPanel.showMessage(text);
+    this.chartTitle = { text, until: this.clock.loops + loops };
+  }
+
+  /** Draw the Galactic Chart if it is open and something on it changed (§8). */
+  private renderChart(): void {
+    if (!this.galacticChart.visible) return;
+    const { sectorX, sectorY } = this.gameState;
+    const c = this.chartCursor;
+    this.galacticChart.render({
+      title: this.chartTitle?.text ?? MSG.GALACTIC_CHART,
+      sectorsVersion: this.radioFeed.version,
+      sectors: () => this.radioFeed.sectors(),
+      player: { x: sectorX, y: sectorY },
+      cursor: c,
+      warpEnergy: calcWarpSectors(sectorX, sectorY, c.x, c.y).units,
+      targets: this.radioFeed.targets(c.x, c.y),
+      starDate: this.gameState.starDate,
+      damage: this.gameState.damage,
+    });
+  }
+
+  /** Move the hyperwarp destination dot by whole sectors, clamped to the chart. */
+  private moveChartCursor(dx: number, dy: number): void {
+    this.chartCursor = {
+      x: Math.max(0, Math.min(GALAXY_COLUMNS - 1, this.chartCursor.x + dx)),
+      y: Math.max(0, Math.min(GALAXY_ROWS - 1, this.chartCursor.y + dy)),
+    };
+    this.renderChart();
+  }
 
   /**
    * End the mission and rate it (§14, §17.10). The first outcome wins.
@@ -568,14 +635,7 @@ export class Game {
       // Docking complete - repair and refuel
       this.energy.refill();
       this.gameState.hull = this.gameState.maxHull; // Repair hull to 100%
-      this.gameState.damage = {
-        engines: false,
-        shields: false,
-        photonTorpedoes: false,
-        subSpaceRadio: false,
-        longRangeScan: false,
-        attackComputer: false,
-      };
+      for (const sys of SUBSYSTEMS) this.gameState.damage[sys] = 'ok';
 
       this.isDocking = false;
       this.dockingCooldown = 5; // 5 second cooldown before can dock again
@@ -588,6 +648,7 @@ export class Game {
    */
   private triggerGameOver(): void {
     this.hasTriggeredGameOver = true;
+    this.galacticChart.hide();
     this.gameLoop.stop();
 
     if (this.gameOverCallback && this.gameState.rating) {
@@ -600,7 +661,7 @@ export class Game {
    */
   private checkGameState(): void {
     // Mission complete: all Zylons destroyed (§1, §17.10)
-    if (this.sectorSystem.getRemainingEnemies() <= 0) {
+    if (this.galaxy.zylonsLeft <= 0) {
       this.endMission('complete');
     }
 
@@ -753,12 +814,12 @@ export class Game {
 
         // Every hit costs 100 units (§12.1, §17.1) and may damage a subsystem (§17.3)
         this.energy.hit();
-        const harm = rollDamage(this.gameState.difficulty, this.damageStatus(), 0, () =>
+        const harm = rollDamage(this.gameState.difficulty, this.gameState.damage, 0, () =>
           Math.floor(random() * 256)
         );
-        if (harm) this.gameState.damage[DAMAGE_KEY[harm.system]] = true;
+        if (harm) this.gameState.damage[harm.system] = harm.status;
 
-        if (this.gameState.shieldsActive && !this.gameState.damage.shields) {
+        if (this.gameState.shieldsActive && this.gameState.damage.shields === 'ok') {
           // Shield audio and visual feedback
           this.soundManager.playShieldHit();
           this.vfxSystem.createShieldHit(hitPosition);
@@ -801,38 +862,14 @@ export class Game {
   }
 
   /**
-   * Current damage as the rules module sees it (boolean damage = 'damaged' until Phase 7).
-   */
-  private damageStatus(): Record<Subsystem, 'ok' | 'damaged' | 'destroyed'> {
-    const d = this.gameState.damage;
-    const st = (b: boolean) => (b ? 'damaged' : 'ok') as 'ok' | 'damaged';
-    return {
-      photons: st(d.photonTorpedoes),
-      engines: st(d.engines),
-      shields: st(d.shields),
-      computer: st(d.attackComputer),
-      sectorScan: st(d.longRangeScan),
-      radio: st(d.subSpaceRadio),
-    };
-  }
-
-  /**
    * Handle input when galactic chart is open
    */
   private handleChartInput(): void {
     // Arrow keys to move cursor
-    if (this.isKeyJustPressed('ArrowUp')) {
-      this.galacticChart.moveCursor(0, -1);
-    }
-    if (this.isKeyJustPressed('ArrowDown')) {
-      this.galacticChart.moveCursor(0, 1);
-    }
-    if (this.isKeyJustPressed('ArrowLeft')) {
-      this.galacticChart.moveCursor(-1, 0);
-    }
-    if (this.isKeyJustPressed('ArrowRight')) {
-      this.galacticChart.moveCursor(1, 0);
-    }
+    if (this.isKeyJustPressed('ArrowUp')) this.moveChartCursor(0, -1);
+    if (this.isKeyJustPressed('ArrowDown')) this.moveChartCursor(0, 1);
+    if (this.isKeyJustPressed('ArrowLeft')) this.moveChartCursor(-1, 0);
+    if (this.isKeyJustPressed('ArrowRight')) this.moveChartCursor(1, 0);
 
     // H key to hyperwarp (Directly from chart)
     if (this.isKeyJustPressed('KeyH')) {
@@ -844,7 +881,7 @@ export class Game {
    * Initiate hyperwarp to cursor position
    */
   private initiateHyperwarp(): void {
-    const cursor = this.galacticChart.getCursorPosition();
+    const cursor = this.chartCursor;
 
     // Already at this sector?
     if (cursor.x === this.gameState.sectorX && cursor.y === this.gameState.sectorY) {
@@ -977,13 +1014,12 @@ export class Game {
         arrivalX += Math.floor(random() * 3) - 1;
         arrivalY += Math.floor(random() * 3) - 1;
         // Clamp to grid (16×8)
-        arrivalX = Math.max(0, Math.min(SectorSystem.GRID_WIDTH - 1, arrivalX));
-        arrivalY = Math.max(0, Math.min(SectorSystem.GRID_HEIGHT - 1, arrivalY));
+        arrivalX = Math.max(0, Math.min(GALAXY_COLUMNS - 1, arrivalX));
+        arrivalY = Math.max(0, Math.min(GALAXY_ROWS - 1, arrivalY));
       }
 
       this.gameState.sectorX = arrivalX;
       this.gameState.sectorY = arrivalY;
-      this.sectorSystem.visitSector(arrivalX, arrivalY);
 
       // Reset starfield scale (position handled by individual star recycling)
       starfieldObj.scale.z = 1;
@@ -999,11 +1035,11 @@ export class Game {
       // Spawn contents for new sector
       this.spawnSectorContents();
 
-      const sector = this.sectorSystem.getSector(this.gameState.sectorX, this.gameState.sectorY);
+      const sector = this.galaxy.sector(this.gameState.sectorX, this.gameState.sectorY);
       if (sector) {
-        if (sector.enemies > 0) {
-          this.controlPanel.showMessage(`ARRIVED - ${sector.enemies} ZYLONS DETECTED`);
-        } else if (sector.hasStarbase && !sector.starbaseDestroyed) {
+        if (sector.zylons > 0) {
+          this.controlPanel.showMessage(`ARRIVED - ${sector.zylons} ZYLONS DETECTED`);
+        } else if (sector.starbase) {
           this.controlPanel.showMessage('ARRIVED - STARBASE IN SECTOR');
         } else {
           this.controlPanel.showMessage('ARRIVED - SECTOR CLEAR');
@@ -1058,7 +1094,7 @@ export class Game {
       // Shields
       if (this.isKeyJustPressed('KeyS')) {
         this.gameState.shieldsActive = !this.gameState.shieldsActive;
-        if (this.gameState.damage.shields) {
+        if (this.gameState.damage.shields !== 'ok') {
           this.controlPanel.showMessage('SHIELDS DAMAGED');
           this.gameState.shieldsActive = false;
         } else {
@@ -1148,6 +1184,7 @@ export class Game {
     // Open new overlays if applicable
     if (view === ViewMode.GALACTIC_CHART) {
       this.galacticChart.show();
+      this.renderChart();
     }
     if (view === ViewMode.LONG_RANGE_SCAN) {
       this.longRangeScan.show();
@@ -1208,7 +1245,7 @@ export class Game {
       return;
     }
 
-    if (this.gameState.damage.photonTorpedoes) {
+    if (this.gameState.damage.photons !== 'ok') {
       this.controlPanel.showMessage('WEAPONS DAMAGED');
       return;
     }
@@ -1281,12 +1318,12 @@ export class Game {
    * Set engine speed
    */
   private setEngineSpeed(speed: number): void {
-    const maxSpeed = this.gameState.damage.engines ? 5 : 9;
+    const maxSpeed = this.gameState.damage.engines !== 'ok' ? 5 : 9;
 
     // Set target, don't jump immediately
     this.gameState.targetEngineSpeed = Math.min(speed, maxSpeed);
 
-    if (speed > maxSpeed && this.gameState.damage.engines) {
+    if (speed > maxSpeed && this.gameState.damage.engines !== 'ok') {
       this.controlPanel.showMessage('ENGINES DAMAGED - MAX SPEED 5');
     }
   }
@@ -1318,16 +1355,21 @@ export class Game {
         dockingProgress: this.dockingProgress,
         enemiesInSector: this.combatSystem.getEnemies().filter((e) => e.isActive).length,
         starbaseInSector: this.currentStarbase !== null,
-        remainingEnemies: this.sectorSystem.getRemainingEnemies(),
+        remainingEnemies: this.galaxy.zylonsLeft,
+        starbasesLeft: this.galaxy.starbasesLeft,
+        hunted: this.galaxy.hunted,
+        surround: this.galaxy.surround,
+        galaxyMoveTicks: this.galaxy.moveTicks,
+        chartCursor: this.chartCursor,
+        chartTitle: this.chartTitle?.text ?? null,
+        chartRenders: this.galacticChart.renders,
         manualStepping: !this.gameLoop.running,
       }),
-      galaxy: () =>
-        this.sectorSystem.getAllSectors().flat().map((s) => ({ ...s })),
+      galaxy: () => this.galaxy.sectors().map((s) => ({ ...s })),
       teleport: (x: number, y: number) => {
         this.clearSectorContents();
         this.gameState.sectorX = x;
         this.gameState.sectorY = y;
-        this.sectorSystem.visitSector(x, y);
         this.spawnSectorContents();
       },
       spawn: (type: DebugSpawnType, distance = 60) => {
@@ -1342,7 +1384,7 @@ export class Game {
           return;
         }
         const enemyType = { fighter: EnemyType.FIGHTER, cruiser: EnemyType.CRUISER, basestar: EnemyType.BASESTAR }[type];
-        this.combatSystem.spawnEnemy(enemyType, pos);
+        this.debugExtras.add(this.combatSystem.spawnEnemy(enemyType, pos));
       },
       setView: (view: ViewMode) => {
         this.switchView(view);
@@ -1354,8 +1396,7 @@ export class Game {
       },
       resume: () => this.gameLoop.start(),
       hyperwarp: (x: number, y: number) => {
-        const c = this.galacticChart.getCursorPosition();
-        this.galacticChart.moveCursor(x - c.x, y - c.y);
+        this.moveChartCursor(x - this.chartCursor.x, y - this.chartCursor.y);
         this.initiateHyperwarp();
       },
       dock: () => {
@@ -1374,7 +1415,39 @@ export class Game {
       },
       setSpeed: (key: number) => this.setEngineSpeed(key),
       setShields: (on: boolean) => {
-        this.gameState.shieldsActive = on && !this.gameState.damage.shields;
+        this.gameState.shieldsActive = on && this.gameState.damage.shields === 'ok';
+      },
+      setDamage: (system: Subsystem, status: SubsystemStatus) => {
+        this.gameState.damage[system] = status;
+        this.radioFeed.sync(this.gameState.damage.radio);
+        this.renderChart();
+      },
+      moveCursor: (x: number, y: number) => this.moveChartCursor(x - this.chartCursor.x, y - this.chartCursor.y),
+      surround: () => {
+        const base = this.galaxy.debugSurround({ x: this.gameState.sectorX, y: this.gameState.sectorY });
+        this.renderChart();
+        return base;
+      },
+      toFleetTick: (n = 1) => {
+        // Run whole updates (no rendering) up to the n-th next fleet move tick, then render.
+        this.gameLoop.stop();
+        const target = this.clock.fleetMoveTicks + n;
+        let frames = 0;
+        while (this.clock.fleetMoveTicks < target && !this.gameState.isGameOver && frames < 200000) {
+          this.update(DT);
+          frames++;
+        }
+        this.render();
+        return frames;
+      },
+      killSector: () => {
+        // Destroy every live Zylon here through the same path as a torpedo kill.
+        const live = this.combatSystem.getEnemies().filter((e) => e.isActive);
+        for (const e of live) {
+          e.takeDamage(1000);
+          this.zylonKilled(e);
+        }
+        return live.length;
       },
     };
   }

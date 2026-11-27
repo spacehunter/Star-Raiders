@@ -10,8 +10,9 @@
  * requestAnimationFrame) and drives the game only through window.__sr.step(), so the
  * same seed always gives the same pixels. Writes the standard shots:
  *
- *   01-title  02-front  03-aft  04-galactic-chart  05-long-range-scan
- *   06-attack-computer  07-hyperwarp  08-docking  09-zero-energy
+ *   01-title  02-front  03-aft  04-galactic-chart  04a-chart-surrounded
+ *   04b-chart-surround-holding  04c-chart-starbase-destroyed  04d-chart-damage
+ *   05-long-range-scan  06-attack-computer  07-hyperwarp  08-docking  09-zero-energy
  *
  * plus manifest.json with each file's SHA-256. Later phases reuse this script; add new
  * shots to SHOTS below rather than writing another harness.
@@ -53,12 +54,43 @@ const SHOTS = [
     name: '04-galactic-chart',
     run: async (sr) => sr(() => { window.__sr.setView('GALACTIC_CHART'); window.__sr.step(10); }),
   },
+  // Phase 2 (MANUAL_SPEC §8.2, §17.4): a starbase surrounded, then destroyed 1.00 star date later.
+  {
+    name: '04a-chart-surrounded',
+    run: async (sr) =>
+      sr(() => {
+        const base = window.__sr.surround();
+        if (base) window.__sr.moveCursor(base.x, base.y);
+        window.__sr.toFleetTick(1); // star date 1.00: STARBASE SURROUNDED
+        window.__sr.step(1);
+      }),
+  },
+  {
+    name: '04b-chart-surround-holding',
+    run: async (sr) => sr(() => { window.__sr.toFleetTick(1); window.__sr.step(1); }), // 1.50: still standing
+  },
+  {
+    name: '04c-chart-starbase-destroyed',
+    run: async (sr) => sr(() => { window.__sr.toFleetTick(1); window.__sr.step(1); }), // 2.00: a 2-Zylon sector
+  },
+  {
+    // §7 / §17.3 / §5.9: DC letters in all three states, shields damaged turn the chart yellow.
+    name: '04d-chart-damage',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.setDamage('photons', 'damaged');
+        window.__sr.setDamage('computer', 'destroyed');
+        window.__sr.setDamage('shields', 'damaged');
+        window.__sr.step(1);
+      }),
+  },
   {
     name: '05-long-range-scan',
     run: async (sr) =>
       sr(() => {
+        for (const sys of ['photons', 'computer', 'shields']) window.__sr.setDamage(sys, 'ok');
         // Jump to the first sector holding Zylons so the scan has something on it.
-        const target = window.__sr.galaxy().find((s) => s.enemies > 0);
+        const target = window.__sr.galaxy().find((s) => s.zylons > 0);
         if (target) window.__sr.teleport(target);
         window.__sr.setView('LONG_RANGE_SCAN');
         window.__sr.step(30);
@@ -167,7 +199,7 @@ async function main() {
       manifest.shots[shot.name] = hash;
       const st = await page.evaluate(() => {
         const s = window.__sr.state;
-        return s && { energy: s.energy, starDate: s.starDate, score: s.score, loops: s.loops, outcome: s.missionOutcome, rating: s.rating?.title ?? null };
+        return s && { energy: s.energy, starDate: s.starDate, score: s.score, loops: s.loops, outcome: s.missionOutcome, rating: s.rating?.title ?? null, zylons: s.remainingEnemies, starbases: s.starbasesLeft, chartTitle: s.chartTitle, chartRenders: s.chartRenders };
       });
       if (st) (manifest.state ??= {})[shot.name] = st;
       console.log(`${shot.name.padEnd(20)} ${hash.slice(0, 16)}${st ? `  E:${st.energy} STAR DATE:${st.starDate} score:${st.score}${st.rating ? ` ${st.outcome} -> ${st.rating}` : ''}` : ''}`);

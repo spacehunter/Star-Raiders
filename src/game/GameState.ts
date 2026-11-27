@@ -1,5 +1,5 @@
 import { START_ENERGY } from '../rules/energy';
-import { starbaseCount, zylonCount } from '../rules/levels';
+import { allSystemsOk, type DamageStatus } from '../rules/damage';
 import type { MissionOutcome } from '../rules/rating';
 import type { MissionRating } from '../sim/rating';
 
@@ -25,15 +25,6 @@ export const DifficultyLevel = {
 
 export type DifficultyLevel = (typeof DifficultyLevel)[keyof typeof DifficultyLevel];
 
-export interface DamageState {
-  engines: boolean;
-  shields: boolean;
-  photonTorpedoes: boolean;
-  subSpaceRadio: boolean;
-  longRangeScan: boolean;
-  attackComputer: boolean;
-}
-
 export class GameState {
   // View state
   public currentView: ViewMode = ViewMode.FRONT;
@@ -58,7 +49,6 @@ export class GameState {
   // Combat stats
   public isUnderAttack: boolean = false;
   public enemiesDestroyed: number = 0;
-  public totalEnemies: number = 0;
 
   // Mission state
   public starDate: string = '00.00'; // NN.NN from core/clock.ts (§8, §17.4)
@@ -72,22 +62,12 @@ export class GameState {
   // Difficulty
   public difficulty: DifficultyLevel = DifficultyLevel.NOVICE;
 
-  // Damage state (all start undamaged)
-  public damage: DamageState = {
-    engines: false,
-    shields: false,
-    photonTorpedoes: false,
-    subSpaceRadio: false,
-    longRangeScan: false,
-    attackComputer: false,
-  };
+  // Damage Control: ok / damaged / destroyed per subsystem (§7, §17.3)
+  public damage: DamageStatus = allSystemsOk();
 
   // Current sector position
   public sectorX: number = 8;
   public sectorY: number = 4;
-
-  // Starbases
-  public starbasesRemaining: number = 3;
 
   /**
    * Reset state for new game
@@ -113,19 +93,7 @@ export class GameState {
     this.sectorX = 8;
     this.sectorY = 4;
 
-    // Reset damage
-    this.damage = {
-      engines: false,
-      shields: false,
-      photonTorpedoes: false,
-      subSpaceRadio: false,
-      longRangeScan: false,
-      attackComputer: false,
-    };
-
-    // Counts per level (§15, §17.4)
-    this.totalEnemies = zylonCount(difficulty);
-    this.starbasesRemaining = starbaseCount(difficulty);
+    this.damage = allSystemsOk();
   }
 
   /**

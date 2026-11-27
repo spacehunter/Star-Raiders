@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { Enemy, EnemyType } from '../entities/Enemy';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
 import { GameState, DifficultyLevel } from '../game/GameState';
-import { SectorSystem } from './SectorSystem';
 import { random } from '../core/rng';
 
 /**
@@ -11,7 +10,6 @@ import { random } from '../core/rng';
 export class CombatSystem {
   private scene: THREE.Scene;
   private gameState: GameState;
-  private sectorSystem: SectorSystem;
 
   // Enemies in current sector
   private enemies: Enemy[] = [];
@@ -19,28 +17,28 @@ export class CombatSystem {
   // Targeting
   private currentTargetIndex: number = -1;
 
-  constructor(scene: THREE.Scene, gameState: GameState, sectorSystem: SectorSystem) {
+  constructor(scene: THREE.Scene, gameState: GameState) {
     this.scene = scene;
     this.gameState = gameState;
-    this.sectorSystem = sectorSystem;
   }
 
   /**
-   * Spawn enemies for current sector
+   * Spawn the Zylons of the current sector. `count` comes from the galaxy map
+   * (sim/galaxy.ts), the one source of Zylon counts.
    */
-  public spawnEnemiesForSector(): void {
+  public spawnEnemiesForSector(count: number): void {
     // Clear existing enemies
     this.clearEnemies();
+    this.spawnMore(count);
+  }
 
-    const sector = this.sectorSystem.getSector(
-      this.gameState.sectorX,
-      this.gameState.sectorY
-    );
-
-    if (!sector || sector.enemies <= 0) return;
-
-    // Determine enemy types based on difficulty
-    const enemyCount = sector.enemies;
+  /**
+   * Add `count` more Zylons around the player (e.g. the 2 made from a starbase destroyed
+   * in this sector, §8.2) without touching the ones already here.
+   */
+  public spawnMore(count: number): void {
+    if (count <= 0) return;
+    const enemyCount = count;
 
     for (let i = 0; i < enemyCount; i++) {
       // Determine type based on difficulty and random chance
@@ -89,7 +87,7 @@ export class CombatSystem {
     }
 
     // Auto-select first target
-    if (this.enemies.length > 0) {
+    if (this.enemies.length > 0 && this.currentTargetIndex < 0) {
       this.currentTargetIndex = 0;
     }
   }
@@ -203,14 +201,8 @@ export class CombatSystem {
 
           if (enemy.takeDamage(1)) {
             // Enemy destroyed
+            // The caller removes it from the galaxy map and counts the kill.
             destroyed.push(enemy);
-            this.gameState.enemiesDestroyed++;
-
-            // Update sector
-            this.sectorSystem.removeEnemy(
-              this.gameState.sectorX,
-              this.gameState.sectorY
-            );
           }
 
           break;

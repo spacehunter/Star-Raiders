@@ -568,7 +568,7 @@ export class AttackComputer {
     allEnemies?: Enemy[]
   ): void {
     // Check if attack computer is damaged
-    if (this.gameState.damage.attackComputer) {
+    if (this.gameState.damage.computer !== 'ok') {
       this.computerElement.style.display = 'none';
       return;
     }
