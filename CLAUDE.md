@@ -1,95 +1,39 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for coding agents working in this repository.
 
-## Project Overview
+## Source of truth
 
-This is a web-based recreation of **Star Raiders**, the classic 1979 Atari 800 first-person space combat and strategy game. The project is currently in the planning/documentation phase with no code implemented yet.
+- **`docs/MANUAL_SPEC.md`** holds every rule, number, screen and message of the original 1979 Atari
+  STAR RAIDERS (manual + ROM). All gameplay and visual work follows it. Cite the section you implement
+  in your PR (for example "MANUAL_SPEC §5").
+- **`docs/OVERHAUL_PLAN.md`** is the audit of the current code and the ordered phase plan (Part 3).
+  Each task does one phase; keep to its scope.
+- **`docs/reference/manual/`** has the manual photos and reference screenshots.
 
-## Technology Stack
+Do not take rules, energy costs or colours from the current code or from memory: the current build is
+known to be unfaithful (see the audit). If the spec is silent, say so in the PR rather than inventing.
 
-- **Build Tool**: Vite
-- **3D Engine**: Three.js (WebGL 2.0)
-- **Language**: TypeScript
-- **UI/HUD**: HTML/CSS overlays
-- **Audio**: Web Audio API + Howler.js
-- **Mobile**: PWA with touch controls
+## Stack and commands
 
-## Project Initialization
+Vite + TypeScript + Three.js, plain DOM/CSS for the HUD, Web Audio for sound.
 
-When starting development:
 ```bash
-npm create vite@latest star-raiders -- --template vanilla-ts
-cd star-raiders
-npm install three @types/three
+npm run dev        # dev server
+npm run build      # tsc + vite build; must pass
+npm test           # Vitest; must pass
+npm run capture -- --seed 1979   # 8 standard screenshots into captures/seed-1979/
 ```
 
-## Architecture
+## Conventions
 
-### Recommended Directory Structure
-```
-src/
-├── main.ts                 # Entry point
-├── game/                   # Core game controller, loop, state
-├── entities/               # Player, enemies (Fighter/Cruiser/Basestar), Starbase, projectiles
-├── systems/                # EnergySystem, CombatSystem, NavigationSystem, ScoringSystem
-├── views/                  # FrontView, AftView, GalacticChart, LongRangeScan, AttackComputer
-├── ui/                     # ControlPanel, MainMenu, TouchControls
-├── audio/                  # SoundManager
-└── utils/                  # InputManager, MathUtils
-```
-
-### Key Game Components
-
-**Views/Modes:**
-- Front View (F key) - Main combat, first-person from cockpit
-- Aft View (A key) - Rear view, controls reversed
-- Galactic Chart (G key) - 8x8 sector grid overlay for navigation
-- Long Range Scan (L key) - Tactical view of current sector
-- Attack Computer Display - Targeting overlay with A/B/C lock indicators
-
-**Ship Systems:**
-- Photon Torpedoes (Spacebar) - 5 energy per shot
-- Shields (S key) - 3 energy/second when active
-- Hyperwarp (H key) - 100-2410 energy based on distance
-- Engine Speed (0-9 keys) - Energy consumption equals speed level per second
-
-**Enemy Types:**
-- Zylon Fighter - Fast, aggressive, simple evasion AI
-- Zylon Cruiser - Medium, patrol patterns, only attacks when provoked
-- Zylon Basestar - Stationary, shielded, requires close-range attacks
-
-**Difficulty Levels:** NOVICE, PILOT, WARRIOR, COMMANDER (affects enemy count, AI aggression, damage system)
-
-## Visual Style Requirements
-
-1970s sci-fi aesthetic with angular geometric spacecraft:
-- **Color Palette:**
-  - Background: #000000 (black)
-  - Player Ship: #4488FF (blue), #FFFFFF (white)
-  - Zylon Fighter: #00FFFF (cyan)
-  - Zylon Cruiser: #FF00FF (magenta)
-  - Zylon Basestar: #FFD700 (gold)
-  - UI Elements: #00FFFF (cyan), #FF0000 (red warnings)
-- Low poly models using BoxGeometry, ConeGeometry
-- Emissive materials for energy effects
-- Starfield using Points with PointsMaterial
-
-## Implementation Phases
-
-The project follows 7 phases documented in `implementation_guide.md`:
-1. Project Setup & Basic Scene
-2. Core Mechanics (weapons, energy, views)
-3. Navigation (Galactic Chart, sectors, hyperwarp)
-4. Combat (enemy AI, Attack Computer, shields, damage)
-5. Game Systems (starbases, scoring, difficulty)
-6. Polish (audio, VFX, UI refinement)
-7. Mobile Optimization (touch controls, PWA)
-
-## Key Documentation Files
-
-- `implementation_guide.md` - Phase-by-phase development tasks
-- `TECHNOLOGY_REVIEW.md` - Stack decisions and rationale
-- `Star Raiders: A Web-Based Recreation - Technical Specifications.md` - Detailed specs
-- `attack_computer_notes.md` - Lock-on system details (A/B/C indicators)
-- `control_panel_display_notes.md` - HUD layout and elements
+- **Randomness:** never call `Math.random()`. Use `random()` from `src/core/rng.ts` (or `createRng(seed)`
+  for an independent stream) so games replay from `?seed=<n>`.
+- **Debug hook:** `?debug=1` exposes `window.__sr` (`src/core/debug.ts`): `seed`, `state`, `start`,
+  `galaxy`, `teleport`, `spawn`, `setView`, `step`, `resume`, `hyperwarp`, `dock`. Extend it when a
+  phase needs a new way to reach a game state.
+- **Screenshots:** reuse `scripts/capture.mjs` for evidence; add shots to its `SHOTS` list instead of
+  writing a new harness. It freezes the page clock and advances the game only with `__sr.step()`, so
+  keep new game logic driven by the update `deltaTime`, not wall-clock time.
+- **Tests:** put unit tests next to the code as `*.test.ts`. Rules from the spec get tests.
+- Keep the repo root to app files and docs; scratch notes do not belong in git.

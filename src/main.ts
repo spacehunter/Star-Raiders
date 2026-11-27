@@ -2,6 +2,7 @@ import './style.css';
 import { Game } from './game/Game';
 import { MainMenu } from './ui/MainMenu';
 import { DifficultyLevel } from './game/GameState';
+import { installDebugHook } from './core/debug';
 
 /**
  * GameManager - Handles game lifecycle and menu transitions
@@ -27,7 +28,11 @@ class GameManager {
   /**
    * Start a new game with selected difficulty
    */
-  private startGame(difficulty: DifficultyLevel): void {
+  public getGame(): Game | null {
+    return this.game;
+  }
+
+  public startGame(difficulty: DifficultyLevel): void {
     // Clean up existing game if any
     if (this.game) {
       this.game.dispose();
@@ -39,6 +44,10 @@ class GameManager {
       this.handleGameOver(victory, score, rank, breakdown);
     });
     this.game.start();
+  }
+
+  public hideMenu(): void {
+    this.mainMenu.hide();
   }
 
   /**
@@ -69,5 +78,15 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  new GameManager(container);
+  const manager = new GameManager(container);
+
+  if (new URLSearchParams(window.location.search).get('debug') === '1') {
+    installDebugHook({
+      getGame: () => manager.getGame(),
+      startGame: (difficulty) => {
+        manager.hideMenu();
+        manager.startGame(difficulty);
+      },
+    });
+  }
 });

@@ -1,5 +1,6 @@
 import { DifficultyLevel } from '../game/GameState';
 import { Rank } from '../systems/ScoringSystem';
+import { random } from '../core/rng';
 
 /**
  * MainMenu - Title screen and difficulty selection
@@ -57,9 +58,9 @@ export class MainMenu {
     // Initialize stars
     for (let i = 0; i < numStars; i++) {
       stars.push({
-        x: (Math.random() - 0.5) * window.innerWidth * 2,
-        y: (Math.random() - 0.5) * window.innerHeight * 2,
-        z: Math.random() * window.innerWidth
+        x: (random() - 0.5) * window.innerWidth * 2,
+        y: (random() - 0.5) * window.innerHeight * 2,
+        z: random() * window.innerWidth
       });
     }
 
@@ -81,8 +82,8 @@ export class MainMenu {
 
         // Reset if passed viewer
         if (star.z <= 0) {
-          star.x = (Math.random() - 0.5) * this.starfieldCanvas.width * 2;
-          star.y = (Math.random() - 0.5) * this.starfieldCanvas.height * 2;
+          star.x = (random() - 0.5) * this.starfieldCanvas.width * 2;
+          star.y = (random() - 0.5) * this.starfieldCanvas.height * 2;
           star.z = this.starfieldCanvas.width;
         }
 

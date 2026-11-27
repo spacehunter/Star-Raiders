@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { random } from '../core/rng';
 
 /**
  * Explosion effect
@@ -27,9 +28,9 @@ class Explosion {
       positions[i3 + 2] = position.z;
 
       // Random outward velocity
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const speed = 20 + Math.random() * 30;
+      const theta = random() * Math.PI * 2;
+      const phi = Math.acos(2 * random() - 1);
+      const speed = 20 + random() * 30;
 
       this.velocities[i3] = Math.sin(phi) * Math.cos(theta) * speed * size;
       this.velocities[i3 + 1] = Math.sin(phi) * Math.sin(theta) * speed * size;
@@ -37,7 +38,7 @@ class Explosion {
 
       // Orange/yellow colors
       colors[i3] = 1;
-      colors[i3 + 1] = 0.3 + Math.random() * 0.5;
+      colors[i3 + 1] = 0.3 + random() * 0.5;
       colors[i3 + 2] = 0;
     }
 
@@ -119,17 +120,17 @@ class ShieldHit {
       positions[i3 + 2] = position.z;
 
       // Hemisphere outward velocity (toward camera, positive Z)
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.random() * Math.PI * 0.5; // Hemisphere (0 to PI/2)
-      const speed = 15 + Math.random() * 25;
+      const theta = random() * Math.PI * 2;
+      const phi = random() * Math.PI * 0.5; // Hemisphere (0 to PI/2)
+      const speed = 15 + random() * 25;
 
       this.velocities[i3] = Math.sin(phi) * Math.cos(theta) * speed;
       this.velocities[i3 + 1] = Math.sin(phi) * Math.sin(theta) * speed;
       this.velocities[i3 + 2] = Math.cos(phi) * speed; // Positive Z toward camera
 
       // Cyan/blue colors
-      colors[i3] = 0.2 + Math.random() * 0.3;
-      colors[i3 + 1] = 0.7 + Math.random() * 0.3;
+      colors[i3] = 0.2 + random() * 0.3;
+      colors[i3 + 1] = 0.7 + random() * 0.3;
       colors[i3 + 2] = 1;
     }
 
@@ -200,12 +201,12 @@ class WarpTrail {
 
     for (let i = 0; i < lineCount; i++) {
       // Random position around center
-      const x = (Math.random() - 0.5) * 50;
-      const y = (Math.random() - 0.5) * 30;
-      const z = -Math.random() * 100;
+      const x = (random() - 0.5) * 50;
+      const y = (random() - 0.5) * 30;
+      const z = -random() * 100;
 
       // Line extends in travel direction
-      const length = 10 + Math.random() * 20;
+      const length = 10 + random() * 20;
 
       positions.push(x, y, z);
       positions.push(x + direction.x * length, y + direction.y * length, z + direction.z * length);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { random } from '../core/rng';
 
 /**
  * Starfield - Creates a particle-based starfield background
@@ -18,9 +19,9 @@ export class Starfield {
       const i3 = i * 3;
 
       // Spherical distribution - stars visible in all directions
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const r = radius * (0.5 + Math.random() * 0.5);
+      const theta = random() * Math.PI * 2;
+      const phi = Math.acos(2 * random() - 1);
+      const r = radius * (0.5 + random() * 0.5);
 
       positions[i3] = r * Math.sin(phi) * Math.cos(theta);
       positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
@@ -28,7 +29,7 @@ export class Starfield {
 
       // Classic Atari 800 style - pure white stars like single pixels
       // Occasional very slight brightness variation for depth
-      const brightness = 0.7 + Math.random() * 0.3;
+      const brightness = 0.7 + random() * 0.3;
       colors[i3] = brightness;
       colors[i3 + 1] = brightness;
       colors[i3 + 2] = brightness;
@@ -130,9 +131,9 @@ export class Starfield {
       // If star is too far, respawn at random position on sphere
       if (distSq > maxDistanceSq) {
         // Random spherical position (not opposite - that causes clustering)
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(2 * Math.random() - 1);
-        const r = minDistance + Math.random() * (maxDistance - minDistance);
+        const theta = random() * Math.PI * 2;
+        const phi = Math.acos(2 * random() - 1);
+        const r = minDistance + random() * (maxDistance - minDistance);
 
         array[i3] = r * Math.sin(phi) * Math.cos(theta);
         array[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);

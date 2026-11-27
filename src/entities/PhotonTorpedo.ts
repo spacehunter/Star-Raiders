@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { random } from '../core/rng';
 
 /**
  * PhotonTorpedo - Projectile fired by the player
@@ -56,9 +57,9 @@ export class PhotonTorpedo {
       const i3 = i * 3;
 
       // Random spherical coordinates for true 360-degree ball
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const radius = Math.random() * sphereRadius;
+      const theta = random() * Math.PI * 2;
+      const phi = Math.acos(2 * random() - 1);
+      const radius = random() * sphereRadius;
 
       // Cartesian offsets from center
       positions[i3] = this.centerPosition.x + radius * Math.sin(phi) * Math.cos(theta);
@@ -66,7 +67,7 @@ export class PhotonTorpedo {
       positions[i3 + 2] = this.centerPosition.z + radius * Math.cos(phi);
 
       // Random color from palette for each particle
-      const colorIndex = Math.floor(Math.random() * this.colorPalette.length);
+      const colorIndex = Math.floor(random() * this.colorPalette.length);
       const color = this.colorPalette[colorIndex];
       colors[i3] = color[0];     // R
       colors[i3 + 1] = color[1]; // G
@@ -130,9 +131,9 @@ export class PhotonTorpedo {
       const i3 = i * 3;
 
       // CHAOTIC SCRAMBLE: New random spherical position each frame
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const radius = Math.random() * currentRadius;
+      const theta = random() * Math.PI * 2;
+      const phi = Math.acos(2 * random() - 1);
+      const radius = random() * currentRadius;
 
       // Position particles around current center
       positions[i3] = this.centerPosition.x + radius * Math.sin(phi) * Math.cos(theta);
@@ -140,7 +141,7 @@ export class PhotonTorpedo {
       positions[i3 + 2] = this.centerPosition.z + radius * Math.cos(phi);
 
       // SCRAMBLE COLORS: Random color from palette each frame for energy shimmer
-      const colorIndex = Math.floor(Math.random() * this.colorPalette.length);
+      const colorIndex = Math.floor(random() * this.colorPalette.length);
       const color = this.colorPalette[colorIndex];
       colors[i3] = color[0];
       colors[i3 + 1] = color[1];

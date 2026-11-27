@@ -2,6 +2,7 @@ import { SectorSystem } from '../systems/SectorSystem';
 import { GameState } from '../game/GameState';
 import { CombatSystem } from '../systems/CombatSystem';
 import { Starbase } from '../entities/Starbase';
+import { random } from '../core/rng';
 
 /**
  * LongRangeScan - Tactical view of current sector showing object positions
@@ -82,9 +83,9 @@ export class LongRangeScan {
     const RANGE = 500;
     for (let i = 0; i < this.NUM_STARS; i++) {
       this.stars.push({
-        x: (Math.random() - 0.5) * 2 * RANGE, // -500 to 500
-        y: (Math.random() - 0.5) * 2 * RANGE, // Actually Z in world space
-        brightness: Math.random() * 0.5 + 0.5
+        x: (random() - 0.5) * 2 * RANGE, // -500 to 500
+        y: (random() - 0.5) * 2 * RANGE, // Actually Z in world space
+        brightness: random() * 0.5 + 0.5
       });
     }
 
