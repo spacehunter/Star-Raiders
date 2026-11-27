@@ -28,3 +28,5 @@ dist-ssr
 .auto-claude-status
 .claude_settings.json
 .worktrees/
+# Screenshot output of scripts/capture.mjs
+captures/

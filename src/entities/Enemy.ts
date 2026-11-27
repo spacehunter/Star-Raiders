@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ENEMY_CONFIG } from '../config/EnemyConfig';
+import { random } from '../core/rng';
 
 /**
  * Enemy types
@@ -165,8 +166,8 @@ export class Enemy {
     // Initialize type-specific behaviors
     if (type === EnemyType.FIGHTER) {
       // Randomize orbit direction
-      this.orbitDirection = Math.random() < 0.5 ? 1 : -1;
-      this.orbitAngle = Math.random() * Math.PI * 2;
+      this.orbitDirection = random() < 0.5 ? 1 : -1;
+      this.orbitAngle = random() * Math.PI * 2;
       // Fighters are fast and agile
       this.maxAcceleration = 50;
     } else if (type === EnemyType.CRUISER) {
@@ -543,7 +544,7 @@ export class Enemy {
 
     // Basestar shields regenerate with difficulty-scaled chance
     if (this.hasShields && !this.shieldsActive) {
-      if (Math.random() < this.difficultySettings.shieldRegenChance) {
+      if (random() < this.difficultySettings.shieldRegenChance) {
         this.shieldsActive = true;
         this.updateShieldVisual();
       }
@@ -644,7 +645,7 @@ export class Enemy {
     if (
       this.state === EnemyState.ATTACK &&
       !this.isEvading &&
-      Math.random() < this.difficultySettings.evasionChance * deltaTime
+      random() < this.difficultySettings.evasionChance * deltaTime
     ) {
       this.initiateEvasiveManeuver();
     }
@@ -762,7 +763,7 @@ export class Enemy {
     this.mesh.lookAt(playerPosition);
 
     // Occasionally change orbit direction (less frequent)
-    if (Math.random() < 0.002 * deltaTime * 60) {
+    if (random() < 0.002 * deltaTime * 60) {
       this.orbitDirection *= -1;
     }
   }
@@ -772,16 +773,16 @@ export class Enemy {
    */
   private initiateEvasiveManeuver(): void {
     // Set evade target position (relative to current position)
-    const dodgeDistance = 15 + Math.random() * 15; // 15-30 units
+    const dodgeDistance = 15 + random() * 15; // 15-30 units
     const dodgeOffset = new THREE.Vector3(
-      (Math.random() - 0.5) * dodgeDistance,
-      (Math.random() - 0.5) * dodgeDistance * 0.3, // Less vertical
-      (Math.random() - 0.5) * dodgeDistance
+      (random() - 0.5) * dodgeDistance,
+      (random() - 0.5) * dodgeDistance * 0.3, // Less vertical
+      (random() - 0.5) * dodgeDistance
     );
 
     this.evadeTarget = this.mesh.position.clone().add(dodgeOffset);
     this.isEvading = true;
-    this.evadeTimer = 0.8 + Math.random() * 0.4; // 0.8-1.2 seconds
+    this.evadeTimer = 0.8 + random() * 0.4; // 0.8-1.2 seconds
   }
 
   /**
@@ -940,7 +941,7 @@ export class Enemy {
     const distance = this.mesh.position.distanceTo(torpedoPosition);
     if (distance < missDistance) {
       // Near miss - check provocation based on difficulty sensitivity
-      if (Math.random() < this.difficultySettings.cruiserProvocationSensitivity) {
+      if (random() < this.difficultySettings.cruiserProvocationSensitivity) {
         this.provoked = true;
       }
     }

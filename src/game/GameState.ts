@@ -1,3 +1,5 @@
+import { random } from '../core/rng';
+
 /**
  * GameState - Central state management for the game
  */
@@ -202,7 +204,7 @@ export class GameState {
 
     // Check for random system damage on higher difficulties (10% chance)
     let systemDamaged: string | null = null;
-    if (difficulty !== DifficultyLevel.NOVICE && Math.random() < 0.1) {
+    if (difficulty !== DifficultyLevel.NOVICE && random() < 0.1) {
       systemDamaged = this.applyRandomSystemDamage();
     }
 
@@ -234,7 +236,7 @@ export class GameState {
 
     // Pick a random system to damage
     const systemToDamage =
-      undamagedSystems[Math.floor(Math.random() * undamagedSystems.length)];
+      undamagedSystems[Math.floor(random() * undamagedSystems.length)];
     this.damage[systemToDamage] = true;
 
     return systemToDamage;

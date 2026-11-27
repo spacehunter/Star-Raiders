@@ -1,3 +1,5 @@
+import { random } from '../core/rng';
+
 /**
  * SoundManager - Handles game audio using Web Audio API
  * Generates retro-style synthesized sound effects
@@ -87,7 +89,7 @@ export class SoundManager {
     const data = buffer.getChannelData(0);
 
     for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+      data[i] = (random() * 2 - 1) * (1 - i / bufferSize);
     }
 
     const source = this.audioContext.createBufferSource();
@@ -257,7 +259,7 @@ export class SoundManager {
     const data = buffer.getChannelData(0);
 
     for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+      data[i] = (random() * 2 - 1) * (1 - i / bufferSize);
     }
 
     const source = this.audioContext.createBufferSource();
@@ -309,7 +311,7 @@ export class SoundManager {
     const data = buffer.getChannelData(0);
 
     for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+      data[i] = (random() * 2 - 1) * (1 - i / bufferSize);
     }
 
     const source = this.audioContext.createBufferSource();

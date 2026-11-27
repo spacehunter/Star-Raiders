@@ -18,6 +18,22 @@ import { ControlPanel } from '../ui/ControlPanel';
 import { GalacticChart } from '../views/GalacticChart';
 import { LongRangeScan } from '../views/LongRangeScan';
 import { AttackComputer } from '../views/AttackComputer';
+import { EnemyType } from '../entities/Enemy';
+import { random } from '../core/rng';
+
+export type DebugSpawnType = 'fighter' | 'cruiser' | 'basestar' | 'starbase';
+
+export interface GameDebugApi {
+  state(): Record<string, unknown>;
+  galaxy(): Array<Record<string, unknown>>;
+  teleport(x: number, y: number): void;
+  spawn(type: DebugSpawnType, distance?: number): void;
+  setView(view: ViewMode): void;
+  step(n?: number): void;
+  resume(): void;
+  hyperwarp(x: number, y: number): void;
+  dock(): void;
+}
 
 type GameOverCallback = (
   victory: boolean,
@@ -238,9 +254,9 @@ export class Game {
 
     if (sector?.hasStarbase && !sector.starbaseDestroyed) {
       const starbasePos = new THREE.Vector3(
-        (Math.random() - 0.5) * 100,
-        (Math.random() - 0.5) * 30,
-        -100 + Math.random() * 50
+        (random() - 0.5) * 100,
+        (random() - 0.5) * 30,
+        -100 + random() * 50
       );
       this.currentStarbase = new Starbase(starbasePos);
       this.scene.add(this.currentStarbase.getObject());
@@ -468,7 +484,7 @@ export class Game {
     const speed = this.gameState.engineSpeed;
 
     // Debug: log every 60 frames (~1 second)
-    if (Math.random() < 0.016) {
+    if (random() < 0.016) {
       console.log(`Docking check: dist=${distance.toFixed(1)}, speed=${speed}, radius=${this.currentStarbase.getDockingRadius()}`);
     }
 
@@ -851,8 +867,8 @@ export class Game {
     // Initialize Steering State
     // Start with some random misalignment
     this.hyperwarpAlignment = {
-      x: (Math.random() - 0.5) * 20, // Start +/- 10vh off center
-      y: (Math.random() - 0.5) * 20
+      x: (random() - 0.5) * 20, // Start +/- 10vh off center
+      y: (random() - 0.5) * 20
     };
 
     // Calculate difficulty based on distance
@@ -893,8 +909,8 @@ export class Game {
       // 1. Apply Drift (pushes away from center or randomly)
       // Simple Brownian motion for now
       const driftStrength = 15 * this.hyperwarpDifficulty * deltaTime;
-      this.hyperwarpAlignment.x += (Math.random() - 0.5) * driftStrength;
-      this.hyperwarpAlignment.y += (Math.random() - 0.5) * driftStrength;
+      this.hyperwarpAlignment.x += (random() - 0.5) * driftStrength;
+      this.hyperwarpAlignment.y += (random() - 0.5) * driftStrength;
 
       // Constant pull away from center scaling with difficulty
       // this.hyperwarpAlignment.x += Math.sign(this.hyperwarpAlignment.x) * driftStrength * 0.1;
@@ -956,8 +972,8 @@ export class Game {
         // MISJUMP!
         this.controlPanel.showMessage('HYPERWARP ERROR: NAVIGATION FAILURE');
         // Random adjacent sector
-        arrivalX += Math.floor(Math.random() * 3) - 1;
-        arrivalY += Math.floor(Math.random() * 3) - 1;
+        arrivalX += Math.floor(random() * 3) - 1;
+        arrivalY += Math.floor(random() * 3) - 1;
         // Clamp to grid (16×8)
         arrivalX = Math.max(0, Math.min(SectorSystem.GRID_WIDTH - 1, arrivalX));
         arrivalY = Math.max(0, Math.min(SectorSystem.GRID_HEIGHT - 1, arrivalY));
@@ -1270,6 +1286,83 @@ export class Game {
     if (speed > maxSpeed && this.gameState.damage.engines) {
       this.controlPanel.showMessage('ENGINES DAMAGED - MAX SPEED 5');
     }
+  }
+
+  /**
+   * Debug controls for the ?debug=1 hook (window.__sr). Not used in normal play.
+   * step() switches the game to manual stepping: the requestAnimationFrame loop
+   * stops and each step runs one fixed 1/60 s update plus a render.
+   */
+  public createDebugApi(): GameDebugApi {
+    const DT = 1 / 60;
+    const frame = () => {
+      this.update(DT);
+      this.render();
+    };
+    const ahead = (distance: number) =>
+      this.player.getForwardDirection().multiplyScalar(distance).add(this.player.getObject().position);
+
+    return {
+      state: () => ({
+        ...JSON.parse(JSON.stringify(this.gameState)),
+        isHyperwarping: this.isHyperwarping,
+        hyperwarpProgress: this.hyperwarpProgress,
+        isDocking: this.isDocking,
+        dockingProgress: this.dockingProgress,
+        enemiesInSector: this.combatSystem.getEnemies().filter((e) => e.isActive).length,
+        starbaseInSector: this.currentStarbase !== null,
+        remainingEnemies: this.sectorSystem.getRemainingEnemies(),
+        manualStepping: !this.gameLoop.running,
+      }),
+      galaxy: () =>
+        this.sectorSystem.getAllSectors().flat().map((s) => ({ ...s })),
+      teleport: (x: number, y: number) => {
+        this.clearSectorContents();
+        this.gameState.sectorX = x;
+        this.gameState.sectorY = y;
+        this.sectorSystem.visitSector(x, y);
+        this.spawnSectorContents();
+      },
+      spawn: (type: DebugSpawnType, distance = 60) => {
+        const pos = ahead(distance);
+        if (type === 'starbase') {
+          if (this.currentStarbase) {
+            this.currentStarbase.getObject().position.copy(pos);
+          } else {
+            this.currentStarbase = new Starbase(pos);
+            this.scene.add(this.currentStarbase.getObject());
+          }
+          return;
+        }
+        const enemyType = { fighter: EnemyType.FIGHTER, cruiser: EnemyType.CRUISER, basestar: EnemyType.BASESTAR }[type];
+        this.combatSystem.spawnEnemy(enemyType, pos);
+      },
+      setView: (view: ViewMode) => {
+        this.switchView(view);
+        if (this.isViewTransitioning) this.updateViewTransition(1);
+      },
+      step: (n = 1) => {
+        this.gameLoop.stop();
+        for (let i = 0; i < n; i++) frame();
+      },
+      resume: () => this.gameLoop.start(),
+      hyperwarp: (x: number, y: number) => {
+        const c = this.galacticChart.getCursorPosition();
+        this.galacticChart.moveCursor(x - c.x, y - c.y);
+        this.initiateHyperwarp();
+      },
+      dock: () => {
+        if (!this.currentStarbase) {
+          this.currentStarbase = new Starbase(new THREE.Vector3());
+          this.scene.add(this.currentStarbase.getObject());
+        }
+        this.currentStarbase.getObject().position.copy(ahead(30));
+        this.gameState.engineSpeed = 0;
+        this.gameState.targetEngineSpeed = 0;
+        this.dockingCooldown = 0;
+        this.checkDocking();
+      },
+    };
   }
 
   /**

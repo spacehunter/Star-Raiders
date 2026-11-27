@@ -3,6 +3,7 @@ import { Enemy, EnemyType } from '../entities/Enemy';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
 import { GameState, DifficultyLevel } from '../game/GameState';
 import { SectorSystem } from './SectorSystem';
+import { random } from '../core/rng';
 
 /**
  * CombatSystem - Manages enemies, combat, and targeting
@@ -44,7 +45,7 @@ export class CombatSystem {
     for (let i = 0; i < enemyCount; i++) {
       // Determine type based on difficulty and random chance
       let type: EnemyType;
-      const roll = Math.random();
+      const roll = random();
 
       switch (this.gameState.difficulty) {
         case DifficultyLevel.NOVICE:
@@ -68,9 +69,9 @@ export class CombatSystem {
       }
 
       // Random position around the player
-      const angle = Math.random() * Math.PI * 2;
-      const distance = 50 + Math.random() * 150;
-      const height = (Math.random() - 0.5) * 50;
+      const angle = random() * Math.PI * 2;
+      const distance = 50 + random() * 150;
+      const height = (random() - 0.5) * 50;
 
       const position = new THREE.Vector3(
         Math.cos(angle) * distance,
@@ -91,6 +92,22 @@ export class CombatSystem {
     if (this.enemies.length > 0) {
       this.currentTargetIndex = 0;
     }
+  }
+
+  /**
+   * Spawn one enemy at a given position (used by the ?debug=1 hook).
+   * Configured exactly like a sector spawn.
+   */
+  public spawnEnemy(type: EnemyType, position: THREE.Vector3): Enemy {
+    const enemy = new Enemy(type, position);
+    enemy.setDifficulty(this.gameState.difficulty);
+    enemy.activateHoning();
+    this.enemies.push(enemy);
+    this.scene.add(enemy.getObject());
+    if (this.currentTargetIndex < 0) {
+      this.currentTargetIndex = this.enemies.length - 1;
+    }
+    return enemy;
   }
 
   /**

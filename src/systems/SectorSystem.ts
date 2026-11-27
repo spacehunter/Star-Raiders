@@ -1,4 +1,5 @@
 import { DifficultyLevel } from '../game/GameState';
+import { random } from '../core/rng';
 
 /**
  * SectorSystem - Manages the 16x8 galactic grid and sector contents
@@ -113,8 +114,8 @@ export class SectorSystem {
       let attempts = 0;
 
       do {
-        x = region.minX + Math.floor(Math.random() * (region.maxX - region.minX + 1));
-        y = region.minY + Math.floor(Math.random() * (region.maxY - region.minY + 1));
+        x = region.minX + Math.floor(random() * (region.maxX - region.minX + 1));
+        y = region.minY + Math.floor(random() * (region.maxY - region.minY + 1));
         attempts++;
       } while ((x === 8 && y === 4) && attempts < 20); // Avoid player start (8, 4)
 
@@ -135,8 +136,8 @@ export class SectorSystem {
     let attempt = 0;
 
     while (placed < count && attempt < attempts) {
-      const x = Math.floor(Math.random() * SectorSystem.GRID_WIDTH);
-      const y = Math.floor(Math.random() * SectorSystem.GRID_HEIGHT);
+      const x = Math.floor(random() * SectorSystem.GRID_WIDTH);
+      const y = Math.floor(random() * SectorSystem.GRID_HEIGHT);
 
       // Skip player starting position (8, 4)
       if (x === 8 && y === 4) {
