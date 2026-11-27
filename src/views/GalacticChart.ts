@@ -1,6 +1,6 @@
 import { SectorSystem } from '../systems/SectorSystem';
 import { GameState } from '../game/GameState';
-import { EnergySystem } from '../systems/EnergySystem';
+import { calcWarpSectors } from '../rules/warp';
 import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';
 
 /**
@@ -12,7 +12,6 @@ export class GalacticChart {
   private chartElement: HTMLElement;
   private sectorSystem: SectorSystem;
   private gameState: GameState;
-  private energySystem: EnergySystem;
   private starbaseAttackSystem: StarbaseAttackSystem | null = null;
 
   private cursorX: number = 4;
@@ -22,13 +21,11 @@ export class GalacticChart {
   constructor(
     container: HTMLElement,
     sectorSystem: SectorSystem,
-    gameState: GameState,
-    energySystem: EnergySystem
+    gameState: GameState
   ) {
     this.container = container;
     this.sectorSystem = sectorSystem;
     this.gameState = gameState;
-    this.energySystem = energySystem;
 
     this.chartElement = this.createChart();
     this.container.appendChild(this.chartElement);
@@ -550,12 +547,12 @@ export class GalacticChart {
 
     // Warp Cost
     if (warpCostEl) {
-      const cost = this.energySystem.calculateHyperwarpCost(
+      const cost = calcWarpSectors(
         this.gameState.sectorX,
         this.gameState.sectorY,
         this.cursorX,
         this.cursorY
-      );
+      ).units;
       warpCostEl.textContent = cost.toString().padStart(4, '0');
     }
 
@@ -568,7 +565,7 @@ export class GalacticChart {
 
     // Star Date
     if (starDateEl) {
-      starDateEl.textContent = this.gameState.starDate.toFixed(2);
+      starDateEl.textContent = this.gameState.starDate;
     }
 
     // Damage Control (DC) Indicators

@@ -2,10 +2,8 @@ import * as THREE from 'three';
 import { GameLoop } from './GameLoop';
 import { GameState, ViewMode, DifficultyLevel } from './GameState';
 import { InputManager } from '../utils/InputManager';
-import { EnergySystem } from '../systems/EnergySystem';
 import { SectorSystem } from '../systems/SectorSystem';
 import { CombatSystem } from '../systems/CombatSystem';
-import { ScoringSystem } from '../systems/ScoringSystem';
 import { StarbaseAttackSystem } from '../systems/StarbaseAttackSystem';
 import { VFXSystem } from '../systems/VFXSystem';
 import { SoundManager } from '../audio/SoundManager';
@@ -20,6 +18,13 @@ import { LongRangeScan } from '../views/LongRangeScan';
 import { AttackComputer } from '../views/AttackComputer';
 import { EnemyType } from '../entities/Enemy';
 import { random } from '../core/rng';
+import { SimClock, type LoopEvents } from '../core/clock';
+import { EnergySim } from '../sim/energy';
+import { MissionScore, rateMission, type MissionRating } from '../sim/rating';
+import type { MissionOutcome } from '../rules/rating';
+import { calcWarpSectors } from '../rules/warp';
+import { rollDamage, type Subsystem } from '../rules/damage';
+import { MSG } from '../rules/messages';
 
 export type DebugSpawnType = 'fighter' | 'cruiser' | 'basestar' | 'starbase';
 
@@ -33,19 +38,22 @@ export interface GameDebugApi {
   resume(): void;
   hyperwarp(x: number, y: number): void;
   dock(): void;
+  setEnergy(units: number): void;
+  setSpeed(key: number): void;
+  setShields(on: boolean): void;
 }
 
-type GameOverCallback = (
-  victory: boolean,
-  score: number,
-  rank: string,
-  breakdown: {
-    enemyScore: number;
-    timeBonus: number;
-    energyBonus: number;
-    starbasePenalty: number;
-  }
-) => void;
+type GameOverCallback = (rating: MissionRating) => void;
+
+/** DamageState key for each ROM subsystem (rules/damage.ts). */
+const DAMAGE_KEY: Record<Subsystem, keyof GameState['damage']> = {
+  photons: 'photonTorpedoes',
+  engines: 'engines',
+  shields: 'shields',
+  computer: 'attackComputer',
+  sectorScan: 'longRangeScan',
+  radio: 'subSpaceRadio',
+};
 
 /**
  * Game - Main game controller that manages scene, rendering, and game state
@@ -60,10 +68,11 @@ export class Game {
   // Game systems
   private gameLoop: GameLoop;
   private inputManager: InputManager;
-  private energySystem: EnergySystem;
+  private clock: SimClock;
+  private energy: EnergySim;
+  private missionScore: MissionScore;
   private sectorSystem: SectorSystem;
   private combatSystem: CombatSystem;
-  private scoringSystem: ScoringSystem;
   private starbaseAttackSystem: StarbaseAttackSystem;
   private vfxSystem: VFXSystem;
   private soundManager: SoundManager;
@@ -150,9 +159,13 @@ export class Game {
     // Initialize game systems
     this.gameLoop = new GameLoop();
     this.inputManager = new InputManager(container);
-    this.energySystem = new EnergySystem(this.gameState);
+    this.clock = new SimClock();
+    this.missionScore = new MissionScore();
+    this.energy = new EnergySim(this.gameState, {
+      onScoreLoss: (points) => this.missionScore.energyUsed(points),
+      onZeroEnergy: () => this.endMission('zeroEnergy'),
+    });
     this.sectorSystem = new SectorSystem();
-    this.scoringSystem = new ScoringSystem(this.gameState);
 
     // Generate galaxy
     this.sectorSystem.generateGalaxy(this.gameState.difficulty);
@@ -179,8 +192,7 @@ export class Game {
     this.galacticChart = new GalacticChart(
       container,
       this.sectorSystem,
-      this.gameState,
-      this.energySystem
+      this.gameState
     );
     this.longRangeScan = new LongRangeScan(
       container,
@@ -198,6 +210,11 @@ export class Game {
     // Set up starbase attack system message callback
     this.starbaseAttackSystem.setMessageCallback((message, duration) => {
       this.controlPanel.showMessage(message, duration);
+    });
+
+    // A starbase lost to the Zylons costs 18 points (§14.1, §17.4)
+    this.starbaseAttackSystem.setStarbaseDestroyedCallback(() => {
+      this.missionScore.starbaseDestroyedByZylons();
     });
 
     // Connect galactic chart to starbase attack system for visual indicators
@@ -325,26 +342,29 @@ export class Game {
 
     this.gameTime += deltaTime;
 
-    // Update star date
-    this.gameState.starDate += deltaTime * 0.1;
-
-    // Handle docking sequence
-    if (this.isDocking) {
-      this.updateDocking(deltaTime);
+    // Fixed-timestep rules: energy drains, star date, fleet move ticks (60 loops/s)
+    this.clock.advance(deltaTime, this.simLoop);
+    if (this.gameState.isGameOver) {
+      this.controlPanel.update();
       return;
     }
 
-    // Handle hyperwarp animation
+    // Handle docking sequence (energy keeps draining, so the panel keeps updating)
+    if (this.isDocking) {
+      this.updateDocking(deltaTime);
+      this.controlPanel.update();
+      return;
+    }
+
+    // Handle hyperwarp animation (hyperspace drains 10 per loop; keep E current)
     if (this.isHyperwarping) {
       this.updateHyperwarp(deltaTime);
+      this.controlPanel.update();
       return;
     }
 
     // Handle input
     this.handleInput(deltaTime);
-
-    // Update game systems
-    this.energySystem.update(deltaTime);
 
     // Update player movement based on speed
     this.updatePlayerMovement(deltaTime);
@@ -400,6 +420,7 @@ export class Game {
 
     // Check torpedo collisions
     const destroyed = this.combatSystem.checkTorpedoCollisions(this.torpedoes);
+    for (let i = 0; i < destroyed.length; i++) this.missionScore.zylonDestroyed();
     if (destroyed.length > 0) {
       this.controlPanel.showMessage(`ZYLON DESTROYED! (${this.sectorSystem.getRemainingEnemies()} remaining)`);
     }
@@ -427,6 +448,41 @@ export class Game {
     // Check victory/defeat conditions
     this.checkGameState();
   };
+
+  /**
+   * One fixed 1/60 s simulation loop (MANUAL_SPEC §12, §17.1, §17.4, §17.10).
+   */
+  private simLoop = (events: LoopEvents): void => {
+    if (this.gameState.isGameOver) return;
+    this.energy.loop({
+      engineKey: this.gameState.targetEngineSpeed,
+      shields: this.gameState.shieldsActive,
+      computer: this.gameState.attackComputerOn,
+      hyperwarp: this.isHyperwarping,
+    });
+    if (events.fleetMoveTick) this.missionScore.fleetMoveTick();
+    this.gameState.starDate = this.clock.starDate;
+    this.gameState.score = this.missionScore.score;
+  };
+
+  /**
+   * End the mission and rate it (§14, §17.10). The first outcome wins.
+   */
+  private endMission(outcome: MissionOutcome): void {
+    if (this.gameState.missionOutcome) return;
+    this.gameState.score = this.missionScore.score;
+    this.gameState.missionOutcome = outcome;
+    this.gameState.rating = rateMission(this.gameState.difficulty, outcome, this.missionScore.score);
+    this.gameState.isVictory = outcome === 'complete';
+    this.gameState.isGameOver = true;
+    const title = {
+      complete: 'MISSION COMPLETE',
+      zeroEnergy: 'MISSION ABORTED  ZERO ENERGY',
+      destroyed: MSG.SHIP_DESTROYED_BY_ZYLON_FIRE,
+      aborted: 'MISSION ABORTED',
+    }[outcome];
+    this.controlPanel.showMessage(title);
+  }
 
   /**
    * Update targeting data for control panel (θ, Φ, R)
@@ -510,7 +566,7 @@ export class Game {
 
     if (this.dockingProgress >= 1) {
       // Docking complete - repair and refuel
-      this.gameState.energy = this.gameState.maxEnergy;
+      this.energy.refill();
       this.gameState.hull = this.gameState.maxHull; // Repair hull to 100%
       this.gameState.damage = {
         engines: false,
@@ -534,19 +590,8 @@ export class Game {
     this.hasTriggeredGameOver = true;
     this.gameLoop.stop();
 
-    if (this.gameOverCallback) {
-      const breakdown = this.scoringSystem.getScoreBreakdown();
-      this.gameOverCallback(
-        this.gameState.isVictory,
-        breakdown.totalScore,
-        breakdown.rank,
-        {
-          enemyScore: breakdown.enemyScore,
-          timeBonus: breakdown.timeBonus,
-          energyBonus: breakdown.energyBonus,
-          starbasePenalty: breakdown.starbasePenalty,
-        }
-      );
+    if (this.gameOverCallback && this.gameState.rating) {
+      this.gameOverCallback(this.gameState.rating);
     }
   }
 
@@ -554,29 +599,17 @@ export class Game {
    * Check victory/defeat conditions
    */
   private checkGameState(): void {
-    // Victory: all enemies destroyed
+    // Mission complete: all Zylons destroyed (§1, §17.10)
     if (this.sectorSystem.getRemainingEnemies() <= 0) {
-      this.gameState.isVictory = true;
-      this.gameState.isGameOver = true;
-      this.controlPanel.showMessage('MISSION COMPLETE - ALL ZYLONS DESTROYED!');
+      this.endMission('complete');
     }
 
-    // Defeat: all starbases destroyed
-    if (this.sectorSystem.getRemainingStarbases() <= 0) {
-      this.gameState.isGameOver = true;
-      this.controlPanel.showMessage('MISSION FAILED - ALL STARBASES DESTROYED!');
-    }
+    // Losing every starbase does not end the game (§17.4).
+    // Zero energy ends it from sim/energy.ts via endMission('zeroEnergy').
 
-    // Defeat: out of energy
-    if (this.gameState.energy <= 0) {
-      this.gameState.isGameOver = true;
-      this.controlPanel.showMessage('MISSION FAILED - OUT OF ENERGY!');
-    }
-
-    // Defeat: hull destroyed
+    // Ship destroyed
     if (this.gameState.hull <= 0) {
-      this.gameState.isGameOver = true;
-      this.controlPanel.showMessage('SHIP DESTROYED - MISSION FAILED!');
+      this.endMission('destroyed');
     }
   }
 
@@ -717,53 +750,35 @@ export class Game {
       if (projectile.checkCollision(playerPos, PLAYER_COLLISION_RADIUS)) {
         // Hit! Get projectile position for VFX
         const hitPosition = projectile.getPosition();
-        const damage = projectile.getDamage();
 
-        // Apply damage differently based on shield status
+        // Every hit costs 100 units (§12.1, §17.1) and may damage a subsystem (§17.3)
+        this.energy.hit();
+        const harm = rollDamage(this.gameState.difficulty, this.damageStatus(), 0, () =>
+          Math.floor(random() * 256)
+        );
+        if (harm) this.gameState.damage[DAMAGE_KEY[harm.system]] = true;
+
         if (this.gameState.shieldsActive && !this.gameState.damage.shields) {
-          // Shields active - energy drain only, no hull damage
-
           // Shield audio and visual feedback
           this.soundManager.playShieldHit();
           this.vfxSystem.createShieldHit(hitPosition);
+        } else {
+          // Player hit audio
+          this.soundManager.playPlayerHit();
+        }
 
-          // Apply energy damage (shields reduce drain by 70%)
-          this.gameState.applyEnemyDamage(
-            damage,
-            this.gameState.shieldsActive,
-            this.gameState.difficulty
-          );
-
+        if (harm) {
+          this.controlPanel.showDamageMessage(harm.messages[1], 'system');
+        } else if (this.gameState.shieldsActive) {
           this.controlPanel.showDamageMessage(
             `SHIELDS ABSORBING FIRE! Energy: ${Math.floor(this.gameState.energy)}`,
             'shield'
           );
         } else {
-          // No shields - energy damage only (no hull damage from enemy combat)
-
-          // Player hit audio
-          this.soundManager.playPlayerHit();
-
-          // Apply energy damage and potential system damage
-          const result = this.gameState.applyEnemyDamage(
-            damage,
-            false,
-            this.gameState.difficulty
+          this.controlPanel.showDamageMessage(
+            `TAKING DAMAGE! Energy: ${Math.floor(this.gameState.energy)} remaining`,
+            'damage'
           );
-
-          // Display appropriate message
-          if (result.systemDamaged) {
-            const systemName = this.getSystemDisplayName(result.systemDamaged);
-            this.controlPanel.showDamageMessage(
-              `${systemName} DAMAGED! Energy: ${Math.floor(this.gameState.energy)}`,
-              'system'
-            );
-          } else {
-            this.controlPanel.showDamageMessage(
-              `TAKING DAMAGE! Energy: ${Math.floor(this.gameState.energy)} remaining`,
-              'damage'
-            );
-          }
         }
 
         // Deactivate and remove the projectile
@@ -786,23 +801,20 @@ export class Game {
   }
 
   /**
-   * Get display name for a damaged system
+   * Current damage as the rules module sees it (boolean damage = 'damaged' until Phase 7).
    */
-  private getSystemDisplayName(systemKey: string): string {
-    const displayNames: Record<string, string> = {
-      engines: 'ENGINES',
-      shields: 'SHIELDS',
-      photonTorpedoes: 'PHOTON TORPEDOES',
-      subSpaceRadio: 'SUB-SPACE RADIO',
-      longRangeScan: 'LONG RANGE SCAN',
-      attackComputer: 'ATTACK COMPUTER',
+  private damageStatus(): Record<Subsystem, 'ok' | 'damaged' | 'destroyed'> {
+    const d = this.gameState.damage;
+    const st = (b: boolean) => (b ? 'damaged' : 'ok') as 'ok' | 'damaged';
+    return {
+      photons: st(d.photonTorpedoes),
+      engines: st(d.engines),
+      shields: st(d.shields),
+      computer: st(d.attackComputer),
+      sectorScan: st(d.longRangeScan),
+      radio: st(d.subSpaceRadio),
     };
-    return displayNames[systemKey] || systemKey.toUpperCase();
   }
-
-
-
-
 
   /**
    * Handle input when galactic chart is open
@@ -840,19 +852,9 @@ export class Game {
       return;
     }
 
-    // Calculate cost
-    const cost = this.energySystem.calculateHyperwarpCost(
-      this.gameState.sectorX,
-      this.gameState.sectorY,
-      cursor.x,
-      cursor.y
-    );
-
-    // Check energy
-    if (this.gameState.energy < cost) {
-      this.controlPanel.showMessage('INSUFFICIENT ENERGY FOR HYPERWARP');
-      return;
-    }
+    // CALCWARP (§12.3, §17.5). The ROM never refuses a jump for lack of energy:
+    // hyperspace drains 10 per loop and can run the tank dry.
+    const cost = calcWarpSectors(this.gameState.sectorX, this.gameState.sectorY, cursor.x, cursor.y);
 
     // Clear current sector contents
     this.clearSectorContents();
@@ -887,8 +889,8 @@ export class Game {
     this.controlPanel.setHyperwarpMarkerVisible(true);
     this.controlPanel.updateHyperwarpMarker(this.hyperwarpAlignment.x, this.hyperwarpAlignment.y);
 
-    // Consume energy
-    this.gameState.consumeEnergy(cost);
+    // Hyperspace drain: 10 units per loop for WARPENERGY - 1 loops
+    this.energy.beginHyperspace(cost.warpEnergy);
 
     this.controlPanel.showMessage('HYPERWARPENGAGED - STEER TO TARGET');
     this.gameState.currentView = ViewMode.FRONT;
@@ -1206,14 +1208,15 @@ export class Game {
       return;
     }
 
-    if (!this.energySystem.fireTorpedo()) {
-      if (this.gameState.damage.photonTorpedoes) {
-        this.controlPanel.showMessage('WEAPONS DAMAGED');
-      } else {
-        this.controlPanel.showMessage('INSUFFICIENT ENERGY');
-      }
+    if (this.gameState.damage.photonTorpedoes) {
+      this.controlPanel.showMessage('WEAPONS DAMAGED');
       return;
     }
+
+    // Each photon launched costs 10 units (§12.1); both barrels fire here.
+    this.energy.firePhoton();
+    this.energy.firePhoton();
+    if (this.gameState.isGameOver) return;
 
     const playerPos = this.player.getObject().position.clone();
     let direction = this.player.getForwardDirection();
@@ -1305,6 +1308,10 @@ export class Game {
     return {
       state: () => ({
         ...JSON.parse(JSON.stringify(this.gameState)),
+        loops: this.clock.loops,
+        starDateTicks: this.clock.starDateTicks,
+        fleetMoveTicks: this.clock.fleetMoveTicks,
+        hyperspaceLoopsLeft: this.energy.hyperspaceLoopsLeft,
         isHyperwarping: this.isHyperwarping,
         hyperwarpProgress: this.hyperwarpProgress,
         isDocking: this.isDocking,
@@ -1361,6 +1368,13 @@ export class Game {
         this.gameState.targetEngineSpeed = 0;
         this.dockingCooldown = 0;
         this.checkDocking();
+      },
+      setEnergy: (units: number) => {
+        this.gameState.energy = Math.max(0, Math.floor(units));
+      },
+      setSpeed: (key: number) => this.setEngineSpeed(key),
+      setShields: (on: boolean) => {
+        this.gameState.shieldsActive = on && !this.gameState.damage.shields;
       },
     };
   }

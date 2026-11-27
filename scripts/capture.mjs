@@ -8,10 +8,10 @@
  * Starts its own Vite dev server (unless --url is given), opens the game headless with
  * ?debug=1&seed=<seed>, freezes the page clock (Date, performance.now, timers and
  * requestAnimationFrame) and drives the game only through window.__sr.step(), so the
- * same seed always gives the same pixels. Writes the 8 standard shots:
+ * same seed always gives the same pixels. Writes the standard shots:
  *
  *   01-title  02-front  03-aft  04-galactic-chart  05-long-range-scan
- *   06-attack-computer  07-hyperwarp  08-docking
+ *   06-attack-computer  07-hyperwarp  08-docking  09-zero-energy
  *
  * plus manifest.json with each file's SHA-256. Later phases reuse this script; add new
  * shots to SHOTS below rather than writing another harness.
@@ -91,6 +91,19 @@ const SHOTS = [
         window.__sr.step(50);
       }),
   },
+  {
+    // Phase 1: energy really runs out and aborts the mission (MANUAL_SPEC §12, §17.1, §17.10).
+    name: '09-zero-energy',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.step(200); // let the docking finish
+        window.__sr.setView('FRONT');
+        window.__sr.setEnergy(40);
+        window.__sr.setShields(true);
+        window.__sr.setSpeed(9);
+        window.__sr.step(400);
+      }),
+  },
 ];
 
 async function startServer() {
@@ -152,7 +165,12 @@ async function main() {
       await page.screenshot({ path: file, animations: 'disabled', caret: 'hide' });
       const hash = createHash('sha256').update(await readFile(file)).digest('hex');
       manifest.shots[shot.name] = hash;
-      console.log(`${shot.name.padEnd(20)} ${hash.slice(0, 16)}`);
+      const st = await page.evaluate(() => {
+        const s = window.__sr.state;
+        return s && { energy: s.energy, starDate: s.starDate, score: s.score, loops: s.loops, outcome: s.missionOutcome, rating: s.rating?.title ?? null };
+      });
+      if (st) (manifest.state ??= {})[shot.name] = st;
+      console.log(`${shot.name.padEnd(20)} ${hash.slice(0, 16)}${st ? `  E:${st.energy} STAR DATE:${st.starDate} score:${st.score}${st.rating ? ` ${st.outcome} -> ${st.rating}` : ''}` : ''}`);
     }
 
     if (errors.length) {

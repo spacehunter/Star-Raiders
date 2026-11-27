@@ -1,0 +1,97 @@
+/**
+ * Title-line message strings, as the ROM's phrase table spells them.
+ * MANUAL_SPEC §5, §8.2, §9, §13, §17.3, §17.5, §17.6, §17.9, §17.10, §17.11.
+ */
+
+export const MSG = {
+  ATTACK_COMPUTER_ON: 'ATTACK COMPUTER ON',
+  ATTACK_COMPUTER_OFF: 'ATTACK COMPUTER OFF',
+  SHIELDS_ON: 'SHIELDS ON',
+  SHIELDS_OFF: 'SHIELDS OFF',
+  COMPUTER_TRACKING_ON: 'COMPUTER TRACKING ON',
+  TRACKING_OFF: 'TRACKING OFF',
+  WHATS_WRONG: 'WHATS WRONG?',
+  HYPERWARP_ENGAGED: 'HYPERWARP ENGAGED',
+  STARBASE_SURROUNDED: 'STARBASE SURROUNDED',
+  STARBASE_DESTROYED: 'STARBASE DESTROYED',
+  HYPERWARP_ABORTED: 'HYPERWARP ABORTED',
+  HYPERWARP_COMPLETE: 'HYPERWARP COMPLETE',
+  HYPERSPACE: 'HYPERSPACE',
+  ORBIT_ESTABLISHED: 'ORBIT ESTABLISHED',
+  STANDBY: 'STANDBY',
+  DOCKING_ABORTED: 'DOCKING ABORTED',
+  TRANSFER_COMPLETE: 'TRANSFER COMPLETE',
+  RED_ALERT: 'RED ALERT',
+  DAMAGE_CONTROL: 'DAMAGE CONTROL',
+  STAR_RAIDERS: 'STAR RAIDERS',
+  COPYRIGHT: 'COPYRIGHT ATARI 1979',
+  GALACTIC_CHART: 'GALACTIC CHART',
+  LONG_RANGE_SCAN: 'LONG RANGE SCAN',
+  SHIP_DESTROYED_BY_ZYLON_FIRE: 'SHIP DESTROYED BY ZYLON FIRE',
+  MISSION: {
+    NOVICE: 'NOVICE MISSION',
+    PILOT: 'PILOT MISSION',
+    WARRIOR: 'WARRIOR MISSION',
+    COMMANDER: 'COMMANDER MISSION',
+  },
+  /** §17.3: the LRS is called SECTOR SCAN on screen. */
+  SUBSYSTEM: {
+    photons: { damaged: 'PHOTONS DAMAGED', destroyed: 'PHOTONS DESTROYED' },
+    engines: { damaged: 'ENGINES DAMAGED', destroyed: 'ENGINES DESTROYED' },
+    shields: { damaged: 'SHIELDS DAMAGED', destroyed: 'SHIELDS DESTROYED' },
+    computer: { damaged: 'COMPUTER DAMAGED', destroyed: 'COMPUTER DESTROYED' },
+    sectorScan: { damaged: 'SECTOR SCAN DAMAGED', destroyed: 'SECTOR SCAN DESTROYED' },
+    radio: { damaged: 'SUB-SPACE RADIO DAMAGED', destroyed: 'SUB-SPACE RADIO DESTROYED' },
+  },
+} as const;
+
+/** Placeholders filled in by sim/rating.ts. */
+export const RANK_PLACEHOLDER = '<RANK>';
+export const CLASS_PLACEHOLDER = 'CLASS <N>';
+
+/**
+ * §17.10 end-of-mission sequences, one segment at a time on the title line
+ * (ROM phrases $3F, $31, $23 and $76).
+ */
+export const END_SEQUENCE = {
+  complete: [
+    'STAR FLEET TO',
+    'STAR CRUISER 7',
+    'MISSION COMPLETE',
+    'NEW RANK IS:',
+    RANK_PLACEHOLDER,
+    CLASS_PLACEHOLDER,
+    'CONGRATULATIONS',
+  ],
+  zeroEnergy: [
+    'STAR FLEET TO',
+    'STAR CRUISER 7',
+    'MISSION ABORTED',
+    'ZERO ENERGY',
+    'NEW RANK IS:',
+    RANK_PLACEHOLDER,
+    CLASS_PLACEHOLDER,
+    'REPORT TO BASE',
+    'FOR TRAINING',
+  ],
+  destroyed: [
+    'STAR FLEET TO',
+    'ALL UNITS',
+    'STAR CRUISER 7',
+    'DESTROYED',
+    'BY ZYLON FIRE',
+    'POSTHUMOUS RANK IS:',
+    RANK_PLACEHOLDER,
+    CLASS_PLACEHOLDER,
+  ],
+  /** Mission aborted by the player (the Atari/INV key, §3). Not listed in §17.10; ROM phrase $76. */
+  aborted: [
+    'STAR FLEET TO',
+    'STAR CRUISER 7',
+    'MISSION ABORTED',
+    'NEW RANK IS:',
+    RANK_PLACEHOLDER,
+    CLASS_PLACEHOLDER,
+    'CONGRATULATIONS',
+  ],
+} as const;

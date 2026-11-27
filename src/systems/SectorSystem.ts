@@ -1,5 +1,6 @@
 import { DifficultyLevel } from '../game/GameState';
 import { random } from '../core/rng';
+import { starbaseCount as starbaseCountFor, zylonCount } from '../rules/levels';
 
 /**
  * SectorSystem - Manages the 16x8 galactic grid and sector contents
@@ -51,31 +52,9 @@ export class SectorSystem {
   public generateGalaxy(difficulty: DifficultyLevel): void {
     this.initializeGrid();
 
-    // Determine counts based on difficulty
-    let enemyCount: number;
-    let starbaseCount: number;
-
-    switch (difficulty) {
-      case DifficultyLevel.NOVICE:
-        enemyCount = 24;
-        starbaseCount = 3;
-        break;
-      case DifficultyLevel.PILOT:
-        enemyCount = 36;
-        starbaseCount = 3;
-        break;
-      case DifficultyLevel.WARRIOR:
-        enemyCount = 45;
-        starbaseCount = 3;
-        break;
-      case DifficultyLevel.COMMANDER:
-        enemyCount = 60;
-        starbaseCount = 4;
-        break;
-      default:
-        enemyCount = 24;
-        starbaseCount = 3;
-    }
+    // Counts per level (§15, §17.4)
+    const enemyCount = zylonCount(difficulty);
+    const starbaseCount = starbaseCountFor(difficulty);
 
     this.totalEnemies = enemyCount;
     this.totalStarbases = starbaseCount;

@@ -1,5 +1,5 @@
 import { DifficultyLevel } from '../game/GameState';
-import { Rank } from '../systems/ScoringSystem';
+import type { MissionRating } from '../sim/rating';
 import { random } from '../core/rng';
 
 /**
@@ -425,13 +425,12 @@ export class MainMenu {
    * Show game over screen (Updated for simple pass-through)
    */
   public showGameOver(
-    victory: boolean,
-    score: number,
-    rank: Rank,
-    _breakdown: any,
+    rating: MissionRating,
     onRestart: () => void
   ): void {
-    // Basic implementation for now, reusing new styles
+    // Basic implementation for now, reusing new styles. The §17.10 title-line
+    // sequence (rating.messages) replaces this card in Phase 11.
+    const victory = rating.outcome === 'complete';
     const screen = document.createElement('div');
     screen.className = 'game-over-screen';
     screen.innerHTML = `
@@ -440,9 +439,9 @@ export class MainMenu {
           ${victory ? 'MISSION COMPLETE' : 'MISSION FAILED'}
         </h1>
         <div class="score-breakdown">
-          <div class="score-row"><span>SCORE:</span><span>${score}</span></div>
+          <div class="score-row"><span>SCORE:</span><span>${rating.total}</span></div>
         </div>
-        <div class="rank-display">RANK: ${rank}</div>
+        <div class="rank-display">RANK: ${rating.title}</div>
         <button class="restart-btn">PLAY AGAIN</button>
       </div>
     `;

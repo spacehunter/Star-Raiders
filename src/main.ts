@@ -3,6 +3,7 @@ import { Game } from './game/Game';
 import { MainMenu } from './ui/MainMenu';
 import { DifficultyLevel } from './game/GameState';
 import { installDebugHook } from './core/debug';
+import type { MissionRating } from './sim/rating';
 
 /**
  * GameManager - Handles game lifecycle and menu transitions
@@ -40,8 +41,8 @@ class GameManager {
     }
 
     // Create new game
-    this.game = new Game(this.container, difficulty, (victory, score, rank, breakdown) => {
-      this.handleGameOver(victory, score, rank, breakdown);
+    this.game = new Game(this.container, difficulty, (rating) => {
+      this.handleGameOver(rating);
     });
     this.game.start();
   }
@@ -53,18 +54,8 @@ class GameManager {
   /**
    * Handle game over
    */
-  private handleGameOver(
-    victory: boolean,
-    score: number,
-    rank: string,
-    breakdown: {
-      enemyScore: number;
-      timeBonus: number;
-      energyBonus: number;
-      starbasePenalty: number;
-    }
-  ): void {
-    this.mainMenu.showGameOver(victory, score, rank as any, breakdown, () => {
+  private handleGameOver(rating: MissionRating): void {
+    this.mainMenu.showGameOver(rating, () => {
       this.mainMenu.show();
     });
   }
