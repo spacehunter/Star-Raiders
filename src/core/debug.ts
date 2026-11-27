@@ -13,6 +13,9 @@
  *   __sr.resume()                  go back to the real-time loop
  *   __sr.hyperwarp(x, y)           start a hyperwarp to a sector, as if chosen on the chart
  *   __sr.dock()                    put a starbase in docking range at speed 0 and begin docking
+ *   __sr.setEnergy(n)              set the ENERGY readout (e.g. to test the zero-energy abort)
+ *   __sr.setSpeed(key)             press engine key 0..9
+ *   __sr.setShields(on)            raise or lower the shields
  */
 import type { Game, DebugSpawnType } from '../game/Game';
 import type { DifficultyLevel, ViewMode } from '../game/GameState';
@@ -56,6 +59,9 @@ export function installDebugHook(host: DebugHost): void {
     resume: () => api().resume(),
     hyperwarp: (x: number, y: number) => api().hyperwarp(x, y),
     dock: () => api().dock(),
+    setEnergy: (units: number) => api().setEnergy(units),
+    setSpeed: (key: number) => api().setSpeed(key),
+    setShields: (on: boolean) => api().setShields(on),
   };
 
   (window as unknown as { __sr: typeof sr }).__sr = sr;

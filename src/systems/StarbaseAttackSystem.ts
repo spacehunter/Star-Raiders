@@ -36,6 +36,9 @@ export class StarbaseAttackSystem {
   // Callback for broadcasting messages
   private onMessage: ((message: string, duration?: number) => void) | null = null;
 
+  // Callback when the Zylons destroy a starbase (rating -18, §14.1)
+  private onStarbaseDestroyed: (() => void) | null = null;
+
   constructor(sectorSystem: SectorSystem, difficulty: DifficultyLevel) {
     this.sectorSystem = sectorSystem;
     this.difficulty = difficulty;
@@ -46,6 +49,13 @@ export class StarbaseAttackSystem {
    */
   public setMessageCallback(callback: (message: string, duration?: number) => void): void {
     this.onMessage = callback;
+  }
+
+  /**
+   * Set the callback run when the Zylons destroy a starbase
+   */
+  public setStarbaseDestroyedCallback(callback: () => void): void {
+    this.onStarbaseDestroyed = callback;
   }
 
   /**
@@ -358,10 +368,11 @@ export class StarbaseAttackSystem {
 
       if (elapsed >= StarbaseAttackSystem.DESTRUCTION_TIME) {
         // Destroy the starbase
-        this.sectorSystem.destroyStarbase(
+        const wasDestroyed = this.sectorSystem.destroyStarbase(
           this.currentAttack.targetSector.x,
           this.currentAttack.targetSector.y
         );
+        if (wasDestroyed) this.onStarbaseDestroyed?.();
 
         this.broadcast(
           `STARBASE AT SECTOR ${this.currentAttack.targetSector.x + 1},${this.currentAttack.targetSector.y + 1} DESTROYED!`,
