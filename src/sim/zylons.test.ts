@@ -93,16 +93,13 @@ describe('ships and torpedo limits', () => {
     sim.spawn('fighter', { x: 0, y: 0, z: 4000 }, false);
     const fired = run(sim, 400, { sectorZylons: 1 }).filter((e) => e.type === 'zylonFired');
     expect(fired.length).toBeGreaterThan(1);
-    // Between two launches at least the torpedo's life passes.
+    // A launch never replaces a torpedo still in flight.
     const sim2 = new ZylonSim(createRng(11));
     sim2.spawn('fighter', { x: 0, y: 0, z: 4000 }, false);
-    let last = -1000;
     for (let i = 0; i < 400; i++) {
+      const flying = sim2.torpedoFlying;
       const ev = sim2.loop(input({ count256: i & 0xff, sectorZylons: 1 }));
-      if (ev.some((e) => e.type === 'zylonFired')) {
-        expect(i - last).toBeGreaterThanOrEqual(ZYLON_TORPEDO_LIFE);
-        last = i;
-      }
+      if (ev.some((e) => e.type === 'zylonFired')) expect(flying, `loop ${i}`).toBe(false);
     }
   });
 

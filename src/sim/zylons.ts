@@ -341,6 +341,9 @@ export class ZylonSim {
     const s = this.ships[slot];
     Object.assign(s, { alive: true, type, debug, x: pos.x, y: pos.y, z: pos.z });
     s.vel = { x: 0, y: 0, z: 0 };
+    // A placed ship starts with no sideways speed and heads in at full speed (indices 7, 7, 15).
+    s.velIndex = { x: 7, y: 7, z: 15 };
+    s.milestone = { x: 7, y: 7, z: 15 };
     s.milestoneTimer = 1;
     s.flightPattern = 0;
     return slot;
