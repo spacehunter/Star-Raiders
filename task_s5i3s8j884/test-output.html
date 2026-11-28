@@ -1,0 +1,54 @@
+<html><body style="background:#111;color:#ddd"><h3>Phase 9 tests: npm test + npm run build</h3><pre>
+ RUN  v5.1.2 /home/nova/harness-work/star-raiders/task_s5i3s8j884
+
+ ✓ src/render/scan.test.ts &gt; scan projection and scale (§10; R: GAMELOOP step 14, SCREENROW/SCREENCOLUMN) &gt; uses MAPTO80 of the coordinate high byte, negative values inverted like the ROM 1ms
+ ✓ src/render/scan.test.ts &gt; scan projection and scale (§10; R: GAMELOOP step 14, SCREENROW/SCREENCOLUMN) &gt; puts our position in the centre, ahead up and right to the right 0ms
+ ✓ src/render/scan.test.ts &gt; scan projection and scale (§10; R: GAMELOOP step 14, SCREENROW/SCREENCOLUMN) &gt; spans about ±40,000 KM ahead and behind (the manual&#x27;s top view) and ±65,000 KM across 0ms
+ ✓ src/render/scan.test.ts &gt; scan projection and scale (§10; R: GAMELOOP step 14, SCREENROW/SCREENCOLUMN) &gt; is linear: one pixel per ≈ 800 KM 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; draws our ship, five ROM lines in COLOR1 in the centre (R: DRAWLINESTAB lines 17–21) 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; draws targets and meteors as 2 × 2 squares (shape cell 6, rows doubled) in random colours 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; draws the starbase as its small cross icon, not a square 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; flashes: the colours change from loop to loop 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; leaves out objects beyond the scan 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; places the stars of an LRS starfield on the z-x plane, all on screen 1ms
+ ✓ src/render/scan.test.ts &gt; the scan rotates as you steer (§10 procedure, §17.13) &gt; stick left swings a target on the left round to straight ahead (top of the screen) 0ms
+ ✓ src/render/scan.test.ts &gt; the scan rotates as you steer (§10 procedure, §17.13) &gt; stick right turns the other way: the picture rotates around our ship 0ms
+ ✓ src/render/scan.test.ts &gt; the scan rotates as you steer (§10 procedure, §17.13) &gt; the stars rotate too 0ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; damaged: each object lands at its place or its mirror image through our ship, at random 2ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; damaged keeps Phase 7&#x27;s flip: BIT RANDOM bit 6 picks the half 0ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; OK: no mirror and no draws from the mirror stream 0ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; destroyed: only our ship, no stars, fragments or blips 0ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; computer destroyed: DRAWLINES returns at once, so not even our ship (objects still drawn) 0ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; scan and computer both destroyed: nothing at all 0ms
+
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+   Start at  22:26:07
+   Duration  117ms (transform 63%, import 21%, tests 13%, worker 3%)
+
+
+
+==== full suite + build ====
+
+ RUN  v5.1.2 /home/nova/harness-work/star-raiders/task_s5i3s8j884
+
+
+ Test Files  19 passed (19)
+      Tests  279 passed (279)
+   Start at  22:26:03
+   Duration  2.53s (tests 85%, transform 7%, import 6%, worker 1%)
+
+
+&gt; star-raiders-app@0.0.0 build
+&gt; tsc &amp;&amp; vite build
+
+vite v7.3.0 building client environment for production...
+transforming...
+✓ 43 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                  0.47 kB │ gzip:  0.31 kB
+dist/assets/index-BSqR9L10.css   0.26 kB │ gzip:  0.19 kB
+dist/assets/index-cKhcWzag.js   98.04 kB │ gzip: 31.10 kB
+✓ built in 221ms
+</pre></body></html>
