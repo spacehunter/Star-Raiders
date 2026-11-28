@@ -1,24 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { ROM_RGB } from './palette';
-import { backgroundColors, crosshairRects, FRAME_LINES, FRAME_W, frameRect } from './Renderer';
+import { backgroundColors, crosshairRects, FRAME_LINES, FRAME_W, frameRect, PANEL_LINES, PANEL_ROW_TOPS, SAFE_MARGIN } from './Renderer';
 
-// OVERHAUL_PLAN Phase 3 + Part 4 bend 2: 160 × 100 playfield at a crisp whole-number scale.
+// OVERHAUL_PLAN Phase 3/4 + Part 4 bends 2 and 4: 160 × 100 playfield and the 23-row panel band
+// at a crisp whole-number scale inside a safe margin.
 describe('frame scaling and letterboxing', () => {
-  it('is a 160-wide frame of 120 rows (playfield 100 + panel 20): exactly 4:3', () => {
+  it('is a 160-wide frame of 123 rows (playfield 100 + panel band 23)', () => {
     expect(FRAME_W).toBe(160);
-    expect(FRAME_LINES).toBe(120);
+    expect(FRAME_LINES).toBe(123);
+    expect(PANEL_LINES).toBe(23);
   });
 
-  it('fills a 4:3 screen and pillarboxes 16:9, always a whole-number scale', () => {
-    expect(frameRect(1024, 768)).toEqual({ x: 32, y: 24, w: 960, h: 720, k: 6 });
-    expect(frameRect(1920, 1080)).toEqual({ x: 240, y: 0, w: 1440, h: 1080, k: 9 });
-    expect(frameRect(1280, 720)).toEqual({ x: 160, y: 0, w: 960, h: 720, k: 6 });
-    for (const [w, h] of [[1920, 1080], [1024, 768], [2560, 1440], [800, 600], [1366, 768]]) {
+  it('panel rows sit like the manual HUD strip photo: 3 blank, 8, 1 blank, 8, 3 blank', () => {
+    expect(PANEL_ROW_TOPS).toEqual([3, 12]);
+    expect(PANEL_LINES - (PANEL_ROW_TOPS[1] + 8)).toBe(3);
+  });
+
+  it('scales by a whole number, centred, keeping a 2% safe margin', () => {
+    expect(SAFE_MARGIN).toBe(0.02);
+    expect(frameRect(1024, 768)).toEqual({ x: 32, y: 15, w: 960, h: 738, k: 6 });
+    expect(frameRect(1920, 1080)).toEqual({ x: 320, y: 48, w: 1280, h: 984, k: 8 });
+    expect(frameRect(1280, 800)).toEqual({ x: 160, y: 31, w: 960, h: 738, k: 6 });
+    for (const [w, h] of [[1920, 1080], [1024, 768], [2560, 1440], [800, 600], [1366, 768], [390, 844]]) {
       const r = frameRect(w, h);
+      const m = Math.round(SAFE_MARGIN * Math.min(w, h));
       expect(Number.isInteger(r.k)).toBe(true);
-      expect(r.w / r.h).toBeCloseTo(4 / 3, 6);
-      expect(r.w).toBeLessThanOrEqual(w);
-      expect(r.h).toBeLessThanOrEqual(h);
+      expect(r.w / r.h).toBeCloseTo(160 / 123, 6);
+      expect(r.x).toBeGreaterThanOrEqual(m);
+      expect(r.y).toBeGreaterThanOrEqual(m);
     }
   });
 });

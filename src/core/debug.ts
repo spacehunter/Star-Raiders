@@ -7,7 +7,8 @@
  *   __sr.state                     snapshot of the game state (null before a game starts)
  *   __sr.galaxy()                  all 16x8 sectors
  *   __sr.teleport({x, y}) / (x, y) jump to a sector at once (no hyperwarp, no energy cost)
- *   __sr.spawn('fighter'|'cruiser'|'basestar'|'starbase', distance?)  place one ahead of the ship
+ *   __sr.spawn('fighter'|'cruiser'|'basestar'|'starbase', distance?, x?, y?)  place one ahead of the ship
+ *                                  (x, y: sideways and vertical offset, in the same units as distance)
  *   __sr.setView('FRONT'|'AFT'|'GALACTIC_CHART'|'LONG_RANGE_SCAN')   switch view instantly
  *   __sr.step(n)                   stop the real-time loop and run n fixed 1/60 s frames
  *   __sr.resume()                  go back to the real-time loop
@@ -18,6 +19,9 @@
  *   __sr.setShields(on)            raise or lower the shields
  *   __sr.setDamage(sys, status)    sys photons|engines|shields|computer|sectorScan|radio,
  *                                  status ok|damaged|destroyed (DC letters, radio freeze)
+ *   __sr.damageReport(sys, status) damage a subsystem as a hit does: DAMAGE CONTROL on the title
+ *                                  line, then the queued subsystem phrase (repeats until docking)
+ *   __sr.setKills(n)               set the K readout (Zylons destroyed)
  *   __sr.moveCursor(x, y)          put the chart's hyperwarp destination dot on a sector
  *   __sr.surround()                move existing Zylon groups next to the hunted starbase so
  *                                  the next fleet move tick announces STARBASE SURROUNDED
@@ -69,7 +73,7 @@ export function installDebugHook(host: DebugHost): void {
         typeof sector === 'number' ? [sector, y ?? 0] : Array.isArray(sector) ? sector : [sector.x, sector.y];
       api().teleport(sx, sy);
     },
-    spawn: (type: DebugSpawnType, distance?: number) => api().spawn(type, distance),
+    spawn: (type: DebugSpawnType, distance?: number, x?: number, y?: number) => api().spawn(type, distance, x, y),
     setView: (view: ViewMode) => api().setView(view),
     step: (n = 1) => api().step(n),
     resume: () => api().resume(),
@@ -79,6 +83,8 @@ export function installDebugHook(host: DebugHost): void {
     setSpeed: (key: number) => api().setSpeed(key),
     setShields: (on: boolean) => api().setShields(on),
     setDamage: (system: Subsystem, status: SubsystemStatus) => api().setDamage(system, status),
+    damageReport: (system: Subsystem, status: 'damaged' | 'destroyed') => api().damageReport(system, status),
+    setKills: (n: number) => api().setKills(n),
     moveCursor: (x: number, y: number) => api().moveCursor(x, y),
     surround: () => api().surround(),
     toFleetTick: (n = 1) => api().toFleetTick(n),

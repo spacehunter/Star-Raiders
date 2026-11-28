@@ -5,6 +5,8 @@
  *   node scripts/capture.mjs [--seed 1979] [--out captures/seed-1979] [--difficulty NOVICE]
  *                            [--width 1280] [--height 800] [--url http://localhost:5173/]
  *                            [--query "stars=enhanced&crt=1"]   (extra URL parameters, e.g. settings)
+ *                            [--sequence title-line]   (instead of the shots: numbered frames of a
+ *                                                       timed sequence, e.g. for a GIF)
  *
  * Starts its own Vite dev server (unless --url is given), opens the game headless with
  * ?debug=1&seed=<seed>, freezes the page clock (Date, performance.now, timers and
@@ -13,7 +15,8 @@
  *
  *   01-title  02-front  02a-front-crosshair  02b-shields  02c-red-alert  03-aft  04-galactic-chart  04a-chart-surrounded
  *   04b-chart-surround-holding  04c-chart-starbase-destroyed  04d-chart-damage
- *   05-long-range-scan  06-attack-computer  07-hyperwarp  08-docking  09-zero-energy
+ *   05-long-range-scan  06-attack-computer  07-hyperwarp  08-docking  10-panel-hud  10a-panel-tracking-c
+ *   10b-panel-low-energy  10c-panel-shields-out  10d-panel-hyperspace  09-zero-energy (last: mission end)
  *
  * plus manifest.json with each file's SHA-256. Later phases reuse this script; add new
  * shots to SHOTS below rather than writing another harness.
@@ -27,7 +30,7 @@ import { chromium } from 'playwright';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function parseArgs(argv) {
-  const opts = { seed: 1979, difficulty: 'NOVICE', width: 1280, height: 800, out: null, url: null, query: '' };
+  const opts = { seed: 1979, difficulty: 'NOVICE', width: 1280, height: 800, out: null, url: null, query: '', sequence: null };
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i].replace(/^--/, '');
     if (!(key in opts)) throw new Error(`Unknown option --${key}`);
@@ -55,7 +58,8 @@ const SHOTS = [
     name: '02a-front-crosshair',
     run: async (sr) => sr(() => { window.__sr.press('COMPUTER'); window.__sr.step(70); }),
   },
-  { name: '02b-shields', run: async (sr) => sr(() => { window.__sr.setShields(true); window.__sr.step(2); }) },
+  // The ROM stores the shields colour every 4th loop (FLUSHGAMELOOP), so give it 4.
+  { name: '02b-shields', run: async (sr) => sr(() => { window.__sr.setShields(true); window.__sr.step(4); }) },
   {
     name: '02c-red-alert',
     run: async (sr) =>
@@ -142,12 +146,64 @@ const SHOTS = [
         window.__sr.step(50);
       }),
   },
+  // Phase 4 (MANUAL_SPEC §6, §17.2, §17.13): the control panel's readouts, letters and band colours.
+  {
+    name: '10-panel-hud',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.step(200); // let the docking finish
+        window.__sr.setView('FRONT');
+        window.__sr.killSector();
+        window.__sr.setSpeed(6);
+        window.__sr.spawn('fighter', 370, 400, -250); // ahead, right and below: θ, Φ, R all non-zero
+        window.__sr.setKills(18);
+        window.__sr.setEnergy(8260);
+        window.__sr.step(40); // V reaches 12
+      }),
+  },
+  {
+    name: '10a-panel-tracking-c',
+    run: async (sr) => sr(() => { window.__sr.press('TRACKING'); window.__sr.step(10); }), // T: becomes C:
+  },
+  {
+    name: '10b-panel-low-energy',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.setEnergy(900);
+        // Run to the pink half of the 128-loop flash.
+        for (let i = 0; i < 260 && window.__sr.state.panel.band !== '#C04848'; i++) window.__sr.step(1);
+        window.__sr.step(2);
+      }),
+  },
+  {
+    name: '10c-panel-shields-out',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.setEnergy(9999);
+        window.__sr.setDamage('shields', 'destroyed');
+        window.__sr.press('SHIELDS'); // switched on, but destroyed: space stays black, band orange
+        window.__sr.step(8);
+      }),
+  },
+  {
+    name: '10d-panel-hyperspace',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.press('SHIELDS');
+        window.__sr.setDamage('shields', 'ok');
+        window.__sr.step(2);
+        const s = window.__sr.state;
+        window.__sr.hyperwarp((s.sectorX + 2) % 16, s.sectorY);
+        window.__sr.step(160); // past the placeholder warp's midpoint: V ∞, HYPERSPACE
+      }),
+  },
   {
     // Phase 1: energy really runs out and aborts the mission (MANUAL_SPEC §12, §17.1, §17.10).
     name: '09-zero-energy',
     run: async (sr) =>
       sr(() => {
-        window.__sr.step(200); // let the docking finish
+        window.__sr.step(200); // let the hyperwarp finish
+        window.__sr.press('TRACKING');
         window.__sr.setView('FRONT');
         window.__sr.setEnergy(40);
         window.__sr.setShields(true);
@@ -156,6 +212,27 @@ const SHOTS = [
       }),
   },
 ];
+
+/**
+ * Timed sequences for --sequence <name>: `setup` runs once, then `frames` screenshots are taken
+ * `every` game loops apart; `at[i]` runs just before frame i.
+ */
+const SEQUENCES = {
+  // Phase 4 (MANUAL_SPEC §18.1, §17.3; R: UPDTITLE): one phrase segment at a time, 60 loops each.
+  'title-line': {
+    setup: (d) => {
+      window.__sr.start(d.difficulty, d.seed);
+      window.__sr.step(30);
+    },
+    frames: 90,
+    every: 5,
+    at: {
+      0: () => window.__sr.press('SHIELDS'), // SHIELDS ON, 60 loops
+      16: () => window.__sr.damageReport('photons', 'damaged'), // blank, DAMAGE CONTROL, then the queued phrase
+      84: () => window.__sr.redAlert(), // a long phrase replaces it at once
+    },
+  },
+};
 
 async function startServer() {
   const { createServer } = await import('vite');
@@ -208,6 +285,26 @@ async function main() {
     await page.evaluate(() => document.fonts.ready);
 
     const sr = (fn, arg) => page.evaluate(fn, arg);
+
+    if (opts.sequence) {
+      const seq = SEQUENCES[opts.sequence];
+      if (!seq) throw new Error(`Unknown sequence ${opts.sequence}`);
+      const dir = join(opts.out, `seq-${opts.sequence}`);
+      await mkdir(dir, { recursive: true });
+      await sr(seq.setup, { seed: opts.seed, difficulty: opts.difficulty });
+      const titles = [];
+      for (let i = 0; i < seq.frames; i++) {
+        if (seq.at[i]) await sr(seq.at[i]);
+        await sr(() => window.__sr.step(1));
+        await page.screenshot({ path: join(dir, `${String(i).padStart(3, '0')}.png`), animations: 'disabled', caret: 'hide' });
+        titles.push(await sr(() => window.__sr.state.title));
+        await sr((n) => window.__sr.step(n), seq.every - 1);
+      }
+      await writeFile(join(dir, 'titles.json'), JSON.stringify({ every: seq.every, titles }, null, 2) + '\n');
+      console.log(`Wrote ${seq.frames} frames to ${dir}`);
+      return;
+    }
+
     const manifest = { seed: opts.seed, difficulty: opts.difficulty, viewport: [opts.width, opts.height], shots: {} };
 
     for (const shot of SHOTS) {
