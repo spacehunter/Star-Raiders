@@ -1,0 +1,29 @@
+audio-demo.wav — every MANUAL_SPEC §17.12 sound in order, rendered offline (OfflineAudioContext, 44.1 kHz stereo) through PokeySynth
+
+  time    sound                 RMS L / R
+   0.20 s  engines v=1           0.0101 / 0.0101
+   0.65 s  engines v=2           0.0140 / 0.0140
+   1.10 s  engines v=4           0.0175 / 0.0175
+   1.55 s  engines v=8           0.0211 / 0.0211
+   2.00 s  engines v=16          0.0246 / 0.0246
+   2.45 s  engines v=32          0.0282 / 0.0282
+   2.90 s  engines v=64          0.0318 / 0.0318
+   3.35 s  engines v=96          0.0320 / 0.0320
+   3.80 s  engines v=112         0.0353 / 0.0353
+   4.25 s  engines v=254         0.0390 / 0.0390
+   5.05 s  engines v=0           0.0062 / 0.0062
+   5.65 s  photon                0.0504 / 0.0232
+   6.25 s  photon                0.0201 / 0.0437
+   7.05 s  zylonExplosion        0.0288 / 0.0515
+   8.25 s  shieldExplosion       0.0668 / 0.0668
+   9.65 s  starshipExplosion     0.0794 / 0.0794
+  11.15 s  hyperwarpTransit      0.0321 / 0.0321
+  12.85 s  redAlert              0.0598 / 0.0598
+  15.35 s  acknowledge           0.0241 / 0.0241
+  16.05 s  damageReport          0.0479 / 0.0479
+  17.15 s  starbaseMessage       0.0458 / 0.0458
+  18.35 s  redAlert              0.0648 / 0.0648
+  18.95 s  mute                  0.0000 / 0.0000
+
+Engines step through every speed key (VELOCITYTAB 1..112), hyperwarp 254, then 0 (silent).
+Photons: left barrel then right barrel (panned). The Zylon explosion is panned right. The last red alert is cut by mute at 18.95 s.
