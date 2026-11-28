@@ -17,7 +17,7 @@
  * centred, and pillarboxed on 16:9 screens, never stretched. The optional CRT filter darkens a
  * line between pixel rows; it is off by default.
  */
-import { drawText, GLYPH_COLUMNS } from './font';
+import { drawPanelText, drawText, GLYPH_COLUMNS } from './font';
 import { ROM_RGB, atariColor } from './palette';
 import { CENTER_COL, CENTER_ROW, PLAYFIELD_H, PLAYFIELD_W, projectPoint, type SpaceView } from './projection';
 import type { Star } from './starfield';
@@ -271,11 +271,12 @@ export class Renderer {
       let col = 0;
       for (const [text, color] of parts) {
         this.fctx.fillStyle = color;
-        drawText((x, y, w, h) => this.fctx.fillRect(x, y, w, h), text, col, top, 1);
+        drawPanelText((x, y, w, h) => this.fctx.fillRect(x, y, w, h), text, col, top);
         col += text.length * GLYPH_COLUMNS;
       }
     };
-    line(row1, PANEL_TOP + 2);
+    // R: panel display list — 1 blank line, text row, gap, text row (8 rows each in the ROM font).
+    line(row1, PANEL_TOP + 1);
     line(row2, PANEL_TOP + 11);
   }
 

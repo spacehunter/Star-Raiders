@@ -56,3 +56,13 @@ describe('background: shields tint and red-alert flash', () => {
     expect(backgroundColors({ shields: false, redAlertLife: 0x20 }).pf2).toBe(ROM_RGB.$60);
   });
 });
+
+// MANUAL_SPEC §6, §17.2; R: CHARSET L2683 — the panel is drawn in the ROM's own characters.
+describe('panel font', () => {
+  it('has every character the panel prints, 8 × 8, byte-exact from the ROM', async () => {
+    const { ROM_PANEL_FONT } = await import('./font');
+    for (const ch of 'V:0123456789 KET+-θΦR∞C') expect(ROM_PANEL_FONT[ch], ch).toHaveLength(8);
+    expect(ROM_PANEL_FONT['0']).toEqual([0x00, 0x7f, 0x47, 0x47, 0x47, 0x47, 0x47, 0x7f]);
+    expect(ROM_PANEL_FONT['θ']).toEqual([0x00, 0x1c, 0x3e, 0x63, 0x5d, 0x63, 0x3e, 0x1c]);
+  });
+});
