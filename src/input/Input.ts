@@ -26,6 +26,8 @@ export type Action =
   | 'TRACKING'
   | 'MANUAL_TARGET'
   | 'PAUSE'
+  | 'ABORT'
+  | 'UNKNOWN'
   | 'FIRE'
   | 'STICK_LEFT'
   | 'STICK_RIGHT'
@@ -101,8 +103,28 @@ export function actionForKey(code: string, s: Pick<Settings, 'wasd'>): Action | 
     case 'KeyM':
       return 'MANUAL_TARGET';
     case 'KeyP':
+    case 'Escape':
+      // §5.11 P; bend 7: Esc opens the same pause menu.
       return 'PAUSE';
+    case 'KeyX':
+      // Bend 7: X in the pause menu aborts the mission (the 800's Atari key, §3). Outside the
+      // menu Game treats it like any other unknown key.
+      return 'ABORT';
   }
+  return null;
+}
+
+/**
+ * The action of one key press including the ROM's catch-all: a character key the game does not
+ * use is 'UNKNOWN' (title line `WHATS WRONG?`, §17.11). Modifier, function, Tab and Enter keys
+ * give null: they are not keys of the 800's keyboard matrix the ROM would complain about.
+ */
+export function keyAction(code: string, key: string, s: Pick<Settings, 'wasd'>): Action | null {
+  const action = actionForKey(code, s);
+  if (action) return action;
+  if (stickDirForKey(code, s)) return null;
+  const charKey = /^(?:Key[A-Z]|Digit[0-9]|Numpad[0-9]|Minus|Equal|Bracket(?:Left|Right)|Backslash|Semicolon|Quote|Comma|Period|Slash|Backquote|IntlBackslash|NumpadAdd|NumpadSubtract|NumpadMultiply|NumpadDivide|NumpadDecimal)$/;
+  if (charKey.test(code) || (key.length === 1 && key !== ' ')) return 'UNKNOWN';
   return null;
 }
 
@@ -184,7 +206,7 @@ export class Input {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const s = getSettings();
     const dir = stickDirForKey(e.code, s);
-    const action = actionForKey(e.code, s);
+    const action = keyAction(e.code, e.key ?? '', s);
     if (dir || action === 'FIRE') e.preventDefault();
     if (dir) {
       this.held.add(dir);

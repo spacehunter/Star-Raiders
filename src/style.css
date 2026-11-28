@@ -29,3 +29,82 @@ canvas {
   width: 100vw;
   height: 100vh;
 }
+
+/* Phase 11 overlays: pixel-font canvases (src/ui/pixelText.ts) on Atari colours. */
+.pixel-text {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.overlay[hidden],
+.attract-console[hidden] {
+  display: none;
+}
+
+.overlay-card {
+  pointer-events: auto;
+  background: rgba(10, 18, 60, 0.92);
+  border: 3px solid #1c3c9c;
+  box-shadow: 0 0 0 2px #000, 0 0 24px rgba(60, 168, 132, 0.35);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.overlay-buttons,
+.console-row,
+.console-options {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.pixel-btn {
+  background: #1c3c9c;
+  border: 2px solid #3ca884;
+  padding: 8px 14px;
+  min-height: 44px; /* a comfortable touch target */
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pixel-btn:hover,
+.pixel-btn:active {
+  background: #2a52c4;
+  border-color: #c8ffe8;
+}
+
+.attract-console {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.console-options .pixel-btn {
+  background: transparent;
+  border-color: #1c3c9c;
+  padding: 4px 8px;
+  min-height: 32px;
+}

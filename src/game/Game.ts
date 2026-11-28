@@ -8,7 +8,7 @@ import { createRng, getSeed, random } from '../core/rng';
 import { getSettings, onSettingsChange, updateSettings, type Settings } from '../core/settings';
 import { SimClock, type LoopEvents } from '../core/clock';
 import { EnergySim } from '../sim/energy';
-import { MissionScore, rateMission, type MissionRating } from '../sim/rating';
+import { MissionScore, rateMission } from '../sim/rating';
 import { approachVelocity, STICK_CENTERED, type Stick } from '../sim/motion';
 import { Docking, inOrbitPosition, type DockEvent } from '../sim/docking';
 import type { MissionOutcome } from '../rules/rating';
@@ -17,7 +17,7 @@ import { WARP_NEW_VELOCITY } from '../sim/hyperwarp';
 import { Hyperwarp, type WarpEvent } from '../sim/hyperwarp';
 import { type Subsystem, type SubsystemStatus } from '../rules/damage';
 import { DamageControl, STATUS_BITS, computerFunctions, computerReadoutsLive, engineKeyFor, jitterVelocity, scanState } from '../sim/damage';
-import { MSG, PHRASE, endOfMissionPhrase } from '../rules/messages';
+import { MSG, PHRASE } from '../rules/messages';
 import { Galaxy, RadioFeed, GALAXY_COLUMNS, GALAXY_ROWS, type GalaxyEvent, type SectorPos } from '../sim/galaxy';
 import { Renderer, type SpaceFrame, type SpaceObject } from '../render/Renderer';
 import { buildScan, type ScanObject, type ScanPicture } from '../render/scan';
@@ -25,6 +25,10 @@ import { resolveShipHit, VICINITY_MASK_TABLE, ZylonSim, type SimView, type Zylon
 import { AttackComputer, trackingView, type AttackDisplay, type TrackedObject } from '../sim/attackComputer';
 import { CLASSIC_STARS, ENHANCED_STARS, Starfield, type StarView } from '../render/starfield';
 import type { SpaceView } from '../render/projection';
+import { IdleTimer, PauseControl, attractPhrase, endSequencePhrase } from '../sim/session';
+import { buildDebrief, type Debrief } from '../sim/debrief';
+import { PauseOverlay } from '../ui/PauseOverlay';
+import type { MissionLevel } from '../rules/levels';
 
 export type DebugSpawnType = ZylonType | 'starbase';
 
@@ -61,9 +65,31 @@ export interface GameDebugApi {
   zylons(): Record<string, unknown>;
   attack(): Record<string, unknown>;
   meteor(x: number, y: number, z: number): void;
+  setIdle(loops: number): void;
+  pause(): void;
+  abort(): void;
 }
 
-type GameOverCallback = (rating: MissionRating) => void;
+/**
+ * What the Game is doing (MANUAL_SPEC §17.10, §17.11):
+ *   attract  the demo flight with the attract title (no panel)
+ *   mission  a mission under way
+ *   ending   the mission is over; the end sequence plays on the title line over the demo flight
+ *   over     the end sequence has finished; the demo flight goes on under the debrief card
+ */
+export type GamePhase = 'attract' | 'mission' | 'ending' | 'over';
+
+export interface GameOptions {
+  /** 'attract' starts the demo flight; 'mission' (default) a mission. */
+  mode?: 'attract' | 'mission';
+  /** The end sequence has played: the rating and the debrief card's breakdown (bend 6). */
+  onEndSequence?: (debrief: Debrief) => void;
+  /** 9 idle minutes: the mission is aborted to the attract mode (§3, §17.11). */
+  onIdle?: () => void;
+}
+
+/** §17.11: the demo flight cruises at speed key 6. */
+const DEMO_SPEED_KEY = 6;
 
 /** Loops the background flashes random colours after a hit with shields up (§17.13). */
 const HIT_FLASH_LOOPS = 16;
@@ -131,8 +157,21 @@ export class Game {
 
   // State
   private gameTime: number = 0;
-  private gameOverCallback: GameOverCallback | null;
-  private hasTriggeredGameOver: boolean = false;
+  private readonly options: GameOptions;
+  private phase: GamePhase;
+  /** P — pause (§5.11, bend 7). */
+  private readonly pause = new PauseControl();
+  private readonly pauseOverlay: PauseOverlay;
+  /** §3 / §17.11: 32768 idle loops abort the mission to the attract mode. */
+  private readonly idle = new IdleTimer();
+  private debrief: Debrief | null = null;
+  /**
+   * The demo flight's autopilot (bend: the ROM's demo flies straight; here it banks now and then
+   * so the attract screen looks alive). Its own seeded stream, so it never shifts the game's.
+   */
+  private readonly demoRng = createRng(getSeed() ^ 0xde70);
+  private demoStick: Stick = STICK_CENTERED;
+  private demoStickLoops = 240;
 
   /** Hyperwarp: chart positions, phases, the target marker and the landing (sim/hyperwarp.ts, §9, §17.5). */
   private hyperwarp = new Hyperwarp();
@@ -140,12 +179,9 @@ export class Game {
   /** Docking: orbit, transfer vessel, TRANSFER COMPLETE or DOCKING ABORTED (sim/docking.ts, §13, §17.9). */
   private docking = new Docking();
 
-  constructor(
-    container: HTMLElement,
-    difficulty: DifficultyLevel = DifficultyLevel.NOVICE,
-    onGameOver?: GameOverCallback
-  ) {
-    this.gameOverCallback = onGameOver || null;
+  constructor(container: HTMLElement, difficulty: DifficultyLevel = DifficultyLevel.NOVICE, options: GameOptions = {}) {
+    this.options = options;
+    this.phase = options.mode === 'attract' ? 'attract' : 'mission';
 
     this.gameState = new GameState();
     this.gameState.reset(difficulty);
@@ -193,11 +229,16 @@ export class Game {
       },
     });
     this.galacticChart = new GalacticChart(container);
+    this.pauseOverlay = new PauseOverlay(container, {
+      resume: () => this.resumeFromMenu(),
+      abort: () => this.abortFromMenu(),
+    });
 
     // §17.1: a game starts at speed key 6.
     this.shipVelocity = VELOCITY_TAB[this.gameState.targetEngineSpeed];
 
-    this.spawnSectorContents();
+    if (this.phase === 'attract') this.showAttract(difficulty);
+    else this.spawnSectorContents();
 
     this.gameLoop.setUpdateCallback(this.update);
     this.gameLoop.setRenderCallback(this.render);
@@ -258,24 +299,42 @@ export class Game {
    * Update game state (called each frame)
    */
   private update = (deltaTime: number): void => {
-    if (this.gameState.isGameOver) {
-      if (!this.hasTriggeredGameOver) {
-        this.triggerGameOver();
-      }
+    // Edge-triggered keys: every press since the last frame, in order (no lost taps).
+    const actions = this.input.drain();
+
+    if (this.phase !== 'mission') {
+      // Attract mode and the end of the mission: the demo flight; the keys belong to the console.
+      this.clock.advance(deltaTime, this.demoLoop);
+      return;
+    }
+
+    // §3 / §17.11: a control key (or a photon, which is the FIRE key) resets the idle timer.
+    // The timer runs while paused too, so a game left paused also returns to the attract mode.
+    if (actions.length) this.idle.reset();
+    if (this.idle.advance(deltaTime)) {
+      this.leaveForIdle();
+      return;
+    }
+
+    if (this.pause.paused) {
+      const stick = this.debugStick ?? this.input.readStick();
+      const r = this.pause.update(actions, stick);
+      if (r) this.pauseOverlay.hide();
+      if (r === 'abort') this.endMission('aborted');
       return;
     }
 
     this.gameTime += deltaTime;
 
-    // Edge-triggered keys: every press since the last frame, in order (no lost taps).
-    const actions = this.input.drain();
-
     // Fixed-timestep rules: energy, star date, fleets, turning and flying (60 loops/s)
     this.clock.advance(deltaTime, this.simLoop);
-    if (this.gameState.isGameOver) return;
+    if (this.phase !== 'mission') return;
 
-    for (const action of actions) this.handleAction(action);
-    if (this.gameState.isGameOver) return;
+    for (const action of actions) {
+      this.handleAction(action);
+      // P stops the mission at once: later keys of the same frame are dropped.
+      if (this.phase !== 'mission' || this.pause.paused) return;
+    }
 
     this.gameState.isUnderAttack = this.zylons.torpedoFlying;
 
@@ -288,13 +347,14 @@ export class Game {
    * One fixed 1/60 s simulation loop (MANUAL_SPEC §12, §17.1, §17.4, §17.10, §17.13).
    */
   private simLoop = (events: LoopEvents): void => {
-    if (this.gameState.isGameOver) return;
+    if (this.phase !== 'mission') return;
     this.energy.loop({
       engineKey: this.gameState.targetEngineSpeed,
       shields: this.gameState.shieldsActive,
       computer: this.gameState.attackComputerOn,
       hyperwarp: this.hyperwarp.phase === 'accel', // CLEANUPWARP clears the engine drain in hyperspace
     });
+    if (this.phase !== 'mission') return; // zero energy ended the mission
     this.radioFeed.sync(this.gameState.damage.radio);
     if (events.fleetMoveTick) {
       this.missionScore.fleetMoveTick();
@@ -302,7 +362,7 @@ export class Game {
       this.handleGalaxyEvents(this.galaxy.moveTick(player, this.clock.starDateTicks));
     }
     this.flyLoop();
-    if (this.gameState.isGameOver) return;
+    if (this.phase !== 'mission') return;
     // R: UPDPANEL, UPDTITLE, FLUSHGAMELOOP — readouts, title line, band and shields colours.
     this.controlPanel.loop(this.trackedPosition());
     this.gameState.starDate = this.clock.starDate;
@@ -348,7 +408,10 @@ export class Game {
       computer: this.computerWorking(),
       photonStatus: this.gameState.damage.photons,
     });
-    for (const e of events) this.zylonEvent(e);
+    for (const e of events) {
+      this.zylonEvent(e);
+      if (this.phase !== 'mission') return; // our ship was destroyed
+    }
     this.computerLoop();
     this.dockingLoop(stick);
 
@@ -598,12 +661,142 @@ export class Game {
     if (this.gameState.missionOutcome) return;
     this.gameState.score = this.missionScore.score;
     this.gameState.missionOutcome = outcome;
-    this.gameState.rating = rateMission(this.gameState.difficulty, outcome, this.missionScore.score);
+    const rating = rateMission(this.gameState.difficulty, outcome, this.missionScore.score);
+    this.gameState.rating = rating;
     this.gameState.isVictory = outcome === 'complete';
     this.gameState.isGameOver = true;
-    // R: GAMEOVER clears the title line and enqueues the end sequence, which then repeats.
+    this.debrief = buildDebrief({
+      rating,
+      score: this.missionScore,
+      energyUnits: this.energy.unitsUsed,
+      starDate: this.clock.starDate,
+    });
+    // R: GAMEOVER — the game drops into the demo flight (front view, no panel) and the end
+    // sequence plays on the title line, one segment at a time. The ROM then repeats it; here it
+    // plays once and the debrief card follows (bend 6).
+    this.phase = 'ending';
+    this.pause.resume();
+    this.pauseOverlay.hide();
+    this.enterDemoFlight();
     this.controlPanel.title.clear();
-    this.controlPanel.enqueueTitle(endOfMissionPhrase(outcome, this.gameState.rating.messages));
+    this.controlPanel.setTitle(endSequencePhrase(outcome, rating.messages));
+  }
+
+  /** The front view, an empty sector, no hyperwarp, no panel: the ship just cruises (§17.11). */
+  private enterDemoFlight(): void {
+    this.switchView(ViewMode.FRONT);
+    this.galacticChart.hide();
+    this.clearSectorContents();
+    this.hyperwarp = new Hyperwarp();
+    this.starfield.clearTrails();
+    this.redAlertLife = 0;
+    this.hitFlash = 0;
+    this.attackComputer.reset();
+    this.gameState.attackComputerOn = false;
+    this.gameState.shieldsActive = false;
+    this.gameState.targetEngineSpeed = DEMO_SPEED_KEY;
+    this.debugStick = null;
+  }
+
+  /** Attract mode: the demo flight with `<LEVEL> MISSION` / `STAR RAIDERS` / `COPYRIGHT ATARI 1979` (§17.11). */
+  public showAttract(level: MissionLevel): void {
+    if (this.phase === 'mission') return;
+    this.enterDemoFlight();
+    this.phase = 'attract';
+    this.gameState.difficulty = level;
+    // Shown now, and queued so it comes back whenever the line goes blank (R: NEWTITLEPHR).
+    this.controlPanel.title.clear();
+    this.controlPanel.setTitle(attractPhrase(level));
+    this.controlPanel.enqueueTitle(attractPhrase(level));
+  }
+
+  /** Skip the rest of the end sequence (Enter / Space / Esc). */
+  public skipEndSequence(): void {
+    if (this.phase === 'ending') this.finishEndSequence();
+  }
+
+  private finishEndSequence(): void {
+    this.phase = 'over';
+    this.controlPanel.title.clear();
+    if (this.debrief) this.options.onEndSequence?.(this.debrief);
+  }
+
+  /** The demo flight: no fleets, no energy, no Zylons; the stars stream by at speed 6. */
+  private demoLoop = (): void => {
+    const target = VELOCITY_TAB[this.gameState.targetEngineSpeed];
+    this.shipVelocity = approachVelocity(this.shipVelocity, target);
+    this.gameState.engineSpeed = keyForVelocity(this.shipVelocity);
+    const stick = this.debugStick ?? this.autopilot();
+    this.stick = stick;
+    // "Only a starfield will be displayed" (§3): no Zylons, meteors or starbase.
+    this.starfield.loop(stick, this.shipVelocity, this.starView(), this.clock.loops & 7);
+    this.controlPanel.title.loop();
+    if (this.phase === 'ending' && this.controlPanel.title.current === null) this.finishEndSequence();
+  };
+
+  /** Bend: the demo ship cruises straight for 4–10 s, then banks or climbs gently for ½–1½ s. */
+  private autopilot(): Stick {
+    if (--this.demoStickLoops <= 0) {
+      const r = () => this.demoRng();
+      if (this.demoStick.x || this.demoStick.y) {
+        this.demoStick = STICK_CENTERED;
+        this.demoStickLoops = 240 + Math.floor(r() * 360);
+      } else {
+        const dir = Math.floor(r() * 6);
+        // Mostly turns; now and then a climb or a dive.
+        this.demoStick = [
+          { x: -1, y: 0 },
+          { x: 1, y: 0 },
+          { x: -1, y: 0 },
+          { x: 1, y: 0 },
+          { x: 0, y: -1 },
+          { x: 0, y: 1 },
+        ][dir] as Stick;
+        this.demoStickLoops = 30 + Math.floor(r() * 60);
+      }
+    }
+    return this.demoStick;
+  }
+
+  /** §3 / §17.11: nine idle minutes abort the mission and go to the attract mode, with no rating. */
+  private leaveForIdle(): void {
+    this.pause.resume();
+    this.pauseOverlay.hide();
+    this.gameState.missionOutcome = 'aborted';
+    this.gameState.isGameOver = true;
+    this.phase = 'attract';
+    this.enterDemoFlight();
+    this.showAttract(this.gameState.difficulty);
+    this.options.onIdle?.();
+  }
+
+  /** P (§5.11): stop the mission until the stick moves or a key is pressed; bend 7 shows key help. */
+  private pauseMission(): void {
+    this.pause.pause(this.debugStick ?? this.input.readStick());
+    this.pauseOverlay.show();
+  }
+
+  private resumeFromMenu(): void {
+    if (!this.pause.paused) return;
+    this.pause.resume();
+    this.pauseOverlay.hide();
+    this.idle.reset();
+  }
+
+  private abortFromMenu(): void {
+    if (!this.pause.paused) return;
+    this.pause.resume();
+    this.pauseOverlay.hide();
+    this.endMission('aborted');
+  }
+
+  /** What the Game is doing now. */
+  public get currentPhase(): GamePhase {
+    return this.phase;
+  }
+
+  public get isPaused(): boolean {
+    return this.pause.paused;
   }
 
   /**
@@ -691,20 +884,9 @@ export class Game {
     this.renderChart();
   }
 
-  private triggerGameOver(): void {
-    this.hasTriggeredGameOver = true;
-    this.galacticChart.hide();
-    this.gameLoop.stop();
-    this.render();
-
-    if (this.gameOverCallback && this.gameState.rating) {
-      this.gameOverCallback(this.gameState.rating);
-    }
-  }
-
   private checkGameState(): void {
     // Mission complete: all Zylons destroyed (§1, §17.10)
-    if (this.galaxy.zylonsLeft <= 0) this.endMission('complete');
+    if (this.phase === 'mission' && this.galaxy.zylonsLeft <= 0) this.endMission('complete');
     // Losing every starbase does not end the game (§17.4). Zero energy ends it from sim/energy.ts.
   }
 
@@ -806,7 +988,7 @@ export class Game {
     // are the stick there, which does not turn the ship). The key does its usual job first, so
     // DOCKING ABORTED is the message left on the title line.
     const chartStick = view === ViewMode.GALACTIC_CHART && action.startsWith('STICK_');
-    const aborts = this.docking.active && action !== 'CHART' && !chartStick;
+    const aborts = this.docking.active && action !== 'CHART' && action !== 'PAUSE' && !chartStick;
     if (!aborts && action === 'SPEED_0') this.docking.retry(); // "retrace the steps": 0 again may dock again
     this.doAction(action, view);
     if (aborts) for (const e of this.docking.interrupt()) this.dockEvent(e);
@@ -871,7 +1053,14 @@ export class Game {
         this.zylons.toggleTarget();
         return;
       case 'PAUSE':
-        return; // Phase 11
+        // §5.11: works at any time, hyperwarp included.
+        this.pauseMission();
+        return;
+      case 'ABORT': // only from the pause menu; otherwise an unknown key
+      case 'UNKNOWN':
+        // §17.11: a key the game does not use.
+        this.controlPanel.setTitle(PHRASE.WHATS_WRONG);
+        return;
     }
   }
 
@@ -943,11 +1132,12 @@ export class Game {
       count256: this.controlPanel.colors.count256,
       crosshair: this.crosshairShown(),
       attackComputer: this.attackDisplay(),
-      shields: this.controlPanel.colors.shieldsUp,
+      shields: this.phase === 'mission' && this.controlPanel.colors.shieldsUp, // the demo flight has no shields
       redAlertLife: this.redAlertLife,
       hitFlash: this.hitFlash,
       title: this.controlPanel.titleText(),
-      panel: this.panelData(),
+      // §17.11: the demo flight (attract mode and the end sequence) has no control panel.
+      panel: this.phase === 'mission' ? this.panelData() : null,
     };
   }
 
@@ -1000,6 +1190,10 @@ export class Game {
         chartTitle: this.galacticChart.visible ? this.controlPanel.titleText().trim() || MSG.GALACTIC_CHART : null,
         chartRenders: this.galacticChart.renders,
         manualStepping: !this.gameLoop.running,
+        phase: this.phase,
+        paused: this.pause.paused,
+        idleLoops: this.idle.loops,
+        debrief: this.debrief ? { lines: this.debrief.lines, total: this.debrief.total } : null,
         shipVelocity: this.shipVelocity,
         stick: this.stick,
         redAlertLife: this.redAlertLife,
@@ -1228,6 +1422,16 @@ export class Game {
           target: this.trackedObject(),
         };
       },
+      setIdle: (loops: number) => {
+        this.idle.reset();
+        this.idle.loops = Math.max(0, Math.floor(loops));
+      },
+      pause: () => {
+        if (this.phase === 'mission' && !this.pause.paused) this.pauseMission();
+      },
+      abort: () => {
+        if (this.phase === 'mission') this.endMission('aborted');
+      },
       meteor: (x: number, y: number, z: number) => {
         const p = this.zylons.pl2;
         Object.assign(p, { kind: 'meteor', life: 60, x, y, z, vel: { x: 0, y: 0, z: -8 } });
@@ -1262,6 +1466,8 @@ export class Game {
     this.input.dispose();
     this.controlPanel.dispose();
     this.galacticChart.dispose();
+    this.pauseOverlay.dispose();
+    this.soundManager.dispose();
     this.renderer.dispose();
     this.zylons.clear();
   }

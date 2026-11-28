@@ -130,7 +130,8 @@ export interface SpaceFrame {
   hitFlash: number;
   /** Text on the front view's title line, or empty. (The aft view always shows AFT VIEW.) */
   title: string;
-  panel: PanelData;
+  /** The control panel, or null in the demo flight (attract mode, end sequence): a black band (§17.11). */
+  panel: PanelData | null;
 }
 
 /**
@@ -384,7 +385,11 @@ export class Renderer {
    * coloured per PANELTXTTAB (K field pink, E field yellow, Φ and R labels pink/yellow, the rest
    * mint). The band is $90, flashing $44 on low energy and $26 with the shields out.
    */
-  private drawPanel(p: PanelData): void {
+  private drawPanel(p: PanelData | null): void {
+    if (!p) {
+      this.rect(0, PANEL_TOP, FRAME_W, PANEL_LINES, ROM_RGB.$00);
+      return;
+    }
     this.rect(0, PANEL_TOP, FRAME_W, PANEL_LINES, p.band);
     const row1: Array<[string, string]> = [
       [`V:${p.v} `, ROM_RGB.$B8],

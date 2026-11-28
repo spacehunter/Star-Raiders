@@ -28,7 +28,8 @@ function freshSeed(): number {
   return (Date.now() ^ 0x9e3779b9) >>> 0;
 }
 
-function seedFromUrl(): number | null {
+/** The `?seed=<n>` of the URL, or null. */
+export function seedFromUrl(): number | null {
   const loc = (globalThis as { location?: Location }).location;
   if (!loc) return null;
   const raw = new URLSearchParams(loc.search).get('seed');

@@ -15,3 +15,9 @@ export const FLEET_MOVE_INTERVAL_TICKS = 50;
 
 /** Star date wraps after 99.99. */
 export const STAR_DATE_MODULO = 10000;
+
+/**
+ * §3 / §17.11: after about 9.1 minutes with no control key pressed and no photon fired the game
+ * aborts to the attract mode. The ROM's idle counter runs 32768 loops (32768 / 60 s ≈ 9.1 min).
+ */
+export const IDLE_LOOPS = 32768;
