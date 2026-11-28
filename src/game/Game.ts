@@ -2,16 +2,15 @@ import { GameLoop } from './GameLoop';
 import { GameState, ViewMode, DifficultyLevel } from './GameState';
 import { Input, type Action } from '../input/Input';
 import { SoundManager } from '../audio/SoundManager';
-import { Starbase } from '../entities/Starbase';
 import { ControlPanel, type TrackedPosition } from '../ui/ControlPanel';
 import { GalacticChart } from '../views/GalacticChart';
 import { createRng, getSeed, random } from '../core/rng';
-import { Vec3 } from '../core/vec3';
 import { getSettings, onSettingsChange, updateSettings, type Settings } from '../core/settings';
 import { SimClock, type LoopEvents } from '../core/clock';
 import { EnergySim } from '../sim/energy';
 import { MissionScore, rateMission, type MissionRating } from '../sim/rating';
-import { approachVelocity, KM_PER_UNIT, moveInShipFrame, STICK_CENTERED, type Stick } from '../sim/motion';
+import { approachVelocity, STICK_CENTERED, type Stick } from '../sim/motion';
+import { Docking, inOrbitPosition, type DockEvent } from '../sim/docking';
 import type { MissionOutcome } from '../rules/rating';
 import { VELOCITY_TAB } from '../rules/speed';
 import { WARP_NEW_VELOCITY } from '../sim/hyperwarp';
@@ -40,6 +39,7 @@ export interface GameDebugApi {
   hyperwarp(x: number, y: number): void;
   warp(): Record<string, unknown>;
   dock(): void;
+  starbase(): Record<string, unknown>;
   setEnergy(units: number): void;
   setSpeed(key: number): void;
   setShields(on: boolean): void;
@@ -118,9 +118,6 @@ export class Game {
   private scanPicture: ScanPicture | null = null;
   private readonly scanRng = createRng(getSeed() ^ 0x15c4);
 
-  // Space objects
-  private currentStarbase: Starbase | null = null;
-
   // Flight
   /** Ship velocity in KM per game loop (§17.1 VELOCITYTAB), stepping toward the key's value. */
   private shipVelocity = 0;
@@ -140,10 +137,8 @@ export class Game {
   /** Hyperwarp: chart positions, phases, the target marker and the landing (sim/hyperwarp.ts, §9, §17.5). */
   private hyperwarp = new Hyperwarp();
 
-  // Docking state
-  private isDocking: boolean = false;
-  private dockingProgress: number = 0;
-  private dockingCooldown: number = 0; // Prevent re-docking spam
+  /** Docking: orbit, transfer vessel, TRANSFER COMPLETE or DOCKING ABORTED (sim/docking.ts, §13, §17.9). */
+  private docking = new Docking();
 
   constructor(
     container: HTMLElement,
@@ -233,27 +228,22 @@ export class Game {
   }
 
   /**
-   * Spawn enemies and starbase for current sector
+   * A sector's contents on arrival. Zylon ships enter one at a time from the sector's count
+   * (sim/zylons.ts, §17.8); a starbase sector gets its starbase, placed like a Zylon ship
+   * (≥ 28928 KM ahead, x and y within the vicinity mask) and no Zylons or meteors (§17.8, §17.9).
    */
   private spawnSectorContents(): void {
     const { sectorX: x, sectorY: y } = this.gameState;
-    // Zylon ships enter one at a time from the sector's count (sim/zylons.ts, §17.8).
-    this.zylons.clear();
+    this.clearSectorContents();
     // R: CLEANUPWARP clears TRACKDIGIT; a starbase sector sets T=2 again every loop.
     if (this.zylons.trackDigit >= 2) this.zylons.trackDigit = 0;
-
-    if (this.galaxy.hasStarbase(x, y)) {
-      const starbasePos = new Vec3((random() - 0.5) * 100, (random() - 0.5) * 30, 100 - random() * 50);
-      this.currentStarbase = new Starbase(starbasePos);
-    }
+    if (this.galaxy.hasStarbase(x, y)) this.zylons.placeStarbase();
   }
 
-  /**
-   * Clear sector contents
-   */
+  /** Empty the sector: ships, shots, the starbase and the transfer vessel; no docking. */
   private clearSectorContents(): void {
     this.zylons.clear();
-    this.currentStarbase = null;
+    this.docking.reset();
   }
 
   public start(): void {
@@ -284,18 +274,9 @@ export class Game {
     this.clock.advance(deltaTime, this.simLoop);
     if (this.gameState.isGameOver) return;
 
-    if (this.isDocking) {
-      this.updateDocking(deltaTime);
-      return;
-    }
-
     for (const action of actions) this.handleAction(action);
     if (this.gameState.isGameOver) return;
 
-    if (this.currentStarbase) {
-      this.currentStarbase.update(deltaTime);
-      this.checkDocking();
-    }
     this.gameState.isUnderAttack = this.zylons.torpedoFlying;
 
     this.renderChart();
@@ -347,12 +328,9 @@ export class Game {
 
     // The ROM does not rotate in the Galactic Chart view. In hyperwarp the turn moves the
     // target marker like every other space object: that is how the pilot steers it (§9).
-    const turn: Stick = view === ViewMode.GALACTIC_CHART || this.isDocking ? STICK_CENTERED : stick;
+    const turn: Stick = view === ViewMode.GALACTIC_CHART ? STICK_CENTERED : stick;
     // R: INITTRAIL's VELOCITYHI adds 256 KM/loop while the star trails run.
     const flyVelocity = this.shipVelocity + this.hyperwarp.velocityBoost;
-    const dzUnits = flyVelocity / KM_PER_UNIT;
-    if (this.currentStarbase) moveInShipFrame(this.currentStarbase.getObject().position, turn, dzUnits);
-    this.wrapSectorObjects();
 
     this.starfield.loop(turn, flyVelocity, this.starView(), this.clock.loops & 7);
 
@@ -372,6 +350,7 @@ export class Game {
     });
     for (const e of events) this.zylonEvent(e);
     this.computerLoop();
+    this.dockingLoop(stick);
 
     // GAMELOOP step 30: HYPERWARP.
     const warpEvents = this.hyperwarp.loop({
@@ -402,7 +381,7 @@ export class Game {
    */
   private computerLoop(): void {
     if (this.hyperwarp.markerShown) this.zylons.trackDigit = 3;
-    if (this.currentStarbase) this.zylons.trackDigit = 2;
+    if (this.zylons.starbase.alive) this.zylons.trackDigit = 2;
     if (!this.computerWorking()) return;
     const view = this.gameState.currentView;
     const target = this.trackedObject();
@@ -420,9 +399,8 @@ export class Game {
   private trackedObject(): TrackedObject | null {
     const digit = this.zylons.trackDigit;
     if (digit === 2) {
-      if (!this.currentStarbase) return null;
-      const p = this.currentStarbase.getObject().position;
-      return { x: p.x * KM_PER_UNIT, y: p.y * KM_PER_UNIT, z: p.z * KM_PER_UNIT };
+      const sb = this.zylons.starbase;
+      return sb.alive ? { x: sb.x, y: sb.y, z: sb.z } : null;
     }
     if (digit === 3) return this.warpMarkerPosition();
     const ship = this.zylons.trackedShip();
@@ -459,6 +437,9 @@ export class Game {
       case 'zylonDestroyed':
         this.soundManager.playExplosion();
         this.zylonKilled(e.debug);
+        break;
+      case 'starbaseDestroyed':
+        this.starbaseShot();
         break;
       case 'basestarHit':
       case 'shotDown':
@@ -513,10 +494,8 @@ export class Game {
     for (const s of z.ships) if (s.alive) out.push({ kind: s.type, x: s.x, z: s.z });
     if (z.pl2.life > 0) out.push({ kind: z.pl2.kind === 'meteor' ? 'meteor' : 'zylonTorpedo', x: z.pl2.x, z: z.pl2.z });
     for (const p of z.photons) if (p.life > 0) out.push({ kind: 'photon', x: p.x, z: p.z });
-    if (this.currentStarbase) {
-      const p = this.currentStarbase.getObject().position;
-      out.push({ kind: 'starbase', x: p.x * KM_PER_UNIT, z: p.z * KM_PER_UNIT });
-    }
+    if (z.starbase.alive) out.push({ kind: 'starbase', x: z.starbase.x, z: z.starbase.z });
+    if (z.vessel.alive) out.push({ kind: 'transferVessel', x: z.vessel.x, z: z.vessel.z });
     const warp = this.hyperwarp;
     if (warp.markerShown) out.push({ kind: 'warpMarker', x: warp.marker.x, z: warp.marker.z });
     return out;
@@ -537,18 +516,6 @@ export class Game {
       byte,
       byte
     );
-  }
-
-  /** Keep the starbase inside the sector (±500 units, toroidal in x and z; Phase 10 rebuilds it). */
-  private wrapSectorObjects(): void {
-    const wrap = (p: Vec3) => {
-      const H = 500;
-      if (p.x > H) p.x -= 2 * H;
-      else if (p.x < -H) p.x += 2 * H;
-      if (p.z > H) p.z -= 2 * H;
-      else if (p.z < -H) p.z += 2 * H;
-    };
-    if (this.currentStarbase) wrap(this.currentStarbase.getObject().position);
   }
 
   /**
@@ -576,7 +543,10 @@ export class Game {
           if (this.radioFeed.relaysMessages) this.controlPanel.setTitle(PHRASE.STARBASE_DESTROYED);
           if (e.x === this.gameState.sectorX && e.y === this.gameState.sectorY) {
             // The debris becomes two Zylons right here; they enter from the new count (§8.2).
-            this.currentStarbase = null;
+            // R: DOCKING finds the chart no longer marks a starbase: explosion and noise.
+            this.zylons.destroyStarbase();
+            this.docking.reset();
+            this.soundManager.playShieldHit();
           }
           break;
         }
@@ -646,36 +616,79 @@ export class Game {
   }
 
   /**
-   * Check for docking opportunity
+   * GAMELOOP step 24, R: DOCKING (§13, §17.9). Orbit needs the starbase between the cross hairs
+   * (sitting just above the horizontal one), in front and closer than 512 KM, and speed 0 now and
+   * chosen. Moving the stick (outside the Galactic Chart, where it only moves the cursor) breaks
+   * it: during docking that is DOCKING ABORTED (§13 step 6).
    */
-  private checkDocking(): void {
-    if (!this.currentStarbase) return;
-    if (this.dockingCooldown > 0) {
-      this.dockingCooldown -= 1 / 60;
+  private dockingLoop(stick: Stick): void {
+    const sb = this.zylons.starbase;
+    if (!sb.alive) {
+      this.docking.reset();
       return;
     }
-    if (this.currentStarbase.canDock(new Vec3(), this.gameState.engineSpeed) && !this.isDocking) {
-      this.isDocking = true;
-      this.dockingProgress = 0;
-      // ORBIT ESTABLISHED, then STANDBY; docking also empties the title queue (R: DOCKING).
-      this.controlPanel.setTitle(PHRASE.ORBIT_ESTABLISHED);
-      this.controlPanel.title.clearQueue();
+    const view = this.gameState.currentView;
+    const stickMoved = view !== ViewMode.GALACTIC_CHART && (stick.x !== 0 || stick.y !== 0);
+    const events: DockEvent[] = stickMoved ? this.docking.interrupt() : [];
+    const inPosition =
+      !stickMoved &&
+      inOrbitPosition({
+        starbase: sb,
+        velocity: this.shipVelocity,
+        newVelocity: VELOCITY_TAB[this.gameState.targetEngineSpeed],
+        aft: view === ViewMode.AFT,
+      });
+    const vessel = this.zylons.vessel;
+    events.push(
+      ...this.docking.loop({
+        inPosition,
+        titleHidden: this.controlPanel.title.current === null,
+        vesselBehind: vessel.alive && vessel.z < 0,
+      })
+    );
+    for (const e of events) this.dockEvent(e);
+  }
+
+  /** React to one docking event (§13, §17.9; R: DOCKING). */
+  private dockEvent(e: DockEvent): void {
+    switch (e) {
+      case 'orbitEstablished':
+        this.controlPanel.setTitle(PHRASE.ORBIT_ESTABLISHED); // then STANDBY
+        break;
+      case 'holdTitle':
+        // R: NEWTITLEPHR := 0 — no queued phrase (repeating damage reports stop) while in orbit.
+        this.controlPanel.title.clearQueue();
+        break;
+      case 'launchVessel':
+        this.zylons.launchVessel();
+        break;
+      case 'transferComplete':
+        // ACKNOWLEDGE beep, TRANSFER COMPLETE, all six subsystems repaired, ENERGY 9999.
+        this.soundManager.playDocking();
+        this.controlPanel.setTitle(PHRASE.TRANSFER_COMPLETE);
+        this.repairAll();
+        this.energy.refill();
+        this.zylons.returnVessel();
+        this.attackComputer.reset(); // R: JMP UPDSCREEN
+        break;
+      case 'aborted':
+        this.controlPanel.setTitle(PHRASE.DOCKING_ABORTED);
+        this.zylons.recallVessel();
+        break;
     }
   }
 
   /**
-   * Update docking sequence
+   * Our photon destroyed the starbase (§14.1, §17.7, §17.10; R: COLLISION): −3, the starbase is
+   * gone from the galaxy and the chart, and it explodes with the shield-explosion noise.
    */
-  private updateDocking(deltaTime: number): void {
-    this.dockingProgress += deltaTime * 0.5; // 2 seconds to dock (Phase 10 brings the transfer vessel)
-
-    if (this.dockingProgress >= 1) {
-      this.energy.refill();
-      this.repairAll();
-      this.isDocking = false;
-      this.dockingCooldown = 5;
-      this.controlPanel.setTitle(PHRASE.TRANSFER_COMPLETE);
-    }
+  private starbaseShot(): void {
+    this.soundManager.playShieldHit();
+    this.missionScore.starbaseShotByYou();
+    this.galaxy.removeStarbase(this.gameState.sectorX, this.gameState.sectorY);
+    this.docking.reset();
+    this.radioFeed.sync(this.gameState.damage.radio);
+    this.renderChart();
   }
 
   private triggerGameOver(): void {
@@ -755,7 +768,6 @@ export class Game {
         this.starfield.clearTrails();
         this.clearSectorContents();
         this.zylons.trackDigit = 0;
-        this.isDocking = false;
         this.soundManager.playHyperwarpTransit();
         this.controlPanel.setTitle(PHRASE.HYPERSPACE);
         break;
@@ -790,6 +802,17 @@ export class Game {
   /** One key press or button (edge-triggered, from the input queue). */
   private handleAction(action: Action): void {
     const view = this.gameState.currentView;
+    // §13 step 6: any key but G during docking gives DOCKING ABORTED (the chart's cursor keys
+    // are the stick there, which does not turn the ship). The key does its usual job first, so
+    // DOCKING ABORTED is the message left on the title line.
+    const chartStick = view === ViewMode.GALACTIC_CHART && action.startsWith('STICK_');
+    const aborts = this.docking.active && action !== 'CHART' && !chartStick;
+    if (!aborts && action === 'SPEED_0') this.docking.retry(); // "retrace the steps": 0 again may dock again
+    this.doAction(action, view);
+    if (aborts) for (const e of this.docking.interrupt()) this.dockEvent(e);
+  }
+
+  private doAction(action: Action, view: ViewMode): void {
     if (action.startsWith('SPEED_')) {
       // R: KEYBOARD — 0–9 aborts an engaged hyperwarp instead of setting the speed (§9).
       if (this.isHyperwarping) this.abortHyperwarp();
@@ -906,10 +929,8 @@ export class Game {
     for (const sh of z.ships) if (sh.alive) objects.push({ kind: sh.type, x: sh.x, y: sh.y, z: sh.z });
     if (z.pl2.life > 0) objects.push({ kind: z.pl2.kind === 'meteor' ? 'meteor' : 'zylonTorpedo', x: z.pl2.x, y: z.pl2.y, z: z.pl2.z });
     for (const p of z.photons) if (p.life > 0) objects.push({ kind: 'photon', x: p.x, y: p.y, z: p.z });
-    if (this.currentStarbase) {
-      const p = this.currentStarbase.getObject().position;
-      objects.push({ kind: 'starbase', x: p.x * KM_PER_UNIT, y: p.y * KM_PER_UNIT, z: p.z * KM_PER_UNIT });
-    }
+    if (z.starbase.alive) objects.push({ kind: 'starbase', x: z.starbase.x, y: z.starbase.y, z: z.starbase.z });
+    if (z.vessel.alive) objects.push({ kind: 'transferVessel', x: z.vessel.x, y: z.vessel.y, z: z.vessel.z });
     const warp = this.hyperwarp;
     if (warp.markerShown) objects.push({ kind: 'warpMarker', x: warp.marker.x, y: warp.marker.y, z: warp.marker.z });
 
@@ -966,10 +987,10 @@ export class Game {
         fleetMoveTicks: this.clock.fleetMoveTicks,
         isHyperwarping: this.isHyperwarping,
         warpPhase: this.hyperwarp.phase,
-        isDocking: this.isDocking,
-        dockingProgress: this.dockingProgress,
+        isDocking: this.docking.active,
+        dockState: this.docking.state,
         enemiesInSector: this.zylons.liveShips,
-        starbaseInSector: this.currentStarbase !== null,
+        starbaseInSector: this.zylons.starbase.alive,
         remainingEnemies: this.galaxy.zylonsLeft,
         starbasesLeft: this.galaxy.starbasesLeft,
         hunted: this.galaxy.hunted,
@@ -1000,9 +1021,7 @@ export class Game {
       },
       spawn: (type: DebugSpawnType, distance = 4096, x = 0, y = 0) => {
         if (type === 'starbase') {
-          const pos = new Vec3(x / KM_PER_UNIT, y / KM_PER_UNIT, distance / KM_PER_UNIT);
-          if (this.currentStarbase) this.currentStarbase.getObject().position.copy(pos);
-          else this.currentStarbase = new Starbase(pos);
+          this.zylons.setStarbase({ x, y, z: distance });
           return;
         }
         this.zylons.spawn(type, { x, y, z: distance });
@@ -1041,13 +1060,35 @@ export class Game {
         );
       },
       dock: () => {
-        if (!this.currentStarbase) this.currentStarbase = new Starbase(new Vec3());
-        this.currentStarbase.getObject().position.copy(new Vec3(0, 0, 30));
+        // A starbase 300 KM ahead, 40 KM above the axis (centred, sitting on the cross hair),
+        // engines stopped: the next loop establishes the orbit.
+        this.zylons.setStarbase({ x: 0, y: 40, z: 300 });
         this.gameState.engineSpeed = 0;
         this.gameState.targetEngineSpeed = 0;
         this.shipVelocity = 0;
-        this.dockingCooldown = 0;
-        this.checkDocking();
+        this.docking.retry();
+      },
+      starbase: () => {
+        const z = this.zylons;
+        return JSON.parse(
+          JSON.stringify({
+            starbase: z.starbase,
+            vessel: z.vessel,
+            dockState: z.starbase.alive ? this.docking.state : 'none',
+            interrupted: this.docking.interrupted,
+            inPosition:
+              z.starbase.alive &&
+              inOrbitPosition({
+                starbase: z.starbase,
+                velocity: this.shipVelocity,
+                newVelocity: VELOCITY_TAB[this.gameState.targetEngineSpeed],
+                aft: this.gameState.currentView === ViewMode.AFT,
+              }),
+            starbaseHere: this.galaxy.hasStarbase(this.gameState.sectorX, this.gameState.sectorY),
+            starbasesShot: this.missionScore.starbasesShotByYou,
+            score: this.missionScore.score,
+          })
+        );
       },
       setEnergy: (units: number) => {
         this.gameState.energy = Math.max(0, Math.floor(units));
@@ -1223,6 +1264,5 @@ export class Game {
     this.galacticChart.dispose();
     this.renderer.dispose();
     this.zylons.clear();
-    this.currentStarbase = null;
   }
 }

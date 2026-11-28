@@ -12,15 +12,19 @@
  *   ships[0], ships[1]  Zylon ships 0 and 1 (PLAYER0..1)
  *   pl2                 the single Zylon photon torpedo, or a meteor (PLAYER2)
  *   photons[0], [1]     our left and right barrel's photon torpedoes (PLAYER3..4)
+ *   starbase            the starbase of a starbase sector (PLAYER2 centre + PLAYER0..1 wings,
+ *                       which is why such a sector has no Zylon ships, torpedo or meteor)
+ *   vessel              the transfer vessel while docking (PLAYER4)
  *
  * The ROM stores a coordinate as a sign bit plus 16 bits; the high byte of that 16-bit value is
  * what most rules compare, so `hiByte()` reproduces it (−1 KM has high byte $FF).
  */
 import { levelIndex, ZYLON_TORPEDO_HOMING, zylonsFireFromBehind, type MissionLevel } from '../rules/levels';
 import { rollDamage, type DamageResult, type DamageStatus, type SubsystemStatus } from '../rules/damage';
-import { placeSprite, SHAPE, spritesOverlap, viewDistanceHi, type ShapeType, type SpritePlacement } from '../render/sprites';
+import { placeSprite, placeStarbase, SHAPE, SPRITE_MAX_DISTANCE, spritesOverlap, viewDistanceHi, type ShapeType, type SpritePlacement } from '../render/sprites';
 import type { SpaceView } from '../render/projection';
 import { rotatePitch, rotateYaw, type Stick } from './motion';
+import { STARBASE_MIN_Z, VESSEL_START, VESSEL_VELOCITY_IN, VESSEL_VELOCITY_OUT } from './docking';
 
 // ---------------------------------------------------------------------------------------------
 // ROM tables and constants
@@ -159,6 +163,17 @@ export interface Player2 extends Vec3Like {
   vel: Vec3Like;
 }
 
+/** The starbase (R: PLAYER0..2 in a starbase sector, MANUAL_SPEC §17.9). */
+export interface StarbaseObject extends Vec3Like {
+  alive: boolean;
+}
+
+/** The transfer vessel (R: PLAYER4, shape 5) that flies from the starbase to us while docking. */
+export interface TransferVessel extends Vec3Like {
+  alive: boolean;
+  vel: Vec3Like;
+}
+
 export interface Photon extends Vec3Like {
   life: number;
   vel: Vec3Like;
@@ -204,6 +219,8 @@ export type ZylonEvent =
   | { type: 'zylonDestroyed'; slot: number; zylon: ZylonType; debug: boolean; torpedoAge: number }
   | { type: 'basestarHit'; slot: number; torpedoAge: number }
   | { type: 'shotDown'; kind: 'torpedo' | 'meteor' }
+  /** Our photon hit the starbase (R: COLLISION "Starbase destroyed!": −3, off the chart). */
+  | { type: 'starbaseDestroyed' }
   | { type: 'zylonSpawned'; slot: number; zylon: ZylonType }
   | { type: 'zylonFired'; slot: number }
   | { type: 'meteorSpawned' }
@@ -228,6 +245,7 @@ export function correctOverflow(km: number): number {
 }
 
 const clampIndex = (i: number) => Math.max(0, Math.min(15, i));
+const ZERO: Readonly<Vec3Like> = { x: 0, y: 0, z: 0 };
 
 function newShip(): ZylonShip {
   return {
@@ -295,6 +313,8 @@ export class ZylonSim {
   public readonly pl2: Player2 = { kind: null, life: 0, x: 0, y: 0, z: 0, vel: { x: 0, y: 0, z: 0 } };
   public readonly photons: Photon[] = [newPhoton(), newPhoton()];
   public explosion: Explosion | null = null;
+  public readonly starbase: StarbaseObject = { alive: false, x: 0, y: 0, z: 0 };
+  public readonly vessel: TransferVessel = { alive: false, x: 0, y: 0, z: 0, vel: { x: 0, y: 0, z: 0 } };
   /** R: BARRELNR — barrel of the next launch: 0 left, 1 right. */
   public barrel = 0;
   /** R: TORPEDODELAY. */
@@ -318,7 +338,8 @@ export class ZylonSim {
   private shown: {
     ships: (SpritePlacement | null)[];
     pl2: SpritePlacement | null;
-  } = { ships: [null, null], pl2: null };
+    starbase: SpritePlacement[];
+  } = { ships: [null, null], pl2: null, starbase: [] };
 
   private readonly randomByte: () => number;
 
@@ -359,10 +380,56 @@ export class ZylonSim {
     this.pl2.kind = null;
     for (const p of this.photons) p.life = 0;
     this.explosion = null;
+    this.starbase.alive = false;
+    this.vessel.alive = false;
     this.attacker = null;
     this.homing = false;
     this.autoFirePending = false;
-    this.shown = { ships: [null, null], pl2: null };
+    this.shown = { ships: [null, null], pl2: null, starbase: [] };
+  }
+
+  /**
+   * R: HYPERWARP "Init starbase in arrival sector" (L4842): each coordinate's high byte is
+   * RANDOM AND VICINITYMASK with a + sign, z is forced to ≥ +$71** (28928 KM ahead), then x and y
+   * get random signs. The very placement a new Zylon ship gets (§17.8, §17.9).
+   */
+  public placeStarbase(): void {
+    const sb = this.starbase;
+    sb.alive = true;
+    sb.z = (this.randomByte() & this.vicinityMask) * 256;
+    sb.x = (this.randomByte() & this.vicinityMask) * 256;
+    sb.y = (this.randomByte() & this.vicinityMask) * 256;
+    sb.z = ((sb.z >> 8) | ZYLON_SPAWN_Z_HI) * 256;
+    this.randomInvertXY(sb);
+  }
+
+  /** Put the starbase at a ship-frame position (debug hook). */
+  public setStarbase(pos: Vec3Like): void {
+    Object.assign(this.starbase, { alive: true, x: pos.x, y: pos.y, z: pos.z });
+  }
+
+  /** The starbase is gone (shot, or destroyed by the Zylons): it explodes where it was. */
+  public destroyStarbase(): void {
+    if (!this.starbase.alive) return;
+    this.starbase.alive = false;
+    this.vessel.alive = false;
+    this.shown.starbase = [];
+    this.initExplosion(this.starbase);
+  }
+
+  /** R: DOCKING "Launch transfer vessel": behind the starbase, heading for us (§17.9). */
+  public launchVessel(): void {
+    Object.assign(this.vessel, { alive: true, ...VESSEL_START, vel: { ...VESSEL_VELOCITY_IN } });
+  }
+
+  /** R: DOCKING "Return transfer vessel": TRANSFER COMPLETE turns it back to the starbase. */
+  public returnVessel(): void {
+    if (this.vessel.alive) this.vessel.vel = { ...VESSEL_VELOCITY_OUT };
+  }
+
+  /** Docking aborted: the vessel is called back at once (a bend; the ROM lets it fly on past us). */
+  public recallVessel(): void {
+    this.vessel.alive = false;
   }
 
   /** M: toggle the tracked Zylon between T:0 and T:1 (R: KEYBOARD 'M': EOR #1, AND #1). */
@@ -465,11 +532,25 @@ export class ZylonSim {
     if (this.pl2.life > 0) step(this.pl2, this.pl2.vel, this.pl2.kind === 'meteor', true);
     for (const p of this.photons) if (p.life > 0) step(p, p.vel, false, true);
     if (this.explosion) for (const f of this.explosion.fragments) step(f, f.vel, true, false);
+    const sb = this.starbase;
+    if (sb.alive) {
+      step(sb, ZERO, true, true);
+      // R: DOCKING "Keep minimum distance to starbase": never closer than +32 KM.
+      if (sb.z >= 0 && sb.z < STARBASE_MIN_Z) sb.z += 1;
+    }
+    const v = this.vessel;
+    if (v.alive) {
+      step(v, v.vel, true, true);
+      // On its way home it is gone once it is too far to draw (the ROM never shows it again).
+      if (v.vel.z > 0 && v.z >= SPRITE_MAX_DISTANCE) v.alive = false;
+    }
   }
 
   private updateShown(view: SimView): void {
     this.shown.ships = this.ships.map((s) => (s.alive ? ZylonSim.place(ZYLON_SHAPE[s.type], s, view) : null));
     this.shown.pl2 = this.pl2.life > 0 ? ZylonSim.place(pl2Shape(this.pl2), this.pl2, view) : null;
+    const sb = this.starbase;
+    this.shown.starbase = sb.alive && (view === 'FRONT' || view === 'AFT') ? placeStarbase(sb.x, sb.y, sb.z, view as SpaceView) : [];
   }
 
   /** COLLISION: our photons against the Zylon ships, the Zylon torpedo and the meteor. */
@@ -485,7 +566,10 @@ export class ZylonSim {
       const hit1 = !!this.shown.ships[1] && spritesOverlap(ps, this.shown.ships[1]!);
       const hit2 = !!this.shown.pl2 && spritesOverlap(ps, this.shown.pl2!);
       const target = hit1 ? 1 : hit2 ? 2 : hit0 ? 0 : -1;
-      if (target < 0) continue;
+      if (target < 0) {
+        if (this.starbaseHit(p, ps, view)) events.push({ type: 'starbaseDestroyed' });
+        continue;
+      }
       const obj: Vec3Like = target === 2 ? this.pl2 : this.ships[target];
       if (target === 2 ? this.pl2.life <= 0 : !this.ships[target].alive) continue;
 
@@ -513,6 +597,22 @@ export class ZylonSim {
       }
       this.initExplosion(obj);
     }
+  }
+
+  /**
+   * COLLISION with any of the starbase's three PLAYERs, in the depth window for the starbase's
+   * range (§17.7: shooting a starbase is −3; R: the explosion follows in DOCKING).
+   */
+  private starbaseHit(p: Photon, ps: SpritePlacement, view: SpaceView): boolean {
+    const sb = this.starbase;
+    if (!sb.alive || !this.shown.starbase.some((s) => spritesOverlap(ps, s))) return false;
+    const idx = Math.min(15, viewDistanceHi(sb.z, view)) >> 1;
+    const tz = viewDistanceHi(p.z, view);
+    if (tz >= HIT_MAX_Z_HI[idx] || tz < HIT_MIN_Z_HI[idx]) return false;
+    p.life = 0;
+    this.homing = false;
+    this.destroyStarbase();
+    return true;
   }
 
   /**

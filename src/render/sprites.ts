@@ -178,6 +178,22 @@ export function placeSprite(type: ShapeType, x: number, y: number, z: number, vi
 export const STARBASE_WING_OFFSET = 8;
 export const STARBASE_WING_DROP = 4;
 
+/**
+ * The three-part starbase (R step 15 "Combine PLAYER0..2 to starbase shape"): the centre
+ * (PLAYER2) where it projects, the left and right wings (PLAYER1, PLAYER0) 8 PM pixels to either
+ * side and 4 scanlines lower, all with the centre's range. Empty when the centre is not drawn.
+ */
+export function placeStarbase(x: number, y: number, z: number, view: SpaceView): SpritePlacement[] {
+  const centre = placeSprite(SHAPE.STARBASE_CENTER, x, y, z, view);
+  if (!centre) return [];
+  const out = [centre];
+  for (const [type, dx] of [[SHAPE.STARBASE_LEFT, -STARBASE_WING_OFFSET], [SHAPE.STARBASE_RIGHT, STARBASE_WING_OFFSET]] as const) {
+    const rows = shapeRows(type, centre.cell);
+    out.push({ type, range: centre.range, cell: centre.cell, col: centre.col + dx, line: centre.line + STARBASE_WING_DROP, rows });
+  }
+  return out;
+}
+
 /** Does any lit pixel of sprite a overlap one of sprite b (the Player/Missile collision registers)? */
 export function spritesOverlap(a: SpritePlacement, b: SpritePlacement): boolean {
   const dx = b.col - a.col;

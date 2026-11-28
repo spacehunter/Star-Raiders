@@ -8,6 +8,7 @@
  *   __sr.galaxy()                  all 16x8 sectors
  *   __sr.teleport({x, y}) / (x, y) jump to a sector at once (no hyperwarp, no energy cost)
  *   __sr.spawn('fighter'|'cruiser'|'basestar'|'starbase', distance?, x?, y?)  place one ahead of the ship
+ *                                  (a starbase is moved there, or added to any sector)
  *                                  (KM; x, y: sideways and vertical offset). A Zylon takes a free
  *                                  ship slot (else slot 0), heads straight in, and is not on the map
  *   __sr.setView('FRONT'|'AFT'|'GALACTIC_CHART'|'LONG_RANGE_SCAN')   switch view instantly
@@ -16,7 +17,10 @@
  *   __sr.hyperwarp(x, y)           put the chart's dot on a sector, switch to the front view and press H
  *   __sr.warp()                    hyperwarp state: phase, departure/arrival chart points (PM pixels),
  *                                  WARPENERGY, VEERMASK, hyperspace charges, the marker (KM, PM col/row)
- *   __sr.dock()                    put a starbase in docking range at speed 0 and begin docking
+ *   __sr.dock()                    put the starbase 300 KM ahead, centred, engines stopped: the next
+ *                                  loop establishes the orbit (ORBIT ESTABLISHED, STANDBY, vessel...)
+ *   __sr.starbase()                starbase and transfer vessel (ship-frame KM), dock state
+ *                                  (none|orbit|transfer|complete), orbit conditions met, score
  *   __sr.setEnergy(n)              set the ENERGY readout (e.g. to test the zero-energy abort)
  *   __sr.setSpeed(key)             press engine key 0..9
  *   __sr.setShields(on)            raise or lower the shields
@@ -92,6 +96,7 @@ export function installDebugHook(host: DebugHost): void {
     hyperwarp: (x: number, y: number) => api().hyperwarp(x, y),
     warp: () => api().warp(),
     dock: () => api().dock(),
+    starbase: () => api().starbase(),
     setEnergy: (units: number) => api().setEnergy(units),
     setSpeed: (key: number) => api().setSpeed(key),
     setShields: (on: boolean) => api().setShields(on),
