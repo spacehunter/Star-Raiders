@@ -18,6 +18,8 @@ import type { Debrief } from './sim/debrief';
 import type { MissionLevel } from './rules/levels';
 import { AttractOverlay } from './ui/AttractOverlay';
 import { DebriefCard } from './ui/DebriefCard';
+import { audioKeyFor, audioKeyPatch } from './audio/keys';
+import { getSettings, updateSettings } from './core/settings';
 
 class StarRaiders {
   private readonly container: HTMLElement;
@@ -124,6 +126,14 @@ class StarRaiders {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     // Tab is SELECT here, never focus navigation.
     if (e.code === 'Tab') e.preventDefault();
+    // Bend 8: N mutes, - and = set the volume, in every mode (volume keys may auto-repeat).
+    const audioKey = audioKeyFor(e.code);
+    if (audioKey) {
+      if (e.repeat && audioKey === 'mute') return;
+      e.preventDefault();
+      updateSettings(audioKeyPatch(audioKey, getSettings()));
+      return;
+    }
     if (e.repeat) return;
     const cmd = consoleCommand(this.sessionMode, e.code);
     if (!cmd) return;

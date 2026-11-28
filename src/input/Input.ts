@@ -14,6 +14,7 @@
  */
 import { getSettings, type Settings } from '../core/settings';
 import type { Stick } from '../sim/motion';
+import { audioKeyFor } from '../audio/keys';
 
 export type Action =
   | 'FRONT'
@@ -123,6 +124,8 @@ export function keyAction(code: string, key: string, s: Pick<Settings, 'wasd'>):
   const action = actionForKey(code, s);
   if (action) return action;
   if (stickDirForKey(code, s)) return null;
+  // Bend 8: N, - and = are the sound keys (handled by the app in every mode), not unknown keys.
+  if (audioKeyFor(code)) return null;
   const charKey = /^(?:Key[A-Z]|Digit[0-9]|Numpad[0-9]|Minus|Equal|Bracket(?:Left|Right)|Backslash|Semicolon|Quote|Comma|Period|Slash|Backquote|IntlBackslash|NumpadAdd|NumpadSubtract|NumpadMultiply|NumpadDivide|NumpadDecimal)$/;
   if (charKey.test(code) || (key.length === 1 && key !== ' ')) return 'UNKNOWN';
   return null;

@@ -46,6 +46,8 @@ npm run capture    # the 8 standard screenshots (see below)
 | Tab or 1–4 (attract mode) | SELECT the mission level (also the on-screen SELECT button) |
 | Enter (attract mode) | START (also the on-screen START button) |
 | Enter / Space / Esc | Skip the end sequence; leave the debrief card |
+| N | Sound on / off (any time; saved) |
+| - / = | Volume down / up, 0–10 (saved; also turns the sound back on) |
 
 There is no title screen: power-on is the attract mode, a demo flight with `NOVICE MISSION` /
 `STAR RAIDERS` / `COPYRIGHT ATARI 1979` on the title line. Nine idle minutes return to it. After a
@@ -83,7 +85,7 @@ src/
   systems/   combat
   views/     galactic chart, long-range scan
   ui/        control panel data, attract console, pause menu, debrief card, insignia
-  audio/     sound
-scripts/     capture.mjs
+  audio/     POKEY-style sound synth (pokey.ts), sound keys, offline demo render
+scripts/     capture.mjs (screenshots; --audio 1 runs the sound check)
 docs/        spec, plan, manual reference
 ```

@@ -8,6 +8,8 @@
  *                            [--sequence title-line]   (instead of the shots: numbered frames of a
  *                                                       timed sequence, e.g. for a GIF)
  *                            [--touch 1]               (a touch-screen context: page.tap works)
+ *                            [--audio 1]               (instead of the shots: the Phase 12 audio check,
+ *                                                       see AUDIO_CHECK below)
  *
  * Starts its own Vite dev server (unless --url is given), opens the game headless with
  * ?debug=1&seed=<seed>, freezes the page clock (Date, performance.now, timers and
@@ -38,7 +40,7 @@ import { chromium } from 'playwright';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function parseArgs(argv) {
-  const opts = { seed: 1979, difficulty: 'NOVICE', width: 1280, height: 800, out: null, url: null, query: '', sequence: null, touch: '0' };
+  const opts = { seed: 1979, difficulty: 'NOVICE', width: 1280, height: 800, out: null, url: null, query: '', sequence: null, touch: '0', audio: '0' };
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i].replace(/^--/, '');
     if (!(key in opts)) throw new Error(`Unknown option --${key}`);
@@ -922,6 +924,190 @@ SEQUENCES['hyperwarp-right'] = {
   probe: warpProbe,
 };
 
+// ---------------------------------------------------------------------------------------------
+// Phase 12 (MANUAL_SPEC §17.12, bend 8): --audio 1
+//   1. every §17.12 event fired through the game's own paths, read back from the synth's log
+//   2. mute: a live analyser tap on the AudioContext destination, RMS before and after N
+//   3. leak check: 5 restarts through the console keys, AudioContexts still open after each
+//   4. the offline render of every event in order (OfflineAudioContext) → audio-demo.wav
+// Writes audio-check.json, audio-check.txt and audio-demo.wav to --out.
+// ---------------------------------------------------------------------------------------------
+
+/** Before any page script: count every AudioContext and tap what reaches each destination. */
+const AUDIO_TAP = `(() => {
+  const Native = window.AudioContext;
+  window.__ctxs = [];
+  window.__taps = new Map();
+  window.AudioContext = class extends Native {
+    constructor(...a) { super(...a); window.__ctxs.push(this); }
+  };
+  const connect = AudioNode.prototype.connect;
+  AudioNode.prototype.connect = function (dest, ...rest) {
+    const ctx = this.context;
+    if (dest === ctx.destination && ctx instanceof Native) {
+      let tap = window.__taps.get(ctx);
+      if (!tap) { tap = ctx.createAnalyser(); tap.fftSize = 2048; window.__taps.set(ctx, tap); }
+      connect.call(this, tap);
+    }
+    return connect.call(this, dest, ...rest);
+  };
+  window.__liveRms = () => {
+    const open = window.__ctxs.filter((c) => c.state !== 'closed');
+    const ctx = open[open.length - 1];
+    const tap = ctx && window.__taps.get(ctx);
+    if (!tap) return null;
+    const d = new Float32Array(tap.fftSize);
+    tap.getFloatTimeDomainData(d);
+    let s = 0; for (const v of d) s += v * v;
+    return Math.sqrt(s / d.length);
+  };
+  window.__openContexts = () => window.__ctxs.filter((c) => c.state !== 'closed').length;
+})();`;
+
+async function audioCheck(page, sr, opts) {
+  const report = { seed: opts.seed, events: {}, engine: {}, mute: {}, leak: [], demo: null };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // A real key press unlocks audio (1 = NOVICE, Enter = START).
+  await page.keyboard.press('Digit1');
+  await page.keyboard.press('Enter');
+  await sr(() => window.__sr.step(130));
+  report.unlocked = await sr(() => window.__sr.audio().state);
+
+  // 1. Every §17.12 event through the game.
+  const engineAt = (key) => sr((k) => { window.__sr.setSpeed(k); window.__sr.step(150); return window.__sr.audio().engine; }, key);
+  for (const k of [0, 3, 6, 9]) report.engine[`key ${k}`] = await engineAt(k);
+  // __sr.step() runs game loops at once while the AudioContext keeps real time, so each group
+  // of events gets real time to finish before the next (else the priorities drop the later ones).
+  await sr(() => {
+    const s = window.__sr.state;
+    const empty = window.__sr.galaxy().find((g) => !g.zylons && !g.starbase && (g.x !== s.sectorX || g.y !== s.sectorY));
+    window.__sr.teleport(empty);
+    window.__sr.setSpeed(0);
+    window.__sr.step(60);
+    window.__sr.press('COMPUTER'); // acknowledge
+    window.__sr.press('SHIELDS'); // acknowledge
+    window.__sr.step(30);
+    // A fighter in line with the right barrel: photons, then the Zylon explosion.
+    window.__sr.spawn('fighter', 2600, 256, -256);
+    window.__sr.press('FIRE');
+    window.__sr.press('FIRE');
+    for (let i = 0; i < 120 && !window.__sr.state.enemiesDestroyed; i++) window.__sr.step(1);
+    window.__sr.step(60);
+  });
+  await wait(1500);
+  await sr(() => {
+    // A meteor into the raised shields: the shield explosion.
+    window.__sr.meteor(0, 0, 120);
+    for (let i = 0; i < 60 && !window.__sr.audio().counts.shieldExplosion; i++) window.__sr.step(1);
+    window.__sr.step(70);
+  });
+  await wait(1500);
+  await sr(() => {
+    // DAMAGE CONTROL: the damage-report beep (R: DAMAGE → BEEP $12).
+    window.__sr.damageReport('photons', 'damaged');
+    window.__sr.step(60);
+  });
+  await wait(1500);
+  await sr(() => {
+    // STARBASE SURROUNDED: the message-from-starbase tune.
+    window.__sr.surround();
+    window.__sr.toFleetTick(1);
+    window.__sr.step(60);
+  });
+  await wait(1500);
+  await sr(() => {
+    // Hyperwarp into a Zylon sector: the transit beeps, then RED ALERT on arrival.
+    const now = window.__sr.state;
+    const target = window.__sr.galaxy().find((g) => g.zylons > 0 && !g.starbase && (g.x !== now.sectorX || g.y !== now.sectorY));
+    window.__sr.hyperwarp(target.x, target.y);
+    for (let i = 0; i < 900 && window.__sr.warp().phase !== 'off'; i++) window.__sr.step(1);
+    window.__sr.step(150);
+  });
+  await wait(1500);
+  await sr(() => {
+    // Shields down and a meteor: the starship explosion, then the end sequence.
+    window.__sr.setShields(false);
+    window.__sr.step(4);
+    window.__sr.meteor(0, 0, 120);
+    for (let i = 0; i < 60 && window.__sr.state.phase === 'mission'; i++) window.__sr.step(1);
+    window.__sr.step(30);
+  });
+  const audio = await sr(() => window.__sr.audio());
+  report.counts = audio.counts;
+  report.log = audio.log;
+  report.afterEnd = { phase: (await sr(() => window.__sr.state)).phase, engine: audio.engine, voices: audio.voices };
+  const EVENTS = ['photon', 'zylonExplosion', 'shieldExplosion', 'starshipExplosion', 'hyperwarpTransit', 'redAlert', 'acknowledge', 'damageReport', 'starbaseMessage'];
+  for (const e of EVENTS) report.events[e] = audio.log.filter((l) => l.event === e && l.result === 'played').length;
+
+  // 2. Mute, live: back into a mission, engines at speed 9, then N.
+  await page.keyboard.press('Enter'); // skip the end sequence
+  await page.keyboard.press('Enter'); // leave the debrief
+  await page.keyboard.press('Enter'); // START
+  await sr(() => { window.__sr.setSpeed(9); window.__sr.step(120); window.__sr.press('SHIELDS'); window.__sr.step(1); });
+  await wait(250);
+  report.mute.rmsBefore = await sr(() => window.__liveRms());
+  await page.keyboard.press('KeyN');
+  await wait(60);
+  report.mute.rmsAfter60ms = await sr(() => window.__liveRms());
+  await sr(() => { window.__sr.press('FIRE'); window.__sr.damageReport('engines', 'damaged'); window.__sr.step(2); });
+  await wait(200);
+  report.mute.rmsWhileMutedWithEvents = await sr(() => window.__liveRms());
+  report.mute.setting = await sr(() => ({ muted: window.__sr.audio().muted, stored: JSON.parse(localStorage.getItem('star-raiders.settings')).muted }));
+  await page.keyboard.press('KeyN');
+  await wait(250);
+  report.mute.rmsAfterUnmute = await sr(() => window.__liveRms());
+  report.mute.pass = report.mute.rmsBefore > 0.005 && report.mute.rmsAfter60ms === 0 && report.mute.rmsWhileMutedWithEvents === 0 && report.mute.rmsAfterUnmute > 0.005;
+
+  // 3. Leak check: 5 restarts through the console (abort, skip, leave the debrief, START).
+  for (let i = 1; i <= 5; i++) {
+    await sr(() => window.__sr.abort());
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
+    await sr(() => window.__sr.step(10));
+    await wait(150); // close() settles on the audio thread
+    report.leak.push(await sr(() => ({ created: window.__ctxs.length, open: window.__openContexts(), session: window.__sr.session().mode, state: window.__sr.audio().state })));
+  }
+  report.leakPass = report.leak[report.leak.length - 1].open === 1;
+
+  // 4. Offline render of every event in order.
+  const demo = await sr(() => window.__sr.audioDemo());
+  await writeFile(join(opts.out, 'audio-demo.wav'), Buffer.from(demo.wav, 'base64'));
+  report.demo = { seconds: demo.seconds, sampleRate: demo.sampleRate, cues: demo.rms };
+
+  // Everything off before the browser closes.
+  await sr(() => window.__sr.abort());
+  report.everyEventPlayed = EVENTS.every((e) => report.events[e] > 0);
+  await writeFile(join(opts.out, 'audio-check.json'), JSON.stringify(report, null, 2) + '\n');
+
+  const lines = [];
+  lines.push(`Star Raiders Phase 12 audio check (MANUAL_SPEC §17.12), seed ${opts.seed}, headless Chromium`);
+  lines.push('');
+  lines.push('1. Every §17.12 event, fired through the game and played by the POKEY synth:');
+  for (const e of EVENTS) lines.push(`   ${e.padEnd(18)} played ${report.events[e]}×`);
+  lines.push(`   engines            ${Object.entries(report.engine).map(([k, v]) => `${k}: AUDF $${v.audf.toString(16)} vol ${v.volume}`).join(' | ')}`);
+  lines.push(`   after the ship blew up: phase ${report.afterEnd.phase}, engine vol ${report.afterEnd.engine.volume}, voices ${JSON.stringify(report.afterEnd.voices)}`);
+  lines.push(`   => ${report.everyEventPlayed ? 'PASS' : 'FAIL'}`);
+  lines.push('   Synth log (n, event, voice, priority, result, pan):');
+  for (const l of report.log) lines.push(`     ${String(l.n).padStart(3)} ${l.event.padEnd(18)} ${l.voice.padEnd(9)} p${String(l.priority).padEnd(3)} ${l.result.padEnd(8)} pan ${l.pan.toFixed(2)}`);
+  lines.push('');
+  lines.push('2. Mute (N), measured on a live analyser at the AudioContext destination:');
+  lines.push(`   RMS before ${report.mute.rmsBefore?.toFixed(4)}  60 ms after N ${report.mute.rmsAfter60ms}  muted + new events ${report.mute.rmsWhileMutedWithEvents}  after N again ${report.mute.rmsAfterUnmute?.toFixed(4)}`);
+  lines.push(`   setting muted=${report.mute.setting.muted}, stored in localStorage=${report.mute.setting.stored}  => ${report.mute.pass ? 'PASS' : 'FAIL'}`);
+  lines.push('');
+  lines.push('3. Leak check: AudioContexts after each restart (abort → Enter → Enter → Enter/START):');
+  report.leak.forEach((l, i) => lines.push(`   restart ${i + 1}: created ${l.created}, open ${l.open}, session ${l.session}, context ${l.state}`));
+  lines.push(`   => ${report.leakPass ? 'PASS' : 'FAIL'}: exactly ${report.leak[report.leak.length - 1].open} AudioContext alive after 5 restarts`);
+  lines.push('');
+  lines.push(`4. Offline render (OfflineAudioContext, ${demo.sampleRate} Hz stereo, ${demo.seconds.toFixed(1)} s) → audio-demo.wav:`);
+  for (const c of demo.rms) lines.push(`   ${c.t.toFixed(2).padStart(6)} s  ${String(c.what).padEnd(18)} RMS L ${c.left.toFixed(4)} R ${c.right.toFixed(4)}`);
+  const text = lines.join('\n') + '\n';
+  await writeFile(join(opts.out, 'audio-check.txt'), text);
+  console.log(text);
+  if (!report.everyEventPlayed || !report.mute.pass || !report.leakPass) process.exitCode = 1;
+}
+
 async function startServer() {
   const { createServer } = await import('vite');
   const server = await createServer({
@@ -964,6 +1150,7 @@ async function main() {
     const epoch = new Date('1980-01-01T00:00:00Z');
     await page.clock.install({ time: epoch });
     await page.clock.pauseAt(epoch);
+    if (opts.audio === '1') await page.addInitScript(AUDIO_TAP);
 
     const url = new URL(base);
     url.searchParams.set('debug', '1');
@@ -975,6 +1162,11 @@ async function main() {
     await page.evaluate(() => document.fonts.ready);
 
     const sr = (fn, arg) => page.evaluate(fn, arg);
+
+    if (opts.audio === '1') {
+      await audioCheck(page, sr, opts);
+      return;
+    }
 
     if (opts.sequence) {
       const seq = SEQUENCES[opts.sequence];

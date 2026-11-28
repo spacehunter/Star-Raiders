@@ -13,7 +13,7 @@ export interface PauseActions {
 }
 
 /** The key-help lines (keys in mint, what they do in light blue-green). */
-export function pauseHelpLines(wasd: boolean): PixelLine[] {
+export function pauseHelpLines(wasd: boolean, sound: { volume: number; muted: boolean } = { volume: 7, muted: false }): PixelLine[] {
   const key = ROM_RGB.$B8;
   const txt = ROM_RGB.$AF;
   const row = (k: string, what: string): PixelLine => [[k.padEnd(7), key], [what, txt]];
@@ -36,6 +36,9 @@ export function pauseHelpLines(wasd: boolean): PixelLine[] {
     row(wasd ? 'WASD' : 'ARROWS', 'STEER'),
     row('P ESC', 'PAUSE'),
     row('X', 'ABORT MISSION'),
+    // Bend 8: the sound keys, with the current setting.
+    row('N', sound.muted ? 'SOUND OFF (MUTED)' : 'SOUND ON / MUTE'),
+    row('- =', `VOLUME ${sound.volume}`),
   ];
 }
 
@@ -59,7 +62,8 @@ export class PauseOverlay {
     this.root.replaceChildren();
     const card = document.createElement('div');
     card.className = 'overlay-card';
-    card.appendChild(textCanvas(pauseHelpLines(getSettings().wasd), { pad: 2 }));
+    const s = getSettings();
+    card.appendChild(textCanvas(pauseHelpLines(s.wasd, s), { pad: 2 }));
     const buttons = document.createElement('div');
     buttons.className = 'overlay-buttons';
     buttons.append(
