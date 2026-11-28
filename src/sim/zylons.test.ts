@@ -157,9 +157,9 @@ describe('Zylon torpedo', () => {
 describe('photon torpedoes', () => {
   it('alternate left and right barrels', () => {
     const sim = new ZylonSim(createRng(1));
-    expect(sim.fire('FRONT', 'ok', false)).toBe(true);
+    expect(sim.fire('FRONT', 'ok', false)).toBe('launched');
     expect(sim.photons[0].x).toBe(-256);
-    expect(sim.fire('FRONT', 'ok', false)).toBe(true);
+    expect(sim.fire('FRONT', 'ok', false)).toBe('launched');
     expect(sim.photons[1].x).toBe(256);
     expect(sim.photons.map((p) => p.y)).toEqual([-256, -256]);
   });
@@ -171,23 +171,23 @@ describe('photon torpedoes', () => {
     sim.fire('FRONT', 'ok', false); // right, at once
     for (let loop = 1; loop <= 23; loop++) {
       run(sim, 1);
-      expect(sim.fire('FRONT', 'ok', false), `loop ${loop}`).toBe(false);
+      expect(sim.fire('FRONT', 'ok', false), `loop ${loop}`).toBe('blocked');
     }
     run(sim, 1);
-    expect(sim.fire('FRONT', 'ok', false)).toBe(true); // left again after 23 loops
+    expect(sim.fire('FRONT', 'ok', false)).toBe('launched'); // left again after 23 loops
   });
 
   it('damaged photons fire one barrel every 23 loops; destroyed ones never', () => {
     const sim = new ZylonSim(createRng(1));
-    expect(sim.fire('FRONT', 'damaged', false)).toBe(true);
-    expect(sim.fire('FRONT', 'damaged', false)).toBe(false);
+    expect(sim.fire('FRONT', 'damaged', false)).toBe('launched');
+    expect(sim.fire('FRONT', 'damaged', false)).toBe('blocked');
     run(sim, 23);
-    expect(sim.fire('FRONT', 'damaged', false)).toBe(false);
+    expect(sim.fire('FRONT', 'damaged', false)).toBe('blocked');
     run(sim, 1);
-    expect(sim.fire('FRONT', 'damaged', false)).toBe(true);
+    expect(sim.fire('FRONT', 'damaged', false)).toBe('launched');
     expect(sim.photons[1].life).toBe(0); // always the same barrel
     const dead = new ZylonSim(createRng(1));
-    expect(dead.fire('FRONT', 'destroyed', false)).toBe(false);
+    expect(dead.fire('FRONT', 'destroyed', false)).toBe('noLaunch');
   });
 
   it('fly 102 KM per loop for 255 loops, aft photons fly backwards; cost 10', () => {

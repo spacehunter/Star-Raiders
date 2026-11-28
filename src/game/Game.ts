@@ -21,6 +21,7 @@ import { MSG, PHRASE, endOfMissionPhrase, subsystemPhrase } from '../rules/messa
 import { Galaxy, RadioFeed, GALAXY_COLUMNS, GALAXY_ROWS, type GalaxyEvent, type SectorPos } from '../sim/galaxy';
 import { Renderer, type SpaceFrame, type SpaceObject } from '../render/Renderer';
 import { resolveShipHit, VICINITY_MASK_TABLE, ZylonSim, type SimView, type ZylonEvent, type ZylonType } from '../sim/zylons';
+import { AttackComputer, trackingView, type AttackDisplay, type TrackedObject } from '../sim/attackComputer';
 import { CLASSIC_STARS, ENHANCED_STARS, Starfield } from '../render/starfield';
 import type { SpaceView } from '../render/projection';
 
@@ -52,6 +53,7 @@ export interface GameDebugApi {
   redAlert(loops?: number): void;
   stars(): Array<{ x: number; y: number; z: number; col: number | null; row: number | null; color: number }>;
   zylons(): Record<string, unknown>;
+  attack(): Record<string, unknown>;
   meteor(x: number, y: number, z: number): void;
 }
 
@@ -59,7 +61,6 @@ type GameOverCallback = (rating: MissionRating) => void;
 
 /** Loops the background flashes random colours after a hit with shields up (§17.13). */
 const HIT_FLASH_LOOPS = 16;
-/** R: the Zylon torpedo's ship is earmarked; θ Φ R and T follow it while the computer is on. */
 /** R: REDALERTLIFE on entering a Zylon sector. */
 const RED_ALERT_LOOPS = 255;
 /** Ship velocity (KM/loop) when it drops out of hyperspace; it slows by 1 per loop (R: UPDPANEL). */
@@ -98,6 +99,8 @@ export class Game {
   private radioFeed: RadioFeed;
   /** Zylon ships, their torpedo, meteors, our photons and explosions (sim/zylons.ts, §16, §17.7, §17.8). */
   private zylons: ZylonSim;
+  /** The Attack Computer Display, lock-on markers and lock flag (sim/attackComputer.ts, §11, §17.6). */
+  private attackComputer = new AttackComputer();
   private soundManager: SoundManager;
   private gameState: GameState;
   private unsubscribeSettings: () => void;
@@ -212,6 +215,8 @@ export class Game {
     const { sectorX: x, sectorY: y } = this.gameState;
     // Zylon ships enter one at a time from the sector's count (sim/zylons.ts, §17.8).
     this.zylons.clear();
+    // R: CLEANUPWARP clears TRACKDIGIT; a starbase sector sets T=2 again every loop.
+    if (this.zylons.trackDigit >= 2) this.zylons.trackDigit = 0;
 
     if (this.galaxy.hasStarbase(x, y)) {
       const starbasePos = new Vec3((random() - 0.5) * 100, (random() - 0.5) * 30, 100 - random() * 50);
@@ -338,12 +343,64 @@ export class Game {
       starbaseSector: this.galaxy.hasStarbase(sx, sy),
       hyperwarp: this.isHyperwarping,
       count256: this.controlPanel.colors.count256,
-      computer: this.gameState.attackComputerOn && this.gameState.damage.computer !== 'destroyed',
+      computer: this.computerWorking(),
+      photonStatus: this.gameState.damage.photons,
     });
     for (const e of events) this.zylonEvent(e);
+    this.computerLoop();
 
     if (this.redAlertLife > 0) this.redAlertLife--;
     if (this.hitFlash > 0) this.hitFlash--;
+  }
+
+  /** The attack computer is switched on (C) and not destroyed (§5.3, §17.3). */
+  private computerWorking(): boolean {
+    return this.gameState.attackComputerOn && this.gameState.damage.computer !== 'destroyed';
+  }
+
+  /**
+   * GAMELOOP steps 23–24 (§5.8, §5.10, §11, §17.6): T=3 while hyperwarping and T=2 in a starbase
+   * sector (T=2 overrides T=3), the Attack Computer Display in the Front view, and the tracking
+   * computer flipping between the Front and Aft views to keep the target in sight.
+   */
+  private computerLoop(): void {
+    if (this.isHyperwarping) this.zylons.trackDigit = 3;
+    if (this.currentStarbase) this.zylons.trackDigit = 2;
+    if (!this.computerWorking()) return;
+    const view = this.gameState.currentView;
+    const target = this.trackedObject();
+    if (view === ViewMode.FRONT) this.attackComputer.loop(target);
+    if (!this.gameState.trackingComputerOn || !target) return;
+    if (view !== ViewMode.FRONT && view !== ViewMode.AFT) return;
+    const flip = trackingView(view === ViewMode.FRONT ? 'FRONT' : 'AFT', target.z);
+    if (flip) this.switchView(flip === 'AFT' ? ViewMode.AFT : ViewMode.FRONT);
+  }
+
+  /**
+   * The object behind the target digit, ship frame in KM (§5.8): 0/1 a Zylon ship, 2 the
+   * starbase, 3 the hyperwarp marker. Null when it is not there.
+   */
+  private trackedObject(): TrackedObject | null {
+    const digit = this.zylons.trackDigit;
+    if (digit === 2) {
+      if (!this.currentStarbase) return null;
+      const p = this.currentStarbase.getObject().position;
+      return { x: p.x * KM_PER_UNIT, y: p.y * KM_PER_UNIT, z: p.z * KM_PER_UNIT };
+    }
+    if (digit === 3) return this.warpMarkerPosition();
+    const ship = this.zylons.trackedShip();
+    return ship ? { x: ship.x, y: ship.y, z: ship.z } : null;
+  }
+
+  /**
+   * T=3 hook: the hyperwarp marker in the ship frame (KM), or null outside hyperwarp. The ROM's
+   * marker (PLAYER3) sits far ahead, so R reads ∞. Phase 8 replaces this placeholder with the
+   * real marker's position.
+   */
+  private warpMarkerPosition(): TrackedObject | null {
+    if (!this.isHyperwarping) return null;
+    const m = this.hyperwarpAlignment;
+    return { x: Math.round(m.x) * 256, y: -Math.round(m.y) * 256, z: 0xffff };
   }
 
   /** The ROM's SHIPVIEW for the Zylon simulation. */
@@ -373,6 +430,11 @@ export class Game {
         break;
       case 'shipHit':
         this.shipHit(e.by, e.torpedoLife);
+        break;
+      case 'autoFired':
+        // R: TRIGGER — the locked salvo's second torpedo, at the usual cost (§12.1, §17.6).
+        this.energy.firePhoton();
+        this.soundManager.playTorpedoFire();
         break;
       default:
         break;
@@ -511,13 +573,12 @@ export class Game {
   }
 
   /**
-   * Ship-frame position (KM) of the object the panel's θ Φ R read (§6, §17.2). Our starship
-   * sits at the origin facing +z. (Phase 6 brings the ROM's target slots 0–3.)
+   * Ship-frame position (KM) of the object the panel's θ Φ R read, and the target digit after
+   * T:/C: (§5.8, §6, §17.2): 0/1 a Zylon ship, 2 the starbase, 3 the hyperwarp marker.
    */
   private trackedPosition(): TrackedPosition | null {
     this.controlPanel.setTrackDigit(this.zylons.trackDigit);
-    const target = this.zylons.trackedShip();
-    return target ? { x: target.x, y: target.y, z: target.z } : null;
+    return this.trackedObject();
   }
 
   /**
@@ -713,22 +774,26 @@ export class Game {
       case 'SHIELDS':
         // Damaged or destroyed shields can be switched on; then the panel turns orange (§17.3).
         this.gameState.shieldsActive = !this.gameState.shieldsActive;
+        this.attackComputer.reset(); // R: UPDSCREEN clears the playfield
         this.controlPanel.setTitle(this.gameState.shieldsActive ? PHRASE.SHIELDS_ON : PHRASE.SHIELDS_OFF);
         return;
       case 'COMPUTER':
-        // §5.3: C toggles the attack computer and its cross hairs (the display box is Phase 6).
+        // §5.3, §11: C toggles the attack computer: cross hairs, and the display in the Front view.
         this.gameState.attackComputerOn = !this.gameState.attackComputerOn;
+        this.attackComputer.reset();
         this.controlPanel.setTitle(this.gameState.attackComputerOn ? PHRASE.ATTACK_COMPUTER_ON : PHRASE.ATTACK_COMPUTER_OFF);
         return;
       case 'FIRE':
         this.fireTorpedo();
         return;
       case 'TRACKING':
-        // §5.10: the panel's T: becomes C: while on. (Front/aft auto-switching is Phase 6.)
+        // §5.10: the panel's T: becomes C: while on, and the view follows the target (computerLoop).
         this.gameState.trackingComputerOn = !this.gameState.trackingComputerOn;
+        this.attackComputer.reset();
         this.controlPanel.setTitle(this.gameState.trackingComputerOn ? PHRASE.COMPUTER_TRACKING_ON : PHRASE.TRACKING_OFF);
         return;
       case 'MANUAL_TARGET':
+        // §5.8: M switches the target between 0 and 1 (from 2 or 3 too; a starbase sector sets 2 again).
         this.zylons.toggleTarget();
         return;
       case 'PAUSE':
@@ -746,6 +811,7 @@ export class Game {
     this.galacticChart.hide();
     this.longRangeScan.hide();
     this.gameState.currentView = view;
+    this.attackComputer.reset(); // R: SETVIEW → UPDSCREEN clears the playfield and the lock
 
     if (view === ViewMode.GALACTIC_CHART) {
       this.galacticChart.show();
@@ -758,12 +824,17 @@ export class Game {
   }
 
   /**
-   * TRIGGER (§17.7): one photon per press, from alternating barrels; a barrel refires after 23
-   * loops; −10 energy each. Shields never block firing (the manual has no such rule).
+   * TRIGGER (§17.6, §17.7): one photon per press, from alternating barrels; a barrel refires
+   * after 23 loops; −10 energy each. In full lock-on (all three marker pairs) the torpedoes home
+   * in and the second one fires by itself; without it the markers hide for 12 display cycles.
+   * Shields never block firing (the manual has no such rule).
    */
   private fireTorpedo(): void {
-    const launched = this.zylons.fire(this.simView(), this.gameState.damage.photons, this.isHyperwarping);
-    if (!launched) return;
+    const locked = this.computerWorking() && this.attackComputer.inLockOn;
+    const result = this.zylons.fire(this.simView(), this.gameState.damage.photons, this.isHyperwarping, locked);
+    if (result === 'blocked') return;
+    this.attackComputer.triggered();
+    if (result !== 'launched') return;
     this.energy.firePhoton(); // §12.1: −10 per photon
     this.soundManager.playTorpedoFire();
   }
@@ -796,7 +867,8 @@ export class Game {
       objects,
       fragments: z.explosion?.fragments ?? [],
       count256: this.controlPanel.colors.count256,
-      crosshair: this.gameState.attackComputerOn && this.gameState.damage.computer !== 'destroyed',
+      crosshair: this.computerWorking(),
+      attackComputer: this.attackDisplay(),
       shields: this.controlPanel.colors.shieldsUp,
       redAlertLife: this.redAlertLife,
       hitFlash: this.hitFlash,
@@ -804,6 +876,12 @@ export class Game {
       panel: this.panelData(),
       warpMarker: this.controlPanel.getWarpMarker(),
     };
+  }
+
+  /** The Attack Computer Display: Front view only, computer on and not destroyed (§5.3, §11). */
+  private attackDisplay(): AttackDisplay | null {
+    if (!this.computerWorking() || this.gameState.currentView !== ViewMode.FRONT) return null;
+    return this.attackComputer.display();
   }
 
   /**
@@ -966,10 +1044,27 @@ export class Game {
             photons: z.photons,
             barrel: z.barrel,
             trackDigit: z.trackDigit,
+            homing: z.homing,
+            homingTarget: z.homingTarget,
             vicinityMask: z.vicinityMask,
             explosionLife: z.explosion?.life ?? 0,
           })
         );
+      },
+      attack: () => {
+        const a = this.attackComputer;
+        return {
+          shown: this.attackDisplay() !== null,
+          cycle: a.cycle,
+          blipCol: a.blipCol,
+          blipRow: a.blipRow,
+          blipRows: a.blipRows,
+          marks: a.marks,
+          inLockOn: a.inLockOn,
+          lockOnLife: a.lockOnLife,
+          trackDigit: this.zylons.trackDigit,
+          target: this.trackedObject(),
+        };
       },
       meteor: (x: number, y: number, z: number) => {
         const p = this.zylons.pl2;
