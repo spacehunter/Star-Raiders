@@ -1,0 +1,67 @@
+Star Raiders Phase 12 audio check (MANUAL_SPEC §17.12), seed 1979, headless Chromium
+
+1. Every §17.12 event, fired through the game and played by the POKEY synth:
+   photon             played 3×
+   zylonExplosion     played 2×
+   shieldExplosion    played 2×
+   starshipExplosion  played 1×
+   hyperwarpTransit   played 1×
+   redAlert           played 1×
+   acknowledge        played 2×
+   damageReport       played 1×
+   starbaseMessage    played 1×
+   engines            key 0: AUDF $ff vol 0 | key 3: AUDF $b6 vol 5 | key 6: AUDF $72 vol 8 | key 9: AUDF $45 vol 10
+   after the ship blew up: phase ending, engine vol 0, voices {"explosion":"starshipExplosion"}
+   => PASS
+   Synth log (n, event, voice, priority, result, pan):
+       1 acknowledge        beeper    p12  played   pan 0.00
+       2 acknowledge        beeper    p12  played   pan 0.00
+       3 photon             photon    p0   played   pan 0.45
+       4 photon             photon    p0   played   pan -0.45
+       5 photon             photon    p0   played   pan -0.45
+       6 zylonExplosion     explosion p1   played   pan 0.08
+       7 zylonExplosion     explosion p1   played   pan 0.08
+       8 shieldExplosion    explosion p2   played   pan 0.00
+       9 damageReport       beeper    p18  played   pan 0.00
+      10 starbaseMessage    beeper    p24  played   pan 0.00
+      11 shieldExplosion    explosion p2   played   pan 0.00
+      12 hyperwarpTransit   beeper    p0   played   pan 0.00
+      13 redAlert           beeper    p6   played   pan 0.00
+      14 starshipExplosion  explosion p3   played   pan 0.00
+
+2. Mute (N), measured on a live analyser at the AudioContext destination:
+   RMS before 0.0626  60 ms after N 0  muted + new events 0  after N again 0.0725
+   setting muted=true, stored in localStorage=true  => PASS
+
+3. Leak check: AudioContexts after each restart (abort → Enter → Enter → Enter/START):
+   restart 1: created 4, open 1, session mission, context running
+   restart 2: created 5, open 1, session mission, context running
+   restart 3: created 6, open 1, session mission, context running
+   restart 4: created 7, open 1, session mission, context running
+   restart 5: created 8, open 1, session mission, context running
+   => PASS: exactly 1 AudioContext alive after 5 restarts
+
+4. Offline render (OfflineAudioContext, 44100 Hz stereo, 20.2 s) → audio-demo.wav:
+     0.20 s  engines v=1        RMS L 0.0101 R 0.0101
+     0.65 s  engines v=2        RMS L 0.0140 R 0.0140
+     1.10 s  engines v=4        RMS L 0.0175 R 0.0175
+     1.55 s  engines v=8        RMS L 0.0211 R 0.0211
+     2.00 s  engines v=16       RMS L 0.0246 R 0.0246
+     2.45 s  engines v=32       RMS L 0.0282 R 0.0282
+     2.90 s  engines v=64       RMS L 0.0318 R 0.0318
+     3.35 s  engines v=96       RMS L 0.0320 R 0.0320
+     3.80 s  engines v=112      RMS L 0.0353 R 0.0353
+     4.25 s  engines v=254      RMS L 0.0390 R 0.0390
+     5.05 s  engines v=0        RMS L 0.0062 R 0.0062
+     5.65 s  photon             RMS L 0.0504 R 0.0232
+     6.25 s  photon             RMS L 0.0201 R 0.0437
+     7.05 s  zylonExplosion     RMS L 0.0288 R 0.0515
+     8.25 s  shieldExplosion    RMS L 0.0668 R 0.0668
+     9.65 s  starshipExplosion  RMS L 0.0794 R 0.0794
+    11.15 s  hyperwarpTransit   RMS L 0.0321 R 0.0321
+    12.85 s  redAlert           RMS L 0.0598 R 0.0598
+    15.35 s  acknowledge        RMS L 0.0241 R 0.0241
+    16.05 s  damageReport       RMS L 0.0479 R 0.0479
+    17.15 s  starbaseMessage    RMS L 0.0458 R 0.0458
+    18.35 s  redAlert           RMS L 0.0648 R 0.0648
+    18.95 s  mute               RMS L 0.0000 R 0.0000
