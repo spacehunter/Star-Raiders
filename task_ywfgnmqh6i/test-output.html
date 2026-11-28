@@ -1,0 +1,337 @@
+<!doctype html><meta charset="utf-8"><title>npm test — Phase 11</title><body style="background:#0a0e1c;color:#c8ffe8;font:13px ui-monospace,monospace"><h2>npm test (Vitest, verbose)</h2><pre>
+ RUN  v5.1.2 /home/nova/harness-work/star-raiders/task_ywfgnmqh6i
+
+ ✓ src/render/projection.test.ts &gt; ROM projection: offset = 81 · (x/z · 128) / 256 &gt; MAPTO80 maps 0..255 onto 0..80 1ms
+ ✓ src/render/projection.test.ts &gt; ROM projection: offset = 81 · (x/z · 128) / 256 &gt; matches the formula for many ratios 19ms
+ ✓ src/render/projection.test.ts &gt; ROM projection: offset = 81 · (x/z · 128) / 256 &gt; x = z (45°) lands 40 pixels off centre; overflow and z = 0 are offscreen 0ms
+ ✓ src/render/projection.test.ts &gt; ROM projection: offset = 81 · (x/z · 128) / 256 &gt; places pixels around column 80, row 50 like SCREENCOLUMN/SCREENROW 1ms
+ ✓ src/render/projection.test.ts &gt; ROM projection: offset = 81 · (x/z · 128) / 256 &gt; drops pixels outside the 160 × 100 playfield 0ms
+ ✓ src/render/projection.test.ts &gt; ROM projection: offset = 81 · (x/z · 128) / 256 &gt; front shows z ≥ 0 only; aft shows z &lt; 0 with the same, unmirrored sides 0ms
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; runs at 60 loops per second 1ms
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; n steps of 1/60 s are exactly n loops 3ms
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; carries partial loops between frames 0ms
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; star date advances one digit every 41 loops 1ms
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; fleet move ticks at star date 1.00, then every 0.50 2ms
+ ✓ src/core/clock.test.ts &gt; SimClock &gt; formats NN.NN and wraps after 99.99 0ms
+ ✓ src/sim/panel.test.ts &gt; MAPTOBCD99 &gt; maps a byte to 00..99 as floor(100·b/256) 1ms
+ ✓ src/sim/panel.test.ts &gt; V readout (§5.1, §17.1, §17.2) &gt; prints the manual V for each speed key once reached 0ms
+ ✓ src/sim/panel.test.ts &gt; V readout (§5.1, §17.1, §17.2) &gt; shows ∞ in hyperspace 0ms
+ ✓ src/sim/panel.test.ts &gt; θ and Φ readouts: sign and two digits in gradons &gt; is +00 at the centre and for anything closer than 256 KM on the plus side 0ms
+ ✓ src/sim/panel.test.ts &gt; θ and Φ readouts: sign and two digits in gradons &gt; reads the high byte of the coordinate through MAPTOBCD99 0ms
+ ✓ src/sim/panel.test.ts &gt; θ and Φ readouts: sign and two digits in gradons &gt; is minus for negative coordinates; the ROM inverts the high byte so −1..−256 KM read −00 0ms
+ ✓ src/sim/panel.test.ts &gt; θ and Φ readouts: sign and two digits in gradons &gt; never shows ∞: a high byte of $FF is nudged to $FE (99) 0ms
+ ✓ src/sim/panel.test.ts &gt; θ and Φ readouts: sign and two digits in gradons &gt; is always a sign and two digits 1ms
+ ✓ src/sim/panel.test.ts &gt; R readout: sign, two digits in centrons and a coarse third digit &gt; starts at +000 0ms
+ ✓ src/sim/panel.test.ts &gt; R readout: sign, two digits in centrons and a coarse third digit &gt; takes the third digit from the top four bits of the low byte, so it only runs 0–5 0ms
+ ✓ src/sim/panel.test.ts &gt; R readout: sign, two digits in centrons and a coarse third digit &gt; reads like the manual photos 1ms
+ ✓ src/sim/panel.test.ts &gt; R readout: sign, two digits in centrons and a coarse third digit &gt; is + in front and − behind the ship 0ms
+ ✓ src/sim/panel.test.ts &gt; R readout: sign, two digits in centrons and a coarse third digit &gt; shows ∞ for a high byte of $FF (the hyperwarp marker), blanking the third digit 0ms
+ ✓ src/sim/panel.test.ts &gt; T / C letter (§5.10, §17.2; R: UPDSCREEN, code over comment) &gt; is T with the tracking computer off and C with it on 0ms
+ ✓ src/sim/panel.test.ts &gt; K and E readouts &gt; K is two digits 0ms
+ ✓ src/sim/panel.test.ts &gt; K and E readouts &gt; E is four digits and the ROM blanks it at zero energy 0ms
+ ✓ src/sim/panel.test.ts &gt; low-energy threshold (§6, §12, §17.1) &gt; warns below 1000 units, not at 1000 0ms
+ ✓ src/sim/panel.test.ts &gt; panel band colour &gt; stays dark blue $90 at 1000 units and above 0ms
+ ✓ src/sim/panel.test.ts &gt; panel band colour &gt; below 1000 flashes pink $44 / blue $90, 128 loops each 0ms
+ ✓ src/sim/panel.test.ts &gt; panel band colour &gt; only stores colours every 4th loop (the code ANDs with 3; the comment says 8) 0ms
+ ✓ src/sim/panel.test.ts &gt; panel band colour &gt; turns orange $26 with the shields switched on but destroyed (they never come up) 0ms
+ ✓ src/sim/panel.test.ts &gt; panel band colour &gt; damaged shields stay up on a roll below 200/256 and go out (orange) otherwise 0ms
+ ✓ src/sim/panel.test.ts &gt; panel band colour &gt; shields switched off: black space, normal band (orange overrides the pink flash only when out) 0ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; score 90 is NOVICE class 4 3ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; score 161 is PILOT class 3 1ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; reproduces the ROM quick-lookup table for every score 0..303 16ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; classes split each manual rank into five near-equal parts, 5 lowest to 1 highest 1ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; 304 and above is STAR COMMANDER class 1; below zero is GALACTIC COOK class 5 0ms
+ ✓ src/sim/rating.test.ts &gt; §14.3 / §17.10 rank and class &gt; gag ranks under 48 0ms
+ ✓ src/sim/rating.test.ts &gt; §14.1 / §17.10 running score &gt; +6 per Zylon, −3 per starbase shot, −18 per starbase lost, −1 per fleet tick and per 100 energy 0ms
+ ✓ src/sim/rating.test.ts &gt; §14.1 / §17.10 running score &gt; matches the manual formula with the M table 1ms
+ ✓ src/sim/rating.test.ts &gt; §14.1 / §17.10 running score &gt; M depends on level and outcome 1ms
+ ✓ src/sim/rating.test.ts &gt; §17.10 end-of-mission messages &gt; mission complete 0ms
+ ✓ src/sim/rating.test.ts &gt; §17.10 end-of-mission messages &gt; zero energy 0ms
+ ✓ src/sim/rating.test.ts &gt; §17.10 end-of-mission messages &gt; destroyed 0ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 continuous drains &gt; speed 6 drains 3.5 units/s (plus ¼ life support) 5ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 continuous drains &gt; every engine key drains the manual rate 18ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 continuous drains &gt; shields 2/s, computer ½/s, life support ¼/s 5ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 continuous drains &gt; ROM subunits per loop: shields 8 + computer 2 + life support 1 + engine 1ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 lump costs &gt; photon 10, hit 100, abort 100 0ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 lump costs &gt; hyperspace drains 10 per loop for WARPENERGY − 1 loops 0ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 lump costs &gt; docking refills to 9999 0ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 score: −1 per 100-unit boundary &gt; counts boundaries crossed by 1- and 10-unit steps 0ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 score: −1 per 100-unit boundary &gt; 100-unit lumps never cost score (DECENERGY digit 1) 1ms
+ ✓ src/sim/energy.test.ts &gt; §17.1 score: −1 per 100-unit boundary &gt; equals floor(energy used / 100) for continuous use from 9999 3ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 zero energy &gt; energy reaches 0 and aborts the mission 1ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 zero energy &gt; a full tank runs dry at speed 9 with shields and computer in about 9½ minutes 9ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 zero energy &gt; a photon fired at 5 units ends the mission 0ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 zero energy &gt; nothing drains or refills after zero energy 2ms
+ ✓ src/sim/energy.test.ts &gt; §12 / §17.1 zero energy &gt; isLow below 1000 0ms
+ ✓ src/render/scan.test.ts &gt; scan projection and scale (§10; R: GAMELOOP step 14, SCREENROW/SCREENCOLUMN) &gt; uses MAPTO80 of the coordinate high byte, negative values inverted like the ROM 1ms
+ ✓ src/render/scan.test.ts &gt; scan projection and scale (§10; R: GAMELOOP step 14, SCREENROW/SCREENCOLUMN) &gt; puts our position in the centre, ahead up and right to the right 1ms
+ ✓ src/render/scan.test.ts &gt; scan projection and scale (§10; R: GAMELOOP step 14, SCREENROW/SCREENCOLUMN) &gt; spans about ±40,000 KM ahead and behind (the manual&#x27;s top view) and ±65,000 KM across 0ms
+ ✓ src/render/scan.test.ts &gt; scan projection and scale (§10; R: GAMELOOP step 14, SCREENROW/SCREENCOLUMN) &gt; is linear: one pixel per ≈ 800 KM 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; draws our ship, five ROM lines in COLOR1 in the centre (R: DRAWLINESTAB lines 17–21) 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; draws targets and meteors as 2 × 2 squares (shape cell 6, rows doubled) in random colours 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; draws the starbase as its small cross icon, not a square 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; flashes: the colours change from loop to loop 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; leaves out objects beyond the scan 0ms
+ ✓ src/render/scan.test.ts &gt; the scan picture (§10, §17.13, §18.1) &gt; places the stars of an LRS starfield on the z-x plane, all on screen 1ms
+ ✓ src/render/scan.test.ts &gt; the scan rotates as you steer (§10 procedure, §17.13) &gt; stick left swings a target on the left round to straight ahead (top of the screen) 0ms
+ ✓ src/render/scan.test.ts &gt; the scan rotates as you steer (§10 procedure, §17.13) &gt; stick right turns the other way: the picture rotates around our ship 0ms
+ ✓ src/render/scan.test.ts &gt; the scan rotates as you steer (§10 procedure, §17.13) &gt; the stars rotate too 0ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; damaged: each object lands at its place or its mirror image through our ship, at random 4ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; damaged keeps Phase 7&#x27;s flip: BIT RANDOM bit 6 picks the half 0ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; OK: no mirror and no draws from the mirror stream 0ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; destroyed: only our ship, no stars, fragments or blips 0ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; computer destroyed: DRAWLINES returns at once, so not even our ship (objects still drawn) 0ms
+ ✓ src/render/scan.test.ts &gt; scan damage (§7, §17.3; R: SCREENROW L9493, GAMELOOP L3569, DRAWLINES) &gt; scan and computer both destroyed: nothing at all 0ms
+ ✓ src/rules/rules.test.ts &gt; §5.1 / §17.1 speed table &gt; V on the panel matches the manual for every key 1ms
+ ✓ src/rules/rules.test.ts &gt; §5.1 / §17.1 speed table &gt; speed 6 is V12 0ms
+ ✓ src/rules/rules.test.ts &gt; §5.1 / §17.1 speed table &gt; Zylon top speed key 7 is V25 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.2 / §17.1 engine drain &gt; manual units/second = ROM subunits per loop at 64 loops/s 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.2 / §17.1 engine drain &gt; speed 6 drains 3.5 units/s 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.2 / §17.1 engine drain &gt; manual table §12.2 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.1 / §17.1 per-loop drains &gt; shields 2/s, computer ½/s, life support ¼/s 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.1 / §17.1 per-loop drains &gt; every mission starts with 9999 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.3 / §17.5 warp energy and CALCWARP &gt; ROM table × 10 is the manual table 1ms
+ ✓ src/rules/rules.test.ts &gt; §12.3 / §17.5 warp energy and CALCWARP &gt; a 5-sector warp costs 500 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.3 / §17.5 warp energy and CALCWARP &gt; every sector distance 0..22 on the 16×8 chart costs the manual value 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.3 / §17.5 warp energy and CALCWARP &gt; a jump inside the sector costs 100 0ms
+ ✓ src/rules/rules.test.ts &gt; §12.3 / §17.5 warp energy and CALCWARP &gt; rows count half: DISTANCE = |Δrow|/2 + |Δcol|, plus DISTANCE &amp; 3 0ms
+ ✓ src/rules/rules.test.ts &gt; §14.2 M table and §14.3 / §17.10 ranks and classes &gt; M values 0ms
+ ✓ src/rules/rules.test.ts &gt; §14.2 M table and §14.3 / §17.10 ranks and classes &gt; RANKTAB covers the manual ranges in 16-point bins 2ms
+ ✓ src/rules/rules.test.ts &gt; §14.2 M table and §14.3 / §17.10 ranks and classes &gt; CLASSTAB splits 16 class indices into classes 5..1 0ms
+ ✓ src/rules/rules.test.ts &gt; §15 / §17.4 counts per level &gt; Zylons 27/36/45/54 and starbases 3/4/5/6 0ms
+ ✓ src/rules/rules.test.ts &gt; §15 / §17.4 counts per level &gt; steering is automatic only at NOVICE 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.7 Zylon homing per level &gt; 1 / 4 / 8 / 20 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; chance 0 / 80 / 180 / 254 of 256 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; NOVICE never takes damage 1ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; one byte decides chance and slot; slots 6 and 7 harm nothing 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; PILOT harms a system on 60 of 256 bytes (80 below chance, 2 of 8 slots empty) 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; close torpedoes (life ≥ 30) destroy; messages name the system 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; computer and sector scan are never both destroyed 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; an already destroyed system makes the ROM draw again 0ms
+ ✓ src/rules/rules.test.ts &gt; message strings &gt; ROM spellings 0ms
+ ✓ src/rules/rules.test.ts &gt; starting speed &gt; a new game is set to speed key 6 1ms
+ ✓ src/core/rng.test.ts &gt; seeded RNG &gt; gives the same sequence for the same seed 2ms
+ ✓ src/core/rng.test.ts &gt; seeded RNG &gt; gives different sequences for different seeds 1ms
+ ✓ src/core/rng.test.ts &gt; seeded RNG &gt; returns floats in [0, 1) 61ms
+ ✓ src/core/rng.test.ts &gt; seeded RNG &gt; matches known mulberry32 output so the stream never drifts 0ms
+ ✓ src/core/rng.test.ts &gt; seeded RNG &gt; setSeed resets the shared generator 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; photons ok 3ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; photons damaged 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; photons destroyed 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; engines ok 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; engines damaged 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; engines destroyed 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; shields ok 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; shields damaged 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; shields destroyed 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; computer ok 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; computer damaged 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; computer destroyed 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; sectorScan ok 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; sectorScan damaged 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; sectorScan destroyed 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; radio ok 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; radio damaged 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; radio destroyed 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 effect details &gt; damaged photons keep using the barrel they had; OK ones alternate 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 effect details &gt; engines: only destroyed caps the key, and only for keys 6–9 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 effect details &gt; engines: the jitter is NEWVELOCITY AND RANDOM, and stops in hyperwarp 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 effect details &gt; damaged shields are up about 200/256 of the time 2ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 effect details &gt; a destroyed computer is switched off (R: DAMAGE) and hides our ship on the scan (R: DRAWLINES) 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 state bits (code, not the comment) &gt; OK %00, damaged %10, destroyed %11 in bits 7–6 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 state bits (code, not the comment) &gt; a state never improves without repair 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 DAMAGE CONTROL messages, beep and repair &gt; blank, DAMAGE CONTROL, then the subsystem phrase, which repeats until docking clears it 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 DAMAGE CONTROL messages, beep and repair &gt; every subsystem has its ROM phrase in both states 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 DAMAGE CONTROL messages, beep and repair &gt; repairAll restores all six from any mix; only docking calls it 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 DAMAGE CONTROL messages, beep and repair &gt; the roll feeds the report: rates per level and damaged vs destroyed by torpedo age 1ms
+ ✓ src/sim/damage.test.ts &gt; §7 the radio freeze holds from the moment of damage &gt; the chart keeps the map it had when the radio was hit, and repair brings it back 2ms
+ ✓ src/render/sprites.test.ts &gt; ROM sprite bitmaps &gt; fighter: the 12-row H 1ms
+ ✓ src/render/sprites.test.ts &gt; ROM sprite bitmaps &gt; cruiser: the 9-row arch 0ms
+ ✓ src/render/sprites.test.ts &gt; ROM sprite bitmaps &gt; basestar: the 10-row diamond with wing bars 0ms
+ ✓ src/render/sprites.test.ts &gt; ROM sprite bitmaps &gt; photon / meteor: the 16-row ball 1ms
+ ✓ src/render/sprites.test.ts &gt; distance cells and brightness &gt; 8 cells per shape, never growing with distance 0ms
+ ✓ src/render/sprites.test.ts &gt; distance cells and brightness &gt; the cell is the |z| high byte / 2, in the view direction; ≥ 8192 KM is not drawn 0ms
+ ✓ src/render/sprites.test.ts &gt; distance cells and brightness &gt; Zylons are grey: $0E near down to $04 far 0ms
+ ✓ src/render/sprites.test.ts &gt; distance cells and brightness &gt; the basestar flickers: its colour changes from frame to frame 0ms
+ ✓ src/render/sprites.test.ts &gt; distance cells and brightness &gt; the starbase is a centre and two wings 1ms
+ ✓ src/render/sprites.test.ts &gt; collision (Player/Missile overlap) &gt; needs a lit pixel in common 0ms
+ ✓ src/sim/title.test.ts &gt; title line timing &gt; constants are the ROM lifetimes: 60 loops a segment, 254 for the long phrases 2ms
+ ✓ src/sim/title.test.ts &gt; title line timing &gt; shows a one-segment phrase for 60 loops, then hides the line 1ms
+ ✓ src/sim/title.test.ts &gt; title line timing &gt; long phrases stay 254 loops 1ms
+ ✓ src/sim/title.test.ts &gt; title line timing &gt; shows a phrase one segment at a time: ORBIT ESTABLISHED, then STANDBY 1ms
+ ✓ src/sim/title.test.ts &gt; title line timing &gt; a new phrase replaces the current one at once 0ms
+ ✓ src/sim/title.test.ts &gt; title line timing &gt; a queued phrase waits for the line to go blank, starts the next loop, and keeps repeating 1ms
+ ✓ src/sim/title.test.ts &gt; title line timing &gt; docking empties the queue 1ms
+ ✓ src/sim/title.test.ts &gt; ROM phrases &gt; every segment fits the 20-character title line 1ms
+ ✓ src/sim/title.test.ts &gt; ROM phrases &gt; keeps the ROM words and their leading spaces 1ms
+ ✓ src/sim/title.test.ts &gt; ROM phrases &gt; the end sequence starts on a blank segment and shows each line for 60 loops, then repeats 1ms
+ ✓ src/sim/attackComputer.test.ts &gt; attack computer display geometry &gt; outer box spans cols 119–148 × rows 70–86, inner box cols 126–140 × rows 75–81 2ms
+ ✓ src/sim/attackComputer.test.ts &gt; attack computer display geometry &gt; the blip is the 6 × 5 ROM shape, COLOR3 where it crosses a frame line 1ms
+ ✓ src/sim/attackComputer.test.ts &gt; attack computer display geometry &gt; marker pairs: A upper bars, B lower bars, C two 2 × 2 blocks at the bottom 2ms
+ ✓ src/sim/attackComputer.test.ts &gt; blip position &gt; maps x to columns 120..142 around 131 and y to rows 71..81 around 77 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; lock windows &gt; A: x within −512..+511 KM 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; lock windows &gt; B: A plus y within −512..+511 KM 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; lock windows &gt; C: A and B and in front, closer than 3072 KM 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; display cycle &gt; waits out the delay, recalculates on blip cycle 10, then draws one blip row per loop 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; display cycle &gt; the markers follow the target as it closes in: A, then B, then C 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; display cycle &gt; the blip vanishes when the target is gone 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; display cycle &gt; firing without lock hides the markers for 12 display cycles; with lock they stay 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; display cycle &gt; a view change or C/S/T press clears the display and drops the lock 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; M: manual target selector &gt; switches T between 0 and 1, and from 2 or 3 back to 1 or 0 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; M: manual target selector &gt; the selected ship is the one tracked while both are alive; T=2 is kept 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; tracking computer &gt; switches to the Aft view when the target is behind, and back when it is ahead 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; tracking computer &gt; follows a Zylon that flies past the ship 1ms
+ ✓ src/sim/attackComputer.test.ts &gt; homing photons &gt; HOMVELTAB velocities by PM pixel difference 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; homing photons &gt; a locked salvo steers into the target and kills it; the same shot unlocked misses 1ms
+ ✓ src/sim/attackComputer.test.ts &gt; homing photons &gt; steers right toward a target on the right, upward only 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; homing photons &gt; the kill clears homing; an unlocked press turns it off 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; automatic second torpedo &gt; a locked press launches the other barrel on the next loop 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; automatic second torpedo &gt; an unlocked press fires one torpedo only 0ms
+ ✓ src/sim/attackComputer.test.ts &gt; automatic second torpedo &gt; destroyed photons: the press sets up the lock but nothing launches 0ms
+ ✓ src/sim/debrief.test.ts &gt; bend 6 debrief breakdown (§14.1, §17.10) &gt; lines add up to the total the rank came from 4ms
+ ✓ src/sim/debrief.test.ts &gt; bend 6 debrief breakdown (§14.1, §17.10) &gt; M follows the outcome column (§14.2) 1ms
+ ✓ src/render/Renderer.test.ts &gt; frame scaling and letterboxing &gt; is a 160-wide frame of 123 rows (playfield 100 + panel band 23) 2ms
+ ✓ src/render/Renderer.test.ts &gt; frame scaling and letterboxing &gt; panel rows sit like the manual HUD strip photo: 3 blank, 8, 1 blank, 8, 3 blank 1ms
+ ✓ src/render/Renderer.test.ts &gt; frame scaling and letterboxing &gt; scales by a whole number, centred, keeping a 2% safe margin 1ms
+ ✓ src/render/Renderer.test.ts &gt; cross hairs &gt; front: col 80 rows 40–46 and 54–60, row 50 cols 62–76 and 84–98 1ms
+ ✓ src/render/Renderer.test.ts &gt; cross hairs &gt; aft: only the two horizontal bars 0ms
+ ✓ src/render/Renderer.test.ts &gt; background: shields tint and red-alert flash &gt; is black, or $A0 with the shields up 0ms
+ ✓ src/render/Renderer.test.ts &gt; background: shields tint and red-alert flash &gt; red alert flashes $42 on bit 5 of the remaining life (every 32 loops) 1ms
+ ✓ src/render/Renderer.test.ts &gt; panel font &gt; has every character the panel prints, 8 × 8, byte-exact from the ROM 2ms
+ ✓ src/sim/motion.test.ts &gt; star rotation: 0.89° per loop, Minsky style &gt; turns by arcsin(1/64) = 0.89° per loop 1ms
+ ✓ src/sim/motion.test.ts &gt; star rotation: 0.89° per loop, Minsky style &gt; overwrites the first coordinate and uses it for the second (R: ROTATE) 0ms
+ ✓ src/sim/motion.test.ts &gt; star rotation: 0.89° per loop, Minsky style &gt; keeps stars on their circle for many turns and comes round after ~402 loops 2ms
+ ✓ src/sim/motion.test.ts &gt; star rotation: 0.89° per loop, Minsky style &gt; follows the stick directions of §4 in the front view 0ms
+ ✓ src/sim/motion.test.ts &gt; star rotation: 0.89° per loop, Minsky style &gt; flying moves objects toward −z; velocity steps by 1 per loop 0ms
+ ✓ src/sim/motion.test.ts &gt; aft-view steering inversion (M §II) &gt; both points start on the same pixel of their screen 0ms
+ ✓ src/sim/motion.test.ts &gt; aft-view steering inversion (M §II) &gt; left/right: aft stick left moves the picture like front stick right, and vice versa 0ms
+ ✓ src/sim/motion.test.ts &gt; aft-view steering inversion (M §II) &gt; up/down: aft stick forward climbs (like front back), aft back dives 0ms
+ ✓ src/sim/motion.test.ts &gt; aft-view steering inversion (M §II) &gt; the same stick moves aft stars the opposite way on screen to front stars 0ms
+ ✓ src/sim/zylons.test.ts &gt; Zylon type mix &gt; ZYLONSHAPTAB holds 4 fighters, 3 cruisers and 1 basestar in 8 slots 1ms
+ ✓ src/sim/zylons.test.ts &gt; Zylon type mix &gt; spawned ships follow the mix on every level 67ms
+ ✓ src/sim/zylons.test.ts &gt; ships and torpedo limits &gt; never more than 2 ships in play, and never more than the sector holds 40ms
+ ✓ src/input/Input.test.ts &gt; key map &gt; arrows and keypad are always the stick; Space fires 1ms
+ ✓ src/input/Input.test.ts &gt; key map &gt; keeps the manual keys: A aft, S shields, F, G, L, H, C, T, M, P and 0–9 0ms
+ ✓ src/input/Input.test.ts &gt; key map &gt; with WASD on, W/A/S/D steer and Aft/Shields move to R/Q 0ms
+ ✓ src/input/Input.test.ts &gt; pause, abort and unknown keys &gt; P and Esc pause; X is the pause menu abort 0ms
+ ✓ src/input/Input.test.ts &gt; pause, abort and unknown keys &gt; character keys the game does not use are UNKNOWN (WHATS WRONG?) 0ms
+ ✓ src/input/Input.test.ts &gt; pause, abort and unknown keys &gt; known keys keep their action; console, modifier and function keys are not UNKNOWN 0ms
+ ✓ src/input/Input.test.ts &gt; pause, abort and unknown keys &gt; with WASD on, R and Q are views/shields and W/A/S/D steer (never UNKNOWN) 0ms
+ ✓ src/core/rankHistory.test.ts &gt; bend 6 local rank history &gt; keeps the newest records first, at most RANK_HISTORY_MAX 1ms
+ ✓ src/core/rankHistory.test.ts &gt; bend 6 local rank history &gt; survives junk in storage and a missing store 1ms
+ ✓ src/sim/session.test.ts &gt; §17.10 end sequence on the title line, for every way a mission ends &gt; complete: STAR FLEET TO / STAR CRUISER 7 / MISSION COMPLETE / NEW RANK IS: / NOVICE / CLASS 4 / CONGRATULATIONS 4ms
+ ✓ src/sim/session.test.ts &gt; §17.10 end sequence on the title line, for every way a mission ends &gt; zeroEnergy: STAR FLEET TO / STAR CRUISER 7 / MISSION ABORTED / ZERO ENERGY / NEW RANK IS: / NOVICE / CLASS 4 / REPORT TO BASE / FOR TRAINING 1ms
+ ✓ src/sim/session.test.ts &gt; §17.10 end sequence on the title line, for every way a mission ends &gt; destroyed: STAR FLEET TO / ALL UNITS / STAR CRUISER 7 / DESTROYED / BY ZYLON FIRE / POSTHUMOUS RANK IS: / GARBAGE SCOW CAPTAIN / CLASS 2 1ms
+ ✓ src/sim/session.test.ts &gt; §17.10 end sequence on the title line, for every way a mission ends &gt; aborted: STAR FLEET TO / STAR CRUISER 7 / MISSION ABORTED / NEW RANK IS: / PILOT / CLASS 3 / CONGRATULATIONS 1ms
+ ✓ src/sim/session.test.ts &gt; §17.10 end sequence on the title line, for every way a mission ends &gt; the rank segments follow NEW RANK IS: / POSTHUMOUS RANK IS: 0ms
+ ✓ src/sim/session.test.ts &gt; §3 / §17.11 attract mode and console keys &gt; attract title: level, STAR RAIDERS, COPYRIGHT ATARI 1979 0ms
+ ✓ src/sim/session.test.ts &gt; §3 / §17.11 attract mode and console keys &gt; SELECT cycles NOVICE → PILOT → WARRIOR → COMMANDER → NOVICE 0ms
+ ✓ src/sim/session.test.ts &gt; §3 / §17.11 attract mode and console keys &gt; Tab is SELECT, 1–4 pick a level, Enter is START; nothing in a mission 1ms
+ ✓ src/sim/session.test.ts &gt; §3 / §17.11 attract mode and console keys &gt; Enter, Space or Esc moves on from the end sequence and the debrief card 1ms
+ ✓ src/sim/session.test.ts &gt; §3 / §17.11 idle timeout &gt; expires after 32768 loops (≈ 9.1 minutes), not before 124ms
+ ✓ src/sim/session.test.ts &gt; §3 / §17.11 idle timeout &gt; runs on frame time of any length and resets on a key 0ms
+ ✓ src/sim/session.test.ts &gt; §5.11 pause &gt; stays paused until a key is pressed 0ms
+ ✓ src/sim/session.test.ts &gt; §5.11 pause &gt; moving the stick continues 0ms
+ ✓ src/sim/session.test.ts &gt; §5.11 pause &gt; a stick held when P was pressed must come back to the centre first 0ms
+ ✓ src/sim/session.test.ts &gt; §5.11 pause &gt; X in the pause menu aborts; P again resumes 0ms
+ ✓ src/sim/session.test.ts &gt; §5.11 pause &gt; does nothing when not paused 0ms
+ ✓ src/sim/session.test.ts &gt; §17.11 WHATS WRONG? &gt; is one 60-loop segment on the title line 0ms
+ ✓ src/sim/galaxy.test.ts &gt; galaxy set-up (§15, §17.4) &gt; NOVICE: 27 Zylons in level+3 groups of 2, 3 and 4, 3 starbases 9ms
+ ✓ src/sim/galaxy.test.ts &gt; galaxy set-up (§15, §17.4) &gt; PILOT: 36 Zylons in level+3 groups of 2, 3 and 4, 4 starbases 3ms
+ ✓ src/sim/galaxy.test.ts &gt; galaxy set-up (§15, §17.4) &gt; WARRIOR: 45 Zylons in level+3 groups of 2, 3 and 4, 5 starbases 3ms
+ ✓ src/sim/galaxy.test.ts &gt; galaxy set-up (§15, §17.4) &gt; COMMANDER: 54 Zylons in level+3 groups of 2, 3 and 4, 6 starbases 4ms
+ ✓ src/sim/galaxy.test.ts &gt; galaxy set-up (§15, §17.4) &gt; starbases never start on the border, next to Zylons or another starbase; the start sector is empty 150ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 rules: VEERMASK and the marker &gt; VEERMASK follows WARPENERGY bits 7..6, not the mission level (code ≠ comment) 1ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 rules: VEERMASK and the marker &gt; NOVICE has no veer at all 2ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 rules: VEERMASK and the marker &gt; kicks are ±16..31 below 640 energy up to ±16..127 at 1920 or more 0ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 rules: VEERMASK and the marker &gt; the marker starts centred: PM column 125, row 118 (x 0, y +256 KM, z $1F00) 0ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 landing offset &gt; a centred marker lands in the chosen sector 0ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 landing offset &gt; 8 PM columns off-centre is one sector sideways 0ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 landing offset &gt; 16 PM rows off-centre is one sector up or down 0ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 landing offset &gt; the chart wraps at 128 PM pixels (&amp; $7F) 0ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 landing offset &gt; landing nearer the vertical middle picks a tighter vicinity mask 0ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §9 acceptance: scripted PILOT jumps &gt; held centred, a PILOT warp lands in the target sector (40 seeds, 3 jumps) 21ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §9 acceptance: scripted PILOT jumps &gt; pushed to the right cross hair, it lands one sector to the right (M §IX tactic) 2ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §9 acceptance: scripted PILOT jumps &gt; left alone, a PILOT marker drifts: some jumps miss their sector 8ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §9 acceptance: scripted PILOT jumps &gt; NOVICE: no drift, the marker never moves and every jump lands on target 80ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §9 acceptance: scripted PILOT jumps &gt; leaving the front view (not NOVICE) randomises the landing 4ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 phases and costs &gt; trails from velocity 128, every 4 loops, with VELOCITYHI; hyperspace at 254 1ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 phases and costs &gt; the cost is charged per hyperspace loop: WARPENERGY − 1 loops of −10 0ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 phases and costs &gt; CALCWARP is redone on the steered arrival point when hyperspace starts 0ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 phases and costs &gt; abort (0–9) costs 100 in any phase and leaves us where we were 0ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 phases and costs &gt; after arrival the departure is the arrival point and H can engage again 0ms
+ ✓ src/sim/hyperwarp.test.ts &gt; §17.5 star trails (R: INITTRAIL) &gt; 6 stars on one line of sight, 80 KM apart from +4688 KM, in 32 reused slots 1ms
+ ✓ src/sim/docking.test.ts &gt; orbit conditions (§13, §17.9; R: DOCKING) &gt; PM column and row follow SCREENCOLUMN / SCREENROW (centre 125 / 122) 1ms
+ ✓ src/sim/docking.test.ts &gt; orbit conditions (§13, §17.9; R: DOCKING) &gt; a starbase centred, sitting just above the cross hair, closer than 512 KM, speed 0: orbit 0ms
+ ✓ src/sim/docking.test.ts &gt; orbit conditions (§13, §17.9; R: DOCKING) &gt; too far (≥ 512 KM), behind us, or below the axis: no orbit 0ms
+ ✓ src/sim/docking.test.ts &gt; orbit conditions (§13, §17.9; R: DOCKING) &gt; off centre sideways or too high: no orbit 0ms
+ ✓ src/sim/docking.test.ts &gt; orbit conditions (§13, §17.9; R: DOCKING) &gt; the ship must be stopped: velocity and new velocity both 0 0ms
+ ✓ src/sim/docking.test.ts &gt; orbit conditions (§13, §17.9; R: DOCKING) &gt; nothing docks from the Aft view (the starbase is not between the cross hairs) 0ms
+ ✓ src/sim/docking.test.ts &gt; scripted approach at speed 2 then 0 (acceptance) &gt; centred and close: ORBIT ESTABLISHED once stopped, then STANDBY, the vessel, TRANSFER COMPLETE 11ms
+ ✓ src/sim/docking.test.ts &gt; scripted approach at speed 2 then 0 (acceptance) &gt; the same approach off centre does not dock 6ms
+ ✓ src/sim/docking.test.ts &gt; scripted approach at speed 2 then 0 (acceptance) &gt; the same approach stopped too far away does not dock 2ms
+ ✓ src/sim/docking.test.ts &gt; scripted approach at speed 2 then 0 (acceptance) &gt; flying on at speed 2 through the starbase never docks (speed must be 0) 2ms
+ ✓ src/sim/docking.test.ts &gt; scripted approach at speed 2 then 0 (acceptance) &gt; the starbase is never closer than 32 KM while we hold still (R: DOCKING) 1ms
+ ✓ src/sim/docking.test.ts &gt; DOCKING ABORTED (§13 step 6) &gt; any key except G during docking aborts it 6ms
+ ✓ src/sim/docking.test.ts &gt; DOCKING ABORTED (§13 step 6) &gt; G (the Galactic Chart) does not abort 5ms
+ ✓ src/sim/docking.test.ts &gt; DOCKING ABORTED (§13 step 6) &gt; moving the stick aborts, also during the transfer, and the vessel turns back 1ms
+ ✓ src/sim/docking.test.ts &gt; DOCKING ABORTED (§13 step 6) &gt; speeding up breaks the orbit: DOCKING ABORTED 0ms
+ ✓ src/sim/docking.test.ts &gt; DOCKING ABORTED (§13 step 6) &gt; after an abort, choosing speed 0 again docks again 2ms
+ ✓ src/sim/docking.test.ts &gt; no repeat docking &gt; parked after TRANSFER COMPLETE, the ship never docks again 10ms
+ ✓ src/sim/docking.test.ts &gt; no repeat docking &gt; a key after TRANSFER COMPLETE is not DOCKING ABORTED, and leaving quietly ends it 1ms
+ ✓ src/sim/docking.test.ts &gt; the starbase in KM space (§17.8, §17.9; R: HYPERWARP L4842) &gt; is placed like a Zylon ship: ≥ 28928 KM ahead, x and y within the vicinity mask, random signs 6ms
+ ✓ src/sim/docking.test.ts &gt; the starbase in KM space (§17.8, §17.9; R: HYPERWARP L4842) &gt; a starbase sector has no Zylon ships, Zylon torpedoes or meteors 90ms
+ ✓ src/sim/docking.test.ts &gt; the starbase in KM space (§17.8, §17.9; R: HYPERWARP L4842) &gt; is drawn in three parts: centre plus wings 8 PM pixels out and 4 scanlines lower 0ms
+ ✓ src/sim/docking.test.ts &gt; shooting the starbase (§14.1, §17.7, §17.10; R: COLLISION) &gt; a photon destroys it: −3, gone from the galaxy and the chart, an explosion 1ms
+ ✓ src/sim/docking.test.ts &gt; shooting the starbase (§14.1, §17.7, §17.10; R: COLLISION) &gt; a photon that misses leaves it alone 1ms
+ ✓ src/sim/zylons.test.ts &gt; ships and torpedo limits &gt; spawns at least 28928 KM ahead 0ms
+ ✓ src/sim/zylons.test.ts &gt; ships and torpedo limits &gt; a new torpedo only once the old one has gone (one PLAYER2) 3ms
+ ✓ src/sim/zylons.test.ts &gt; ships and torpedo limits &gt; no Zylons, torpedoes or meteors in a starbase sector or during hyperwarp 2ms
+ ✓ src/sim/zylons.test.ts &gt; Zylon torpedo &gt; fires only near our plane and within 8192 KM; never from behind at NOVICE 0ms
+ ✓ src/sim/zylons.test.ts &gt; Zylon torpedo &gt; homes toward our axis at 1 / 4 / 8 / 20 KM per loop by level 0ms
+ ✓ src/sim/zylons.test.ts &gt; Zylon torpedo &gt; lives 62 loops 1ms
+ ✓ src/sim/zylons.test.ts &gt; photon torpedoes &gt; alternate left and right barrels 0ms
+ ✓ src/sim/zylons.test.ts &gt; photon torpedoes &gt; a barrel refires only once its last torpedo is more than 23 loops old (life &lt; 232) 0ms
+ ✓ src/sim/zylons.test.ts &gt; photon torpedoes &gt; damaged photons fire one barrel every 23 loops; destroyed ones never 0ms
+ ✓ src/sim/zylons.test.ts &gt; photon torpedoes &gt; fly 102 KM per loop for 255 loops, aft photons fly backwards; cost 10 0ms
+ ✓ src/sim/zylons.test.ts &gt; photon torpedoes &gt; sparkle: each frame shows a random subset of the shape 6ms
+ ✓ src/sim/zylons.test.ts &gt; photon hits &gt; destroys a fighter in front, scoring through zylonDestroyed 0ms
+ ✓ src/sim/zylons.test.ts &gt; photon hits &gt; a basestar dies only to a torpedo younger than 15 loops 0ms
+ ✓ src/sim/zylons.test.ts &gt; photon hits &gt; misses outside the depth window (HITMINZTAB/HITMAXZTAB) 0ms
+ ✓ src/sim/zylons.test.ts &gt; photon hits &gt; explosions are 32 fragments, −7..+7 KM per loop, for 128 loops 1ms
+ ✓ src/sim/zylons.test.ts &gt; being hit &gt; shields down: a Zylon torpedo destroys the ship 0ms
+ ✓ src/sim/zylons.test.ts &gt; being hit &gt; shields up: costs 100 energy, the ship survives 0ms
+ ✓ src/sim/zylons.test.ts &gt; being hit &gt; a torpedo that reaches our ship raises shipHit and is used up 0ms
+ ✓ src/sim/zylons.test.ts &gt; meteors &gt; about 4 in 256 tries while PLAYER2 is free; with Zylons about, never on their steering loop 39ms
+ ✓ src/sim/zylons.test.ts &gt; meteors &gt; start 3840 KM ahead and fly straight at us at −8 KM per loop plus our speed 0ms
+ ✓ src/sim/zylons.test.ts &gt; meteors &gt; a photon destroys a meteor (no score) 0ms
+ ✓ src/sim/zylons.test.ts &gt; meteors &gt; a meteor hit destroys the ship with shields down 0ms
+ ✓ src/sim/zylons.test.ts &gt; meteors &gt; with shields up a meteor cannot damage at NOVICE, and always destroys a subsystem otherwise 0ms
+ ✓ src/sim/zylons.test.ts &gt; Zylon flight &gt; back attacks happen only on WARRIOR and COMMANDER (about 19%) 64ms
+ ✓ src/sim/zylons.test.ts &gt; Zylon flight &gt; in the attack pattern a close ship weaves toward the cross hairs and dives to 2560 KM 0ms
+ ✓ src/sim/zylons.test.ts &gt; Zylon flight &gt; velocity indices follow the stick (the ROM adds JOYSTICKX in front, subtracts aft) 0ms
+ ✓ src/sim/galaxy.test.ts &gt; galaxy set-up (§15, §17.4) &gt; is identical for the same seed and differs between seeds 0ms
+ ✓ src/sim/galaxy.test.ts &gt; fleet movement (§8.1, §17.4) &gt; moves on star date 1.00 and then every 0.50, one sector at a time, never changing totals 2ms
+ ✓ src/sim/galaxy.test.ts &gt; fleet movement (§8.1, §17.4) &gt; moves 1–2 ship groups 255/256, 3 ship groups 192/256 and 4 ship groups 32/256 of ticks 191ms
+ ✓ src/sim/galaxy.test.ts &gt; fleet movement (§8.1, §17.4) &gt; closes on one hunted starbase at a time and never enters an occupied sector 2ms
+ ✓ src/sim/galaxy.test.ts &gt; fleet movement (§8.1, §17.4) &gt; never moves a fleet into the player sector, and the group in it holds (500 seeds × 40 ticks) 197ms
+ ✓ src/sim/galaxy.test.ts &gt; starbase surround (§8.2, §17.4) &gt; STARBASE SURROUNDED, then STARBASE DESTROYED exactly 1.00 star date later, leaving 2 Zylons 1ms
+ ✓ src/sim/galaxy.test.ts &gt; starbase surround (§8.2, §17.4) &gt; is still standing 0.50 after the surround 1ms
+ ✓ src/sim/galaxy.test.ts &gt; starbase surround (§8.2, §17.4) &gt; clearing a neighbour within the 1.00 saves the starbase 0ms
+ ✓ src/sim/galaxy.test.ts &gt; starbase surround (§8.2, §17.4) &gt; the player sitting in a neighbour sector blocks the surround 0ms
+ ✓ src/sim/galaxy.test.ts &gt; one source for counts and victory (§1 mission end, §17.10) &gt; destroying every Zylon ends the mission, even with fleets moving and starbases falling 32ms
+ ✓ src/sim/galaxy.test.ts &gt; one source for counts and victory (§1 mission end, §17.10) &gt; a kill in an empty sector changes nothing 0ms
+ ✓ src/sim/galaxy.test.ts &gt; Sub-Space Radio and the chart (§7, §17.3) &gt; damaged freezes the chart but TARGETS stays live; destroyed freezes both and mutes messages 0ms
+ ✓ src/render/starfield.test.ts &gt; starfield &gt; has 12 stars (Classic) or 48 (Enhanced) 1ms
+ ✓ src/render/starfield.test.ts &gt; starfield &gt; new front stars start 3840..4095 KM ahead within ±4095 KM (INITPOSVEC) 14ms
+ ✓ src/render/starfield.test.ts &gt; starfield &gt; every star stays on screen while flying and turning (replaced when it leaves) 2315ms
+ ✓ src/render/starfield.test.ts &gt; starfield &gt; streams outward: a star ahead drifts away from the centre as the ship flies 0ms
+ ✓ src/render/starfield.test.ts &gt; starfield &gt; is deterministic for a seed 1ms
+ ✓ src/render/starfield.test.ts &gt; starfield &gt; colours stars by distance: near bright ($AF), far dim ($A6), mid ones flicker 0ms
+
+ Test Files  23 passed (23)
+      Tests  327 passed (327)
+   Start at  23:45:32
+   Duration  2.49s (tests 78%, transform 14%, import 6%, worker 1%)
+
+</pre>
