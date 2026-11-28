@@ -15,13 +15,6 @@
  * aft, stick left turns the view as stick right does in front, and forward climbs.
  */
 
-/**
- * The ROM measures space in KM; the remake's ships still fly in older "units" until Phase 5
- * rebuilds them. One unit is 6.4 KM, which keeps speed key 6 (32 KM per loop) at the old
- * 300 units per second.
- */
-export const KM_PER_UNIT = 6.4;
-
 /** sin of the per-loop turn angle: arcsin(1/64) = 0.895°. */
 export const ROTATION_STEP = 1 / 64;
 /** The per-loop turn angle in degrees. */

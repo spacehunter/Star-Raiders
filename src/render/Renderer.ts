@@ -25,7 +25,7 @@ import { starColor, type Star } from './starfield';
 import { random } from '../core/rng';
 import { ATTACK_COMPUTER_LINES, BLIP_SHAPE, LOCK_MARKS, type AttackDisplay } from '../sim/attackComputer';
 import { SCAN_HEADER, type ScanPicture } from './scan';
-import { placeSprite, SHAPE, shapeColor, STARBASE_WING_DROP, STARBASE_WING_OFFSET, type ShapeType, type SpritePlacement } from './sprites';
+import { placeSprite, placeStarbase, SHAPE, shapeColor, type ShapeType, type SpritePlacement } from './sprites';
 
 export const FRAME_W = PLAYFIELD_W;
 export const PANEL_LINES = 23;
@@ -65,7 +65,7 @@ export function frameRect(viewW: number, viewH: number): { x: number; y: number;
   return { x: Math.floor((viewW - w) / 2), y: Math.floor((viewH - h) / 2), w, h, k };
 }
 
-export type SpaceObjectKind = 'fighter' | 'cruiser' | 'basestar' | 'starbase' | 'photon' | 'zylonTorpedo' | 'meteor' | 'warpMarker';
+export type SpaceObjectKind = 'fighter' | 'cruiser' | 'basestar' | 'starbase' | 'transferVessel' | 'photon' | 'zylonTorpedo' | 'meteor' | 'warpMarker';
 
 export interface SpaceObject {
   kind: SpaceObjectKind;
@@ -88,6 +88,7 @@ export const OBJECT_SHAPE: Readonly<Record<SpaceObjectKind, ShapeType>> = {
   cruiser: SHAPE.CRUISER,
   basestar: SHAPE.BASESTAR,
   starbase: SHAPE.STARBASE_CENTER,
+  transferVessel: SHAPE.TRANSFER_VESSEL,
   photon: SHAPE.PHOTON,
   zylonTorpedo: SHAPE.PHOTON,
   meteor: SHAPE.METEOR,
@@ -224,21 +225,17 @@ export interface DrawnSprite extends SpritePlacement {
 
 /** Sprites for one object (three for a starbase: centre and wings), or [] when not on screen. */
 export function objectSprites(o: SpaceObject, view: SpaceView, count256: number, rng: () => number): DrawnSprite[] {
+  if (o.kind === 'starbase') {
+    // Orange, pulsing: the brightness bits are XORed with COUNT256's low nibble (§17.9, §17.13).
+    return placeStarbase(o.x, o.y, o.z, view).map((p) => ({ ...p, color: shapeColor(p.type, p.range) ^ (count256 & 0x0f) }));
+  }
   const place = placeSprite(OBJECT_SHAPE[o.kind], o.x, o.y, o.z, view);
   if (!place) return [];
   const byte = () => Math.floor(rng() * 256) & 0xff;
   let color = shapeColor(place.type, place.range);
   if (o.kind === 'basestar') color ^= byte();
-  if (o.kind === 'starbase') color ^= count256 & 0x0f;
   if (o.kind === 'photon' || o.kind === 'zylonTorpedo') place.rows = place.rows.map((r) => r & byte());
-  const out: DrawnSprite[] = [{ ...place, color }];
-  if (o.kind === 'starbase') {
-    for (const [type, dx] of [[SHAPE.STARBASE_LEFT, -STARBASE_WING_OFFSET], [SHAPE.STARBASE_RIGHT, STARBASE_WING_OFFSET]] as const) {
-      const wing = placeSprite(type, o.x, o.y, o.z, view);
-      if (wing) out.push({ ...wing, col: place.col + dx, line: place.line + STARBASE_WING_DROP, color: shapeColor(type, place.range) ^ (count256 & 0x0f) });
-    }
-  }
-  return out;
+  return [{ ...place, color }];
 }
 
 export class Renderer {

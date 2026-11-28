@@ -92,12 +92,13 @@ export const SCAN_RANGE_INDEX = 13;
 export const SCAN_BLIP_CELL = shapeCell(SCAN_RANGE_INDEX);
 
 /** The scan's kinds of PLAYER object and the shape each one's blip comes from. */
-export type ScanObjectKind = 'fighter' | 'cruiser' | 'basestar' | 'starbase' | 'photon' | 'zylonTorpedo' | 'meteor' | 'warpMarker';
+export type ScanObjectKind = 'fighter' | 'cruiser' | 'basestar' | 'starbase' | 'transferVessel' | 'photon' | 'zylonTorpedo' | 'meteor' | 'warpMarker';
 export const SCAN_SHAPE: Readonly<Record<ScanObjectKind, ShapeType>> = {
   fighter: SHAPE.FIGHTER,
   cruiser: SHAPE.CRUISER,
   basestar: SHAPE.BASESTAR,
   starbase: SHAPE.STARBASE_CENTER,
+  transferVessel: SHAPE.TRANSFER_VESSEL,
   photon: SHAPE.PHOTON,
   zylonTorpedo: SHAPE.PHOTON,
   meteor: SHAPE.METEOR,

@@ -16,7 +16,8 @@
  *   01-title  02-front  02a-front-crosshair  02b-shields  02c-red-alert  03-aft  04-galactic-chart  04a-chart-surrounded
  *   04b-chart-surround-holding  04c-chart-starbase-destroyed  04d-chart-damage
  *   05-long-range-scan  05a-scan-target-ahead  06-attack-computer  06a-attack-lock  06b-starbase-t2  07-hyperwarp  07a-hyperspace
- *   07b-hyperwarp-arrival  08-docking  10-panel-hud  10a-panel-tracking-c
+ *   07b-hyperwarp-arrival  08-docking  08a-docking-standby  08b-transfer-vessel  08c-transfer-complete
+ *   08d-docking-aborted  08e-lrs-starbase  10-panel-hud  10a-panel-tracking-c
  *   10b-panel-low-energy  10c-panel-shields-out  10d-panel-hyperspace  11-fighter-approach  11a-fighter-hit
  *   11b-explosion  12-meteor  12a-meteor-shot  13-fighter  13a-cruiser  13b-basestar
  *   14-dc-photons  14a-dc-engines  14b-dc-shields  14c-dc-computer  14d-dc-scan-mirror  14e-dc-scan-destroyed
@@ -213,15 +214,71 @@ const SHOTS = [
         window.__sr.step(20); // HYPERWARP COMPLETE (or RED ALERT), slowing down
       }),
   },
+  // Phase 10 (MANUAL_SPEC §13, §17.9): a real starbase sector; approach at speed 2, stop with 0
+  // just inside 512 KM with the starbase between the cross hairs: ORBIT ESTABLISHED, STANDBY,
+  // the transfer vessel, TRANSFER COMPLETE (E 9999, all repaired).
   {
     name: '08-docking',
     run: async (sr) =>
       sr(() => {
+        const s = window.__sr.state;
+        window.__dockBack = [s.sectorX, s.sectorY];
         window.__sr.step(1);
-        if (window.__sr.state.attackComputerOn) window.__sr.press('COMPUTER'); // no display over the docking shot
-        window.__sr.step(1);
+        window.__sr.teleport(window.__sr.galaxy().find((g) => g.starbase));
+        if (!window.__sr.state.attackComputerOn) window.__sr.press('COMPUTER');
+        if (window.__sr.state.shieldsActive) window.__sr.press('SHIELDS'); // M §IX: shields off to dock
+        window.__sr.setDamage('photons', 'damaged');
+        window.__sr.setEnergy(3170);
+        window.__sr.setSpeed(2);
+        for (let i = 0; i < 400 && window.__sr.state.shipVelocity !== 2; i++) window.__sr.step(1); // slow down from the jump
+        window.__sr.spawn('starbase', 1200, 0, 40);
+        for (let i = 0; i < 2000 && window.__sr.starbase().starbase.z >= 450; i++) window.__sr.step(1);
+        window.__sr.setSpeed(0);
+        for (let i = 0; i < 20 && window.__sr.starbase().dockState !== 'orbit'; i++) window.__sr.step(1);
+        window.__sr.step(10);
+        // The starbase pulses with COUNT256: take the shot at the mid orange of the manual photo.
+        for (let i = 0; i < 16 && (window.__sr.state.count256 & 0x0f) !== 6; i++) window.__sr.step(1);
+      }),
+  },
+  { name: '08a-docking-standby', run: async (sr) => sr(() => window.__sr.step(60)) },
+  {
+    name: '08b-transfer-vessel',
+    run: async (sr) =>
+      sr(() => {
+        for (let i = 0; i < 1000 && !(window.__sr.starbase().vessel.alive && window.__sr.starbase().vessel.z < 1400); i++) window.__sr.step(1);
+      }),
+  },
+  {
+    name: '08c-transfer-complete',
+    run: async (sr) =>
+      sr(() => {
+        for (let i = 0; i < 1000 && window.__sr.starbase().dockState !== 'complete'; i++) window.__sr.step(1);
+        window.__sr.step(20);
+      }),
+  },
+  {
+    // §13 step 6: a key (here S) during docking.
+    name: '08d-docking-aborted',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.setSpeed(1); // leave orbit quietly, then come back and dock again
+        window.__sr.step(5);
         window.__sr.dock();
-        window.__sr.step(50);
+        window.__sr.step(80); // ORBIT ESTABLISHED, STANDBY
+        window.__sr.press('SHIELDS');
+        window.__sr.step(6);
+      }),
+  },
+  {
+    // The starbase of another starbase sector at its real arrival position (≥ 28928 KM ahead).
+    name: '08e-lrs-starbase',
+    run: async (sr) =>
+      sr(() => {
+        const s = window.__sr.state;
+        const bases = window.__sr.galaxy().filter((g) => g.starbase && (g.x !== s.sectorX || g.y !== s.sectorY));
+        window.__sr.teleport(bases[0]);
+        window.__sr.setView('LONG_RANGE_SCAN');
+        window.__sr.step(30);
       }),
   },
   // Phase 4 (MANUAL_SPEC §6, §17.2, §17.13): the control panel's readouts, letters and band colours.
@@ -229,7 +286,9 @@ const SHOTS = [
     name: '10-panel-hud',
     run: async (sr) =>
       sr(() => {
-        window.__sr.step(200); // let the docking finish
+        if (window.__dockBack) window.__sr.teleport(...window.__dockBack); // back out of the starbase sector
+        if (window.__sr.state.shieldsActive) window.__sr.press('SHIELDS');
+        window.__sr.step(1);
         window.__sr.setView('FRONT');
         window.__sr.killSector();
         window.__sr.setSpeed(6);
@@ -500,6 +559,32 @@ const SHOTS = [
  * `every` game loops apart; `at[i]` runs just before frame i.
  */
 const SEQUENCES = {
+  // Phase 10 (MANUAL_SPEC §13, §17.9): the full docking — approach at speed 2 in a starbase
+  // sector, 0 once inside 512 KM, ORBIT ESTABLISHED, STANDBY, the transfer vessel, TRANSFER COMPLETE.
+  docking: {
+    setup: (d) => {
+      window.__sr.start(d.difficulty, d.seed);
+      window.__sr.step(10);
+      window.__sr.teleport(window.__sr.galaxy().find((g) => g.starbase));
+      window.__sr.press('COMPUTER');
+      window.__sr.setDamage('photons', 'damaged');
+      window.__sr.setEnergy(3170);
+      window.__sr.spawn('starbase', 1200, 0, 40);
+      window.__sr.setSpeed(2);
+    },
+    frames: 150,
+    every: 8,
+    at: {},
+    each: () => {
+      const b = window.__sr.starbase();
+      if (b.dockState === 'none' && window.__sr.state.targetEngineSpeed !== 0 && b.starbase.z < 450) window.__sr.setSpeed(0);
+    },
+    probe: () => {
+      const b = window.__sr.starbase();
+      const s = window.__sr.state;
+      return { dock: b.dockState, z: Math.round(b.starbase.z), y: b.starbase.y, vessel: b.vessel.alive ? Math.round(b.vessel.z) : null, energy: s.energy, v: s.shipVelocity, title: s.title };
+    },
+  },
   // Phase 4 (MANUAL_SPEC §18.1, §17.3; R: UPDTITLE): one phrase segment at a time, 60 loops each.
   'title-line': {
     setup: (d) => {
