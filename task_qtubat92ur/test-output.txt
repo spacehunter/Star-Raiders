@@ -1,0 +1,47 @@
+
+> star-raiders-app@0.0.0 test
+> vitest run
+
+
+ RUN  v5.1.2 /home/nova/harness-work/star-raiders/task_qtubat92ur
+
+
+ Test Files  24 passed (24)
+      Tests  357 passed (357)
+   Start at  00:03:19
+   Duration  2.54s (tests 77%, transform 15%, import 7%, worker 1%)
+
+dist/index.html                   0.47 kB │ gzip:  0.31 kB
+dist/assets/index-CyxmGBKV.css    1.36 kB │ gzip:  0.58 kB
+dist/assets/index-DWuLRDIn.js   111.11 kB │ gzip: 37.41 kB
+✓ built in 251ms
+ ✓ src/audio/pokey.test.ts > §17.12 POKEY tones: the spec frequencies are AUDF bytes at the 64 kHz clock > $18 $40 $60 $10 $20 $48 $51 give 1280, 490, 330, 1880, 970, 440, 390 Hz 1ms
+ ✓ src/audio/pokey.test.ts > §17.12 beeper patterns > hyperwarp transit: 1280 Hz beeps, 13× 1ms
+ ✓ src/audio/pokey.test.ts > §17.12 beeper patterns > red alert: alternating ≈490/330 Hz, 8× 0ms
+ ✓ src/audio/pokey.test.ts > §17.12 beeper patterns > acknowledge: three short ≈1880 Hz beeps 0ms
+ ✓ src/audio/pokey.test.ts > §17.12 beeper patterns > damage report: ≈490→970 Hz, 3× 0ms
+ ✓ src/audio/pokey.test.ts > §17.12 beeper patterns > message from starbase: ≈440, 490, 390 Hz 0ms
+ ✓ src/audio/pokey.test.ts > §17.12 noise effects > photon: 0.4 s, noise with a rising envelope plus a falling tone 0ms
+ ✓ src/audio/pokey.test.ts > §17.12 noise effects > Zylon explosion: 0.8 s, a tone sweep that turns into loud noise 0ms
+ ✓ src/audio/pokey.test.ts > §17.12 noise effects > shield explosion: about 1 s of heavier (lower) noise than the Zylon explosion 1ms
+ ✓ src/audio/pokey.test.ts > §17.12 noise effects > starship explosion: 1 s of random-pitch noise and tone 0ms
+ ✓ src/audio/pokey.test.ts > §17.12 engines > silent at 0; pitch and volume rise with every speed key and in hyperwarp 0ms
+ ✓ src/audio/pokey.test.ts > POKEY renderer > a pure-tone program comes out at its frequency (zero crossings) 7ms
+ ✓ src/audio/pokey.test.ts > POKEY renderer > volume 0 is silence and the output stays inside ±1 2ms
+ ✓ src/audio/pokey.test.ts > POKEY renderer > noise never draws from the game random stream (seeded games replay) 2ms
+ ✓ src/audio/pokey.test.ts > PokeySynth: every §17.12 event plays through the synth > each event is logged as played on its voice 1ms
+ ✓ src/audio/pokey.test.ts > PokeySynth: every §17.12 event plays through the synth > engines: a looping noise source whose rate and gain follow the velocity, silent at 0 0ms
+ ✓ src/audio/pokey.test.ts > PokeySynth priorities (R: BEEP pattern order; explosions) > a lower beeper pattern is dropped while a higher one plays; equal or higher cuts in 1ms
+ ✓ src/audio/pokey.test.ts > PokeySynth priorities (R: BEEP pattern order; explosions) > explosions: Zylon < shield < starship; photons have their own voice 1ms
+ ✓ src/audio/pokey.test.ts > Bend 8: headphone mix > photons pan to their barrel (mirrored in the Aft view); objects to their screen side 0ms
+ ✓ src/audio/pokey.test.ts > Bend 8: headphone mix > a panned event goes through a StereoPanner 0ms
+ ✓ src/audio/pokey.test.ts > Bend 8: mute and volume > mute sets the master gain to 0 at once (no ramp); unmute restores the volume 0ms
+ ✓ src/audio/pokey.test.ts > Bend 8: mute and volume > starting muted stays silent; events are still logged as muted 0ms
+ ✓ src/audio/pokey.test.ts > Bend 8: mute and volume > volume steps 0–10 grow the gain; 0 is silent 0ms
+ ✓ src/audio/pokey.test.ts > Bend 8: mute and volume > N toggles mute, - and = step the volume (and unmute); none is a game key 0ms
+ ✓ src/audio/pokey.test.ts > Bend 8: mute and volume > the pause help names the sound keys and shows the setting 0ms
+ ✓ src/audio/pokey.test.ts > AudioContext lifecycle > no context until the first key press, click or tap; then exactly one 0ms
+ ✓ src/audio/pokey.test.ts > AudioContext lifecycle > a tap resumes a suspended context 0ms
+ ✓ src/audio/pokey.test.ts > AudioContext lifecycle > pause suspends and keeps it suspended through key presses until the game goes on 0ms
+ ✓ src/audio/pokey.test.ts > AudioContext lifecycle > dispose closes the context, stops every voice and removes the listeners 1ms
+ ✓ src/audio/pokey.test.ts > AudioContext lifecycle > 5 restarts (dispose + new synth) leave exactly one open context 0ms
