@@ -23,8 +23,16 @@
  *                                  the next fleet move tick announces STARBASE SURROUNDED
  *   __sr.toFleetTick(n?)           run the game (no rendering) to the n-th next fleet move tick
  *   __sr.killSector()              destroy every Zylon in your sector (same path as a torpedo kill)
+ *   __sr.stick(x, y)               hold the stick: x −1 left / +1 right, y −1 forward / +1 back;
+ *                                  stick(0, 0) gives it back to the player's controls
+ *   __sr.press(action)             queue a key action, e.g. 'COMPUTER', 'FIRE', 'AFT', 'SPEED_6'
+ *   __sr.settings(patch?)          read or change the bend settings {stars, crt, wasd, mouse}
+ *   __sr.redAlert(loops?)          start a red-alert flash (255 loops) or stop it with 0
+ *   __sr.stars()                   the starfield: ship-frame KM position, pixel and colour register
  */
 import type { Game, DebugSpawnType } from '../game/Game';
+import type { Action } from '../input/Input';
+import type { Settings } from './settings';
 import type { DifficultyLevel, ViewMode } from '../game/GameState';
 import type { Subsystem, SubsystemStatus } from '../rules/damage';
 import { getSeed, setSeed } from './rng';
@@ -75,6 +83,11 @@ export function installDebugHook(host: DebugHost): void {
     surround: () => api().surround(),
     toFleetTick: (n = 1) => api().toFleetTick(n),
     killSector: () => api().killSector(),
+    stick: (x: number, y: number) => api().stick(x, y),
+    press: (action: Action) => api().press(action),
+    settings: (patch?: Partial<Settings>) => api().settings(patch),
+    redAlert: (loops?: number) => api().redAlert(loops),
+    stars: () => api().stars(),
   };
 
   (window as unknown as { __sr: typeof sr }).__sr = sr;

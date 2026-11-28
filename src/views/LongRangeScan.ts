@@ -15,7 +15,6 @@ export class LongRangeScan {
   // Real world data access
   private combatSystem: CombatSystem;
   private getStarbase: () => Starbase | null;
-  private getPlayerRotation: () => number;
 
   private isVisible: boolean = false;
   private animationId: number | null = null;
@@ -29,14 +28,12 @@ export class LongRangeScan {
     container: HTMLElement,
     gameState: GameState,
     combatSystem: CombatSystem,
-    getStarbase: () => Starbase | null,
-    getPlayerRotation: () => number
+    getStarbase: () => Starbase | null
   ) {
     this.container = container;
     this.gameState = gameState;
     this.combatSystem = combatSystem;
     this.getStarbase = getStarbase;
-    this.getPlayerRotation = getPlayerRotation;
 
     this.scanElement = this.createScan();
     this.container.appendChild(this.scanElement);
@@ -308,7 +305,7 @@ export class LongRangeScan {
 
     // Player Rotation tells us which way is "Forward" in World Space
     // 0 = -Z (North). 90 = -X (West). etc.
-    const rotation = this.getPlayerRotation();
+    const rotation = 0; // ship frame: forward is always up
     // Forward Vector from rotation
     // x = -sin(rot), z = -cos(rot). (Standard 3D forward from Y-rot)
     const dirX = -Math.sin(rotation);
@@ -361,8 +358,9 @@ export class LongRangeScan {
   public update(): void {
     if (!this.isVisible) return;
 
-    // Get Player Rotation
-    const rotationRad = this.getPlayerRotation();
+    // Space is in the ship frame (our starship faces +z), so the scan needs no rotation;
+    // +z (ahead) is drawn up.
+    const rotationRad = 0;
     // Precalc rotation matrix
     // We want to rotate the WORLD by -rotationRad
     // x' = x cos(-th) - z sin(-th) = x cos - z (-sin) = x cos + z sin
@@ -437,13 +435,13 @@ export class LongRangeScan {
       for (const enemy of enemies) {
         if (!enemy.isActive) continue;
         const pos = enemy.getPosition();
-        createBlip(pos.x, pos.z, 'enemy');
+        createBlip(pos.x, -pos.z, 'enemy');
       }
 
       const starbase = this.getStarbase();
       if (starbase) {
         const pos = starbase.getObject().position;
-        createBlip(pos.x, pos.z, 'starbase');
+        createBlip(pos.x, -pos.z, 'starbase');
       }
     }
   }

@@ -1,200 +1,45 @@
-import * as THREE from 'three';
-import { random } from '../core/rng';
+import { Vec3 } from '../core/vec3';
 
 /**
- * PhotonTorpedo - Projectile fired by the player
- * Uses particle system for scrambled energy ball visual effect
- *
- * Visual design:
- * - Multi-colored particles (red, white, blue, purple, cyan) for photon energy
- * - Chaotic scrambling animation - particles randomly reposition each frame
- * - Small, tightly-packed particles for pure energy appearance
- * - Compact spherical cluster encapsulated within a small circle
+ * Photon torpedo (ship frame). Phase 5 replaces the flight rules with §17.7 (alternating
+ * barrels, 23-loop refire, 255-loop life, homing); the renderer draws it as a purple blob.
  */
 export class PhotonTorpedo {
-  private particles: THREE.Points;
-  private centerPosition: THREE.Vector3;
-  private velocity: THREE.Vector3;
+  private readonly centerPosition: Vec3;
+  private readonly velocity: Vec3;
   private age: number = 0;
-  private maxAge: number = 3; // Seconds before despawning
-  private speed: number = 110; // Units per second - reduced for visual tracking
-  private particleCount: number = 35; // More particles for denser cluster
+  private readonly maxAge: number = 3; // seconds
+  private readonly speed: number = 110; // units per second
   public isActive: boolean = true;
 
-  // Performance: Reusable temp vector (avoid per-frame allocation)
-  private tempVector: THREE.Vector3 = new THREE.Vector3();
-
-  // Size scaling: small particles for pure energy look
-  private initialSize: number = 0.12; // Small particles for pure energy appearance
-  private minSize: number = 0.04; // Minimum size at max range
-
-  // Color palette for scrambled energy effect (rgb values)
-  private colorPalette: number[][] = [
-    [1.0, 0.2, 0.2],   // Red
-    [1.0, 1.0, 1.0],   // White
-    [0.3, 0.3, 1.0],   // Blue
-    [0.8, 0.2, 1.0],   // Purple
-    [0.0, 1.0, 1.0],   // Cyan
-    [1.0, 0.5, 0.8],   // Pink
-    [0.5, 0.0, 1.0],   // Violet
-  ];
-
-  constructor(position: THREE.Vector3, direction: THREE.Vector3) {
-    // Store center position for collision detection and particle positioning
+  constructor(position: Vec3, direction: Vec3) {
     this.centerPosition = position.clone();
-
-    // Create particle geometry using BufferGeometry
-    const geometry = new THREE.BufferGeometry();
-
-    const positions = new Float32Array(this.particleCount * 3);
-    const colors = new Float32Array(this.particleCount * 3);
-
-    // Compact sphere radius - particles tightly encapsulated within a circle
-    const sphereRadius = 0.2;
-
-    // Initialize particles in random spherical positions with random colors
-    for (let i = 0; i < this.particleCount; i++) {
-      const i3 = i * 3;
-
-      // Random spherical coordinates for true 360-degree ball
-      const theta = random() * Math.PI * 2;
-      const phi = Math.acos(2 * random() - 1);
-      const radius = random() * sphereRadius;
-
-      // Cartesian offsets from center
-      positions[i3] = this.centerPosition.x + radius * Math.sin(phi) * Math.cos(theta);
-      positions[i3 + 1] = this.centerPosition.y + radius * Math.sin(phi) * Math.sin(theta);
-      positions[i3 + 2] = this.centerPosition.z + radius * Math.cos(phi);
-
-      // Random color from palette for each particle
-      const colorIndex = Math.floor(random() * this.colorPalette.length);
-      const color = this.colorPalette[colorIndex];
-      colors[i3] = color[0];     // R
-      colors[i3 + 1] = color[1]; // G
-      colors[i3 + 2] = color[2]; // B
-    }
-
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-    // Create PointsMaterial for particle rendering - starts large
-    const material = new THREE.PointsMaterial({
-      size: this.initialSize,
-      vertexColors: true,
-      transparent: true,
-      opacity: 1.0,
-    });
-
-    this.particles = new THREE.Points(geometry, material);
-
-    // Set velocity
-    this.velocity = direction.normalize().multiplyScalar(this.speed);
+    this.velocity = direction.clone().normalize().multiplyScalar(this.speed);
   }
 
-  /**
-   * Get the Three.js object
-   */
-  public getObject(): THREE.Object3D {
-    return this.particles;
+  /** The live position (moved by turning and flying like every space object). */
+  public get position(): Vec3 {
+    return this.centerPosition;
   }
 
-  /**
-   * Get current position
-   */
-  public getPosition(): THREE.Vector3 {
+  public getPosition(): Vec3 {
     return this.centerPosition.clone();
   }
 
-  /**
-   * Update torpedo position with chaotic scramble animation
-   * Particles randomly reposition each frame for true energy ball effect
-   * Size diminishes as torpedo travels (perspective effect)
-   */
   public update(deltaTime: number): void {
     if (!this.isActive) return;
-
-    // Move center position (reuse temp vector to avoid allocation)
-    this.tempVector.copy(this.velocity).multiplyScalar(deltaTime);
-    this.centerPosition.add(this.tempVector);
-
-    // Calculate progress through lifetime (0 to 1)
-    const lifeProgress = this.age / this.maxAge;
-
-    // Compact sphere radius - particles stay tightly packed as torpedo travels
-    const currentRadius = 0.2 * (1 - lifeProgress * 0.5); // 0.2 -> 0.1
-
-    // Update particle positions with TRUE chaotic scramble - random each frame!
-    const positions = this.particles.geometry.attributes.position.array as Float32Array;
-    const colors = this.particles.geometry.attributes.color.array as Float32Array;
-
-    for (let i = 0; i < this.particleCount; i++) {
-      const i3 = i * 3;
-
-      // CHAOTIC SCRAMBLE: New random spherical position each frame
-      const theta = random() * Math.PI * 2;
-      const phi = Math.acos(2 * random() - 1);
-      const radius = random() * currentRadius;
-
-      // Position particles around current center
-      positions[i3] = this.centerPosition.x + radius * Math.sin(phi) * Math.cos(theta);
-      positions[i3 + 1] = this.centerPosition.y + radius * Math.sin(phi) * Math.sin(theta);
-      positions[i3 + 2] = this.centerPosition.z + radius * Math.cos(phi);
-
-      // SCRAMBLE COLORS: Random color from palette each frame for energy shimmer
-      const colorIndex = Math.floor(random() * this.colorPalette.length);
-      const color = this.colorPalette[colorIndex];
-      colors[i3] = color[0];
-      colors[i3 + 1] = color[1];
-      colors[i3 + 2] = color[2];
-    }
-
-    this.particles.geometry.attributes.position.needsUpdate = true;
-    this.particles.geometry.attributes.color.needsUpdate = true;
-
-    // Size diminishes as torpedo travels (perspective effect: large when close, small when far)
-    const material = this.particles.material as THREE.PointsMaterial;
-    material.size = this.initialSize * (1 - lifeProgress * 0.85) + this.minSize;
-
-    // Age the torpedo
+    this.centerPosition.add(this.velocity.clone().multiplyScalar(deltaTime));
     this.age += deltaTime;
-    if (this.age >= this.maxAge) {
-      this.isActive = false;
-    }
-
-    // Slight fade at very end of life
-    material.opacity = lifeProgress > 0.8 ? 1.0 - ((lifeProgress - 0.8) / 0.2) : 1.0;
+    if (this.age >= this.maxAge) this.isActive = false;
   }
 
-  /**
-   * Check collision with a target (simple sphere collision)
-   */
-  public checkCollision(targetPosition: THREE.Vector3, targetRadius: number): boolean {
-    const distance = this.centerPosition.distanceTo(targetPosition);
-    return distance < targetRadius + 0.2; // 0.2 is the compact particle cluster radius
+  public checkCollision(targetPosition: Vec3, targetRadius: number): boolean {
+    return this.centerPosition.distanceTo(targetPosition) < targetRadius + 0.2;
   }
 
-  /**
-   * Deactivate the torpedo (e.g., on hit)
-   */
   public deactivate(): void {
     this.isActive = false;
   }
 
-  /**
-   * Apply displacement to torpedo position (for player movement compensation)
-   * This keeps torpedoes in the correct world-space position relative to player
-   */
-  public applyDisplacement(displacement: THREE.Vector3): void {
-    this.centerPosition.add(displacement);
-  }
-
-  /**
-   * Dispose of resources
-   * Ensures clean memory release: geometry and material
-   */
-  public dispose(): void {
-    // Dispose Three.js resources (required to free GPU memory)
-    this.particles.geometry.dispose();
-    (this.particles.material as THREE.Material).dispose();
-  }
+  public dispose(): void {}
 }

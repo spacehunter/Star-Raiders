@@ -1,805 +1,90 @@
 import { GameState } from '../game/GameState';
+import { panelV } from '../rules/speed';
+import type { PanelData } from '../render/Renderer';
+
+/** Title-line message lengths in loops (§17.11: 60 short, 254 long). */
+export const SHORT_MESSAGE_LOOPS = 60;
+export const LONG_MESSAGE_LOOPS = 254;
+
+const sign = (n: number, digits: number) =>
+  `${n < 0 ? '-' : '+'}${String(Math.min(10 ** digits - 1, Math.abs(Math.round(n)))).padStart(digits, '0')}`;
 
 /**
- * ControlPanel - Authentic Atari 800 Star Raiders HUD
- *
- * Original layout (blue banner at bottom):
- * Top row:    V:00   K:00   E:9875   T:1
- * Bottom row: θ:+00  Φ:-02  R:+043
- *
- * Colors:
- * - V, K, θ, Φ labels/values: Pink/salmon (#ff9999)
- * - E label/value: Yellow/green (#ccff00)
- * - T, R label/value: Cyan (#00ffff)
- * - Background: Solid blue (#3388cc)
+ * Control panel and title line data (MANUAL_SPEC §6, §17.2). The 2D renderer draws both; this
+ * class only holds what they show. Phase 4 adds the panel's readout rules (gradons, T/C,
+ * flashes, frozen θΦR) and the ROM's one-segment-at-a-time title line.
  */
 export class ControlPanel {
-  private container: HTMLElement;
-  private panelElement: HTMLElement;
-  private gameState: GameState;
+  private theta = 0;
+  private phi = 0;
+  private range = 0;
+  private message = '';
+  private messageUntil = 0;
+  private warpMarker: { dx: number; dy: number } | null = null;
 
-  // UI element references
-  private velocityValue!: HTMLElement;
-  private killsValue!: HTMLElement;
-  private energyValue!: HTMLElement;
-  private targetsValue!: HTMLElement;
-  private hullValue!: HTMLElement;
-  private thetaValue!: HTMLElement;
-  private phiValue!: HTMLElement;
-  private rangeValue!: HTMLElement;
-  private shieldValue!: HTMLElement;
-  private damageValue!: HTMLElement;
-  private viewModeIndicator!: HTMLElement;
-  private messageDisplay!: HTMLElement;
-  private redAlertOverlay!: HTMLElement;
+  private readonly gameState: GameState;
+  private readonly loops: () => number;
 
-  // Tracking values for display
-  private currentTheta: number = 0;
-  private currentPhi: number = 0;
-  private currentRange: number = 0;
-
-  // Critical energy warning tracking
-  private lastEnergyCriticalWarning: number = 0;
-  private readonly CRITICAL_ENERGY_THRESHOLD: number = 500;
-  private readonly CRITICAL_WARNING_COOLDOWN: number = 5000; // ms between warnings
-
-  constructor(container: HTMLElement, gameState: GameState) {
-    this.container = container;
+  constructor(gameState: GameState, loops: () => number) {
     this.gameState = gameState;
-
-    // Create main panel
-    this.panelElement = this.createPanel();
-    this.container.appendChild(this.panelElement);
-
-    // Create message display (separate to avoid transform context of panel)
-    this.messageDisplay = document.createElement('div');
-    this.messageDisplay.className = 'message-display';
-    this.container.appendChild(this.messageDisplay);
-
-    // Create red alert overlay (flashing screen edges for combat warning)
-    this.redAlertOverlay = document.createElement('div');
-    this.redAlertOverlay.className = 'red-alert-overlay';
-    this.container.appendChild(this.redAlertOverlay);
-
-    this.cacheElements();
+    this.loops = loops;
   }
 
-  /**
-   * Cache references to dynamic elements
-   */
-  private cacheElements(): void {
-    this.velocityValue = this.panelElement.querySelector('.vel-value')!;
-    this.killsValue = this.panelElement.querySelector('.kills-value')!;
-    this.energyValue = this.panelElement.querySelector('.energy-value')!;
-    this.targetsValue = this.panelElement.querySelector('.targets-value')!;
-    this.hullValue = this.panelElement.querySelector('.hull-value')!;
-    this.thetaValue = this.panelElement.querySelector('.theta-value')!;
-    this.phiValue = this.panelElement.querySelector('.phi-value')!;
-    this.rangeValue = this.panelElement.querySelector('.range-value')!;
-    this.shieldValue = this.panelElement.querySelector('.shield-value')!;
-    this.damageValue = this.panelElement.querySelector('.damage-value')!;
-    this.viewModeIndicator = this.panelElement.querySelector('.view-mode-indicator')!;
-    // Message display is already set in constructor
-  }
+  /** Kept for callers; the renderer reads the state every frame. */
+  public update(): void {}
 
-  /**
-   * Create the control panel HTML - Authentic Atari 800 style
-   */
-  private createPanel(): HTMLElement {
-    const panel = document.createElement('div');
-    panel.className = 'control-panel';
-    panel.innerHTML = `
-      <div class="panel-content">
-        <div class="view-mode-indicator">F</div>
-        <div class="panel-row top-row">
-          <span class="stat-group cyan">
-            <span class="stat-label">V:</span><span class="stat-value vel-value">00</span>
-          </span>
-          <span class="stat-group cyan">
-            <span class="stat-label">K:</span><span class="stat-value kills-value">00</span>
-          </span>
-          <span class="stat-group energy">
-            <span class="stat-label">E:</span><span class="stat-value energy-value">9999</span>
-          </span>
-          <span class="stat-group cyan">
-            <span class="stat-label">T:</span><span class="stat-value targets-value">0</span>
-          </span>
-          <span class="stat-group shield-display">
-            <span class="stat-label">S:</span><span class="stat-value shield-value">---</span>
-          </span>
-          <span class="stat-group hull">
-            <span class="stat-label">H:</span><span class="stat-value hull-value">100</span>
-          </span>
-        </div>
-        <div class="panel-row bottom-row">
-          <span class="stat-group cyan">
-            <span class="stat-label">θ:</span><span class="stat-value theta-value">+00</span>
-          </span>
-          <span class="stat-group cyan">
-            <span class="stat-label">Φ:</span><span class="stat-value phi-value">+00</span>
-          </span>
-          <span class="stat-group cyan">
-            <span class="stat-label">R:</span><span class="stat-value range-value">+000</span>
-          </span>
-          <span class="stat-group damage-indicator">
-            <span class="stat-value damage-value">OK</span>
-          </span>
-        </div>
-      </div>
-      <!-- Message display moved out -->
-      <div class="crosshair"></div>
-      <div class="hyperwarp-marker"></div>
-    `;
-
-    this.addStyles();
-    return panel;
-  }
-
-  /**
-   * Add CSS styles - Authentic 1979 Atari 800 PIXELATED, CHUNKY aesthetic
-   */
-  private addStyles(): void {
-    if (document.getElementById('control-panel-styles')) return;
-
-    const style = document.createElement('style');
-    style.id = 'control-panel-styles';
-    style.textContent = `
-      @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-
-      .control-panel {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100vw;
-        background: #3388cc;
-        border-top: 0.8vh solid #00FFFF;
-        z-index: 100;
-        /* CRITICAL: Pixelated rendering for chunky blocky aesthetic */
-        image-rendering: -moz-crisp-edges;
-        image-rendering: -webkit-crisp-edges;
-        image-rendering: pixelated;
-        image-rendering: crisp-edges;
-        box-sizing: border-box;
-        /* Solid border, minimal glow */
-        box-shadow: 0 -0.2vh 0.5vh rgba(0, 255, 255, 0.3);
-      }
-
-      .panel-content {
-        padding: 2.8vh 3vw 3.2vh 3vw;
-        position: relative;
-        background: #3388cc;
-      }
-
-      /* ENHANCED CRT scanline effect - more prominent for retro feel */
-      .panel-content::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: repeating-linear-gradient(
-          0deg,
-          rgba(0, 0, 0, 0.4) 0px,
-          transparent 1px,
-          transparent 2px,
-          rgba(0, 0, 0, 0.4) 2px
-        );
-        pointer-events: none;
-        z-index: 1;
-      }
-
-      .panel-row {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin: 1.2vh 0;
-        gap: 5vw;
-        position: relative;
-        z-index: 2;
-      }
-
-      .stat-group {
-        display: flex;
-        align-items: center;
-        position: relative;
-      }
-
-      /* Remove decorative brackets - keep it pure and minimal */
-      .stat-group::before {
-        display: none;
-      }
-
-      .stat-label, .stat-value {
-        /* CHUNKY PIXELATED FONT - Press Start 2P for authentic look */
-        font-family: 'Press Start 2P', monospace;
-        font-size: 2.4vh;
-        font-weight: normal;
-        letter-spacing: 0.25vw;
-        line-height: 1;
-        /* NO smooth text rendering - force pixelated blocky appearance */
-        -webkit-font-smoothing: none;
-        -moz-osx-font-smoothing: grayscale;
-        font-smooth: never;
-        text-rendering: geometricPrecision;
-        /* Minimal glow - pure solid color emphasis */
-        text-shadow: 0.15vh 0.15vh 0 #000000;
-        text-transform: uppercase;
-        /* Force chunky pixel grid alignment */
-        transform: translateZ(0);
-        image-rendering: pixelated;
-      }
-
-      .stat-label {
-        margin-right: 1vw;
-      }
-
-      .stat-value {
-        min-width: 6vw;
-        text-align: left;
-        font-variant-numeric: tabular-nums;
-      }
-
-      /* PURE CYAN - Authentic Atari 800 color, solid, high-contrast */
-      .stat-group.cyan .stat-label,
-      .stat-group.cyan .stat-value {
-        color: #00FFFF;
-        /* Subtle glow for CRT phosphor effect */
-        text-shadow:
-          0.15vh 0.15vh 0 #000000,
-          0 0 0.3vh #00FFFF;
-      }
-
-      /* Energy in PURE YELLOW-GREEN - blocky, bright */
-      .stat-group.energy .stat-label,
-      .stat-group.energy .stat-value {
-        color: #BAFF00;
-        text-shadow:
-          0.15vh 0.15vh 0 #000000,
-          0 0 0.4vh #BAFF00;
-      }
-
-      /* Energy color coding based on level */
-      .stat-group.energy.low .stat-value {
-        color: #FF0000;
-        text-shadow:
-          0.15vh 0.15vh 0 #000000,
-          0 0 0.5vh #FF0000;
-        animation: energy-alert 0.8s infinite steps(2);
-      }
-
-      .stat-group.energy.medium .stat-value {
-        color: #FFFF00;
-        text-shadow:
-          0.15vh 0.15vh 0 #000000,
-          0 0 0.4vh #FFFF00;
-      }
-
-      @keyframes energy-alert {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-      }
-
-      /* Shield display */
-      .stat-group.shield-display .stat-label,
-      .stat-group.shield-display .stat-value {
-        color: #00FFFF;
-        text-shadow:
-          0.15vh 0.15vh 0 #000000,
-          0 0 0.3vh #00FFFF;
-      }
-
-      .stat-group.shield-display.active .stat-value {
-        color: #BAFF00;
-        text-shadow:
-          0.15vh 0.15vh 0 #000000,
-          0 0 0.4vh #BAFF00;
-      }
-
-      /* Damage indicator */
-      .stat-group.damage-indicator .stat-value {
-        color: #00FFFF;
-        text-shadow:
-          0.15vh 0.15vh 0 #000000,
-          0 0 0.3vh #00FFFF;
-        font-size: 2.2vh;
-      }
-
-      .stat-group.damage-indicator.damaged .stat-value {
-        color: #FF0000;
-        text-shadow:
-          0.15vh 0.15vh 0 #000000,
-          0 0 0.5vh #FF0000;
-        animation: damage-blink 1s infinite steps(2);
-      }
-
-      @keyframes damage-blink {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.6; }
-      }
-
-      /* View mode indicator */
-      .view-mode-indicator {
-        position: absolute;
-        top: 0.8vh;
-        left: 1.5vw;
-        font-family: 'Press Start 2P', monospace;
-        font-size: 2.5vh;
-        font-weight: normal;
-        color: #00FFFF;
-        -webkit-font-smoothing: none;
-        -moz-osx-font-smoothing: grayscale;
-        text-shadow:
-          0.2vh 0.2vh 0 #000000,
-          0 0 0.4vh #00FFFF;
-        z-index: 3;
-        letter-spacing: 0.2vw;
-      }
-
-      /* Red-Orange for Hull Integrity */
-      .stat-group.hull .stat-label,
-      .stat-group.hull .stat-value {
-        color: #FF6644;
-      }
-
-      /* Hull warning state - blink when critically low */
-      .stat-group.hull.critical .stat-value {
-        animation: blink 0.5s infinite;
-      }
-
-      .message-display {
-        position: fixed;
-        top: 10vh;
-        left: 50%;
-        transform: translateX(-50%);
-        /* CHUNKY PIXELATED FONT - INCREASED SIZE */
-        font-family: 'Press Start 2P', monospace;
-        font-size: 3vh;
-        font-weight: normal;
-        color: #FF0000;
-        /* Blocky pixel rendering */
-        -webkit-font-smoothing: none;
-        -moz-osx-font-smoothing: grayscale;
-        text-shadow:
-          0.2vh 0.2vh 0 #000000,
-          0 0 0.6vh #FF0000;
-        z-index: 1000;
-        text-align: center;
-        pointer-events: none;
-        width: 100%;
-        letter-spacing: 0.35vw;
-      }
-
-      .message-display:not(:empty) {
-        animation: blink-alert 2s infinite steps(2);
-      }
-
-      @keyframes blink-alert {
-        0%, 50% { opacity: 1; }
-        50.01%, 100% { opacity: 0; }
-      }
-
-      /* Damage message type variants */
-      .message-display.message-damage {
-        color: #FF6600;
-        text-shadow:
-          0.2vh 0.2vh 0 #000000,
-          0 0 0.6vh #FF6600;
-      }
-
-      .message-display.message-shield {
-        color: #BAFF00;
-        text-shadow:
-          0.2vh 0.2vh 0 #000000,
-          0 0 0.6vh #BAFF00;
-      }
-
-      .message-display.message-critical {
-        color: #FF0000;
-        text-shadow:
-          0.2vh 0.2vh 0 #000000,
-          0 0 1vh #FF0000;
-        animation: critical-flash 0.3s infinite steps(2);
-      }
-
-      .message-display.message-system {
-        color: #FF00FF;
-        text-shadow:
-          0.2vh 0.2vh 0 #000000,
-          0 0 0.8vh #FF00FF;
-      }
-
-      @keyframes critical-flash {
-        0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
-        50% { opacity: 0.7; transform: translateX(-50%) scale(1.05); }
-      }
-
-      /* CHUNKY BLOCKY CROSSHAIR - Pixelated style */
-      .crosshair {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 6vh;
-        height: 6vh;
-        pointer-events: none;
-        z-index: 99;
-        image-rendering: pixelated;
-      }
-
-      .crosshair::before,
-      .crosshair::after {
-        content: '';
-        position: absolute;
-        background: #00FFFF;
-        /* Minimal glow - keep it crisp */
-        box-shadow: 0 0 0.2vh #00FFFF;
-      }
-
-      /* Vertical line with gaps - THICKER for blocky look */
-      .crosshair::before {
-        width: 0.5vh;
-        height: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        background: linear-gradient(
-          to bottom,
-          #00FFFF 0%,
-          #00FFFF 35%,
-          transparent 35%,
-          transparent 65%,
-          #00FFFF 65%,
-          #00FFFF 100%
-        );
-      }
-
-      /* Horizontal line with gaps - THICKER for blocky look */
-      .crosshair::after {
-        width: 100%;
-        height: 0.5vh;
-        top: 50%;
-        transform: translateY(-50%);
-        background: linear-gradient(
-          to right,
-          #00FFFF 0%,
-          #00FFFF 35%,
-          transparent 35%,
-          transparent 65%,
-          #00FFFF 65%,
-          #00FFFF 100%
-        );
-      }
-
-      /* CHUNKY Hyperwarp Target Marker - Blocky cross */
-      .hyperwarp-marker {
-        display: none;
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        width: 6vh;
-        height: 6vh;
-        pointer-events: none;
-        z-index: 98;
-        transform: translate(-50%, -50%);
-        image-rendering: pixelated;
-      }
-
-      /* Blocky cross with thick arms */
-      .hyperwarp-marker::before {
-        content: '';
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 2vh;
-        height: 2vh;
-        background: transparent;
-        /* Chunky thick cross arms */
-        box-shadow:
-           0 -2vh 0 -0.4vh #CEFFFF,
-           0 2vh 0 -0.4vh #CEFFFF,
-           -2vh 0 0 -0.4vh #CEFFFF,
-           2vh 0 0 -0.4vh #CEFFFF,
-           0 0 0 0.6vh #CEFFFF;
-      }
-
-      .hyperwarp-marker {
-         filter: drop-shadow(0 0 1px #000);
-      }
-
-      /* Shield active - BLOCKY color change, no smooth transitions */
-      .control-panel.shields-active {
-         border-top-color: #BAFF00;
-         box-shadow: 0 -0.2vh 0.8vh rgba(186, 255, 0, 0.5);
-         animation: shield-pulse 1.2s infinite steps(2);
-      }
-
-      @keyframes shield-pulse {
-        0%, 100% {
-          border-top-color: #BAFF00;
-        }
-        50% {
-          border-top-color: #00FFFF;
-        }
-      }
-
-      .control-hints {
-        display: none;
-      }
-
-      /* Red Alert Overlay - Combat Warning */
-      .red-alert-overlay {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        pointer-events: none;
-        z-index: 50;
-        /* Red vignette effect - edges flash red during combat */
-        box-shadow: inset 0 0 100px 20px rgba(255, 0, 0, 0.6);
-        animation: red-alert-pulse 0.5s infinite;
-      }
-
-      .red-alert-overlay.active {
-        display: block;
-      }
-
-      @keyframes red-alert-pulse {
-        0%, 100% {
-          box-shadow: inset 0 0 100px 20px rgba(255, 0, 0, 0.6);
-        }
-        50% {
-          box-shadow: inset 0 0 80px 15px rgba(255, 0, 0, 0.3);
-        }
-      }
-
-      /* Control panel red alert state - background changes to red */
-      .control-panel.red-alert {
-        background: #8A2B2B;
-        animation: panel-alert-blink 0.3s infinite;
-      }
-
-      @keyframes panel-alert-blink {
-        0%, 100% { background: #8A2B2B; }
-        50% { background: #2B608A; }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  /**
-   * Format number with sign (+/-)
-   */
-  private formatSigned(value: number, digits: number = 2): string {
-    const sign = value >= 0 ? '+' : '-';
-    const absVal = Math.abs(Math.floor(value));
-    return sign + absVal.toString().padStart(digits, '0');
-  }
-
-  /**
-   * Update the control panel display
-   */
-  public update(): void {
-    // V: Velocity (engine speed)
-    this.velocityValue.textContent = Math.floor(this.gameState.engineSpeed).toString().padStart(2, '0');
-
-    // K: Kills (enemies destroyed)
-    this.killsValue.textContent = this.gameState.enemiesDestroyed.toString().padStart(2, '0');
-
-    // E: Energy with color coding
-    const energy = Math.floor(this.gameState.energy);
-    this.energyValue.textContent = energy.toString();
-
-    const energyGroup = this.energyValue.parentElement?.parentElement;
-    if (energyGroup) {
-      energyGroup.classList.remove('low', 'medium');
-      if (energy < 1000) {
-        energyGroup.classList.add('low');
-      } else if (energy < 3000) {
-        energyGroup.classList.add('medium');
-      }
-    }
-
-    // Critical energy warning
-    const now = Date.now();
-    if (energy > 0 && energy < this.CRITICAL_ENERGY_THRESHOLD &&
-        now - this.lastEnergyCriticalWarning > this.CRITICAL_WARNING_COOLDOWN) {
-      this.showDamageMessage('ENERGY CRITICAL!', 'critical');
-      this.lastEnergyCriticalWarning = now;
-    }
-
-    // T: Targets remaining (will be updated externally)
-    // Keep current value unless updated
-
-    // S: Shield display
-    const shieldGroup = this.shieldValue.parentElement?.parentElement;
-    if (this.gameState.shieldsActive) {
-      this.shieldValue.textContent = 'ON';
-      shieldGroup?.classList.add('active');
-      this.panelElement.classList.add('shields-active');
-    } else {
-      this.shieldValue.textContent = '---';
-      shieldGroup?.classList.remove('active');
-      this.panelElement.classList.remove('shields-active');
-    }
-
-    // H: Hull integrity
-    this.hullValue.textContent = Math.floor(this.gameState.hull).toString();
-
-    // Add critical class if hull is low
-    const hullGroup = this.hullValue.parentElement;
-    if (hullGroup) {
-      if (this.gameState.isHullLow()) {
-        hullGroup.classList.add('critical');
-      } else {
-        hullGroup.classList.remove('critical');
-      }
-    }
-
-    // θ: Theta (horizontal angle to target)
-    this.thetaValue.textContent = this.formatSigned(this.currentTheta);
-
-    // Φ: Phi (vertical angle to target)
-    this.phiValue.textContent = this.formatSigned(this.currentPhi);
-
-    // R: Range to target
-    this.rangeValue.textContent = this.formatSigned(this.currentRange, 3);
-
-    // Damage indicator
-    const damageGroup = this.damageValue.parentElement;
-    const hasDamage = Object.values(this.gameState.damage).some(d => d);
-
-    if (hasDamage) {
-      this.damageValue.textContent = 'DMG';
-      damageGroup?.classList.add('damaged');
-    } else {
-      this.damageValue.textContent = 'OK';
-      damageGroup?.classList.remove('damaged');
-    }
-  }
-
-  /**
-   * Update targeting data (θ, Φ, R)
-   */
   public updateTargetData(theta: number, phi: number, range: number): void {
-    this.currentTheta = theta;
-    this.currentPhi = phi;
-    this.currentRange = range;
+    this.theta = theta;
+    this.phi = phi;
+    this.range = range;
   }
 
-  /**
-   * Update targets remaining
-   */
-  public updateTargetsRemaining(count: number): void {
-    this.targetsValue.textContent = count.toString();
+  public updateTargetsRemaining(_count: number): void {}
+
+  /** Show a phrase on the title line for `loops` game loops. */
+  public showMessage(message: string, loops: number = SHORT_MESSAGE_LOOPS): void {
+    this.message = message;
+    this.messageUntil = this.loops() + loops;
   }
 
-  /**
-   * Update view mode indicator
-   * @param mode 'F' (Front), 'A' (Aft), 'G' (Galactic Chart), 'L' (Long Range Scan)
-   */
-  public updateViewMode(mode: 'F' | 'A' | 'G' | 'L'): void {
-    if (this.viewModeIndicator) {
-      this.viewModeIndicator.textContent = mode;
-    }
+  public showDamageMessage(message: string, _type?: string): void {
+    this.showMessage(message);
   }
 
-  /**
-   * Show a message in the center of the screen
-   */
-  public showMessage(message: string, duration: number = 3000): void {
-    this.messageDisplay.textContent = message;
-    // Clear any damage message styling
-    this.clearMessageStyles();
-    setTimeout(() => {
-      if (this.messageDisplay.textContent === message) {
-        this.messageDisplay.textContent = '';
-        this.clearMessageStyles();
-      }
-    }, duration);
-  }
+  /** Red alert is a background flash drawn by the renderer (§17.13). */
+  public setRedAlert(_active: boolean): void {}
 
-  /**
-   * Show a damage-specific message with appropriate styling
-   * @param message The message to display
-   * @param type The type of damage message: 'damage' (orange), 'shield' (green), 'critical' (red flash), 'system' (purple)
-   * @param duration How long to display the message (default 3000ms)
-   */
-  public showDamageMessage(
-    message: string,
-    type: 'damage' | 'shield' | 'critical' | 'system' = 'damage',
-    duration: number = 3000
-  ): void {
-    this.messageDisplay.textContent = message;
-    // Clear previous styles and apply new type
-    this.clearMessageStyles();
-    this.messageDisplay.classList.add(`message-${type}`);
-
-    setTimeout(() => {
-      if (this.messageDisplay.textContent === message) {
-        this.messageDisplay.textContent = '';
-        this.clearMessageStyles();
-      }
-    }, duration);
-  }
-
-  /**
-   * Clear all damage message styling classes
-   */
-  private clearMessageStyles(): void {
-    this.messageDisplay.classList.remove(
-      'message-damage',
-      'message-shield',
-      'message-critical',
-      'message-system'
-    );
-  }
-
-  /**
-   * Set red alert state (combat warning)
-   * Shows flashing red screen edges and panel color change when under attack
-   */
-  public setRedAlert(active: boolean): void {
-    if (active) {
-      this.redAlertOverlay.classList.add('active');
-      this.panelElement.classList.add('red-alert');
-    } else {
-      this.redAlertOverlay.classList.remove('active');
-      this.panelElement.classList.remove('red-alert');
-    }
-  }
-
-  /**
-   * Set visibility of the Hyperwarp Target Marker
-   */
   public setHyperwarpMarkerVisible(visible: boolean): void {
-    const marker = this.panelElement.querySelector('.hyperwarp-marker') as HTMLElement;
-    if (marker) {
-      marker.style.display = visible ? 'block' : 'none';
-    }
+    this.warpMarker = visible ? (this.warpMarker ?? { dx: 0, dy: 0 }) : null;
   }
 
-  /**
-   * Update position of the Hyperwarp Target Marker
-   * @param x Horizontal offset (0 is center)
-   * @param y Vertical offset (0 is center)
-   */
-  public updateHyperwarpMarker(x: number, y: number): void {
-    const marker = this.panelElement.querySelector('.hyperwarp-marker') as HTMLElement;
-    if (marker) {
-      // Use CSS transformtranslate to position relative to center
-      // 50% start + offset (vh)
-      // x, y are in 'screen units' passed from game logic. 
-      // Let's assume Game passes roughly pixel or VH offsets.
-      // Or normalized -1 to 1?
-      // Let's assume input is in 'screen percentage' or similar magnitude for now.
-      // Actually, easier to let Game logic drive the offset in VH units.
-      marker.style.transform = `translate(calc(-50% + ${x}vh), calc(-50% + ${y}vh))`;
-    }
+  /** Marker offset from the playfield centre, in playfield pixels. */
+  public updateHyperwarpMarker(dx: number, dy: number): void {
+    if (this.warpMarker) this.warpMarker = { dx, dy };
   }
 
-  /**
-   * Dispose of resources
-   */
-  public dispose(): void {
-    if (this.panelElement.parentElement) {
-      this.panelElement.parentElement.removeChild(this.panelElement);
-    }
-    if (this.redAlertOverlay.parentElement) {
-      this.redAlertOverlay.parentElement.removeChild(this.redAlertOverlay);
-    }
-    if (this.messageDisplay.parentElement) {
-      this.messageDisplay.parentElement.removeChild(this.messageDisplay);
-    }
-    const styles = document.getElementById('control-panel-styles');
-    if (styles) {
-      styles.remove();
-    }
-    const hints = this.container.querySelector('.control-hints');
-    if (hints) {
-      hints.remove();
-    }
+  public getWarpMarker(): { dx: number; dy: number } | null {
+    return this.warpMarker;
   }
+
+  /** The title-line text now, or '' once it has run out. */
+  public titleText(): string {
+    return this.loops() < this.messageUntil ? this.message : '';
+  }
+
+  /** Panel fields as drawn: `V:00 K:00 E:9999 T:0` / ` θ:+00 Φ:+00 R:+000` (§17.2). */
+  public panelData(velocityKm: number, hyperspace: boolean): PanelData {
+    const s = this.gameState;
+    return {
+      v: hyperspace ? '∞ ' : String(Math.min(99, panelV(velocityKm))).padStart(2, '0'),
+      k: String(Math.min(99, s.enemiesDestroyed)).padStart(2, '0'),
+      e: String(Math.max(0, Math.min(9999, Math.floor(s.energy)))).padStart(4, '0'),
+      t: 'T:0',
+      theta: sign(this.theta, 2),
+      phi: sign(this.phi, 2),
+      range: sign(this.range, 3),
+    };
+  }
+
+  public dispose(): void {}
 }

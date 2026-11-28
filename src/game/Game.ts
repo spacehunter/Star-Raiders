@@ -1,30 +1,31 @@
-import * as THREE from 'three';
 import { GameLoop } from './GameLoop';
 import { GameState, ViewMode, DifficultyLevel } from './GameState';
-import { InputManager } from '../utils/InputManager';
+import { Input, type Action } from '../input/Input';
 import { CombatSystem } from '../systems/CombatSystem';
-import { VFXSystem } from '../systems/VFXSystem';
 import { SoundManager } from '../audio/SoundManager';
-import { Starfield } from '../entities/Starfield';
-import { Player } from '../entities/Player';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
 import { EnemyProjectile } from '../entities/EnemyProjectile';
 import { Starbase } from '../entities/Starbase';
-import { ControlPanel } from '../ui/ControlPanel';
+import { ControlPanel, LONG_MESSAGE_LOOPS, SHORT_MESSAGE_LOOPS } from '../ui/ControlPanel';
 import { GalacticChart } from '../views/GalacticChart';
 import { LongRangeScan } from '../views/LongRangeScan';
-import { AttackComputer } from '../views/AttackComputer';
-import { EnemyType } from '../entities/Enemy';
-import { random } from '../core/rng';
+import { EnemyType, type Enemy } from '../entities/Enemy';
+import { createRng, getSeed, random } from '../core/rng';
+import { Vec3 } from '../core/vec3';
+import { getSettings, onSettingsChange, updateSettings, type Settings } from '../core/settings';
 import { SimClock, type LoopEvents } from '../core/clock';
 import { EnergySim } from '../sim/energy';
 import { MissionScore, rateMission, type MissionRating } from '../sim/rating';
+import { approachVelocity, KM_PER_UNIT, moveInShipFrame, STICK_CENTERED, type Stick } from '../sim/motion';
 import type { MissionOutcome } from '../rules/rating';
+import { VELOCITY_TAB } from '../rules/speed';
 import { calcWarpSectors } from '../rules/warp';
 import { rollDamage, SUBSYSTEMS, type Subsystem, type SubsystemStatus } from '../rules/damage';
 import { MSG } from '../rules/messages';
 import { Galaxy, RadioFeed, GALAXY_COLUMNS, GALAXY_ROWS, type GalaxyEvent, type SectorPos } from '../sim/galaxy';
-import type { Enemy } from '../entities/Enemy';
+import { Renderer, type SpaceFrame, type SpaceObject } from '../render/Renderer';
+import { CLASSIC_STARS, ENHANCED_STARS, Starfield } from '../render/starfield';
+import type { SpaceView } from '../render/projection';
 
 export type DebugSpawnType = 'fighter' | 'cruiser' | 'basestar' | 'starbase';
 
@@ -46,27 +47,46 @@ export interface GameDebugApi {
   surround(): SectorPos | null;
   toFleetTick(n?: number): number;
   killSector(): number;
+  stick(x: number, y: number): void;
+  press(action: Action): void;
+  settings(patch?: Partial<Settings>): Settings;
+  redAlert(loops?: number): void;
+  stars(): Array<{ x: number; y: number; z: number; col: number | null; row: number | null; color: number }>;
 }
-
-/** Title-line message lengths in loops (§17.11 / OVERHAUL Phase 4: 60 short, 254 long). */
-const SHORT_MESSAGE_LOOPS = 60;
-const LONG_MESSAGE_LOOPS = 254;
 
 type GameOverCallback = (rating: MissionRating) => void;
 
+/** Loops the background flashes random colours after a hit with shields up (§17.13). */
+const HIT_FLASH_LOOPS = 16;
+/** R: REDALERTLIFE on entering a Zylon sector. */
+const RED_ALERT_LOOPS = 255;
+/** Ship velocity (KM/loop) when it drops out of hyperspace; it slows by 1 per loop (R: UPDPANEL). */
+const WARP_EXIT_VELOCITY = 120;
+/** Velocity used for the streaming stars while hyperwarping (Phase 8 brings the ROM's 254 and trails). */
+const HYPERWARP_VELOCITY = 112;
+const ORIGIN = new Vec3();
+
+/** Speed key whose velocity the ship has reached (for rules that read a key, e.g. docking). */
+function keyForVelocity(v: number): number {
+  let key = 0;
+  for (let k = 0; k < VELOCITY_TAB.length; k++) if (VELOCITY_TAB[k] <= v) key = k;
+  return key;
+}
+
 /**
- * Game - Main game controller that manages scene, rendering, and game state
+ * Game - the main controller: simulation loop, views, input and the 2D renderer.
+ *
+ * Space is the ROM's ship frame (MANUAL_SPEC §17.13): our starship sits at the origin facing
+ * +z; each game loop the stick rotates every object 0.89° around it and flying moves every
+ * object toward −z (sim/motion.ts).
  */
 export class Game {
-  // Three.js core
-  private scene: THREE.Scene;
-  private camera: THREE.PerspectiveCamera;
-  private renderer: THREE.WebGLRenderer;
-  private container: HTMLElement;
+  private renderer: Renderer;
+  private starfield: Starfield;
 
   // Game systems
   private gameLoop: GameLoop;
-  private inputManager: InputManager;
+  private input: Input;
   private clock: SimClock;
   private energy: EnergySim;
   private missionScore: MissionScore;
@@ -74,15 +94,14 @@ export class Game {
   private galaxy: Galaxy;
   private radioFeed: RadioFeed;
   private combatSystem: CombatSystem;
-  private vfxSystem: VFXSystem;
   private soundManager: SoundManager;
   private gameState: GameState;
+  private unsubscribeSettings: () => void;
 
   // UI
   private controlPanel: ControlPanel;
   private galacticChart: GalacticChart;
   private longRangeScan: LongRangeScan;
-  private attackComputer: AttackComputer;
   /** Hyperwarp destination dot on the chart (§8); kept between visits. */
   private chartCursor: SectorPos = { x: 8, y: 4 };
   /** Title-line message shown on the chart's title band until `until` (loop number). */
@@ -92,33 +111,34 @@ export class Game {
   /** Ships placed by the debug hook; not part of the galaxy count. */
   private debugExtras = new Set<Enemy>();
 
-  // Game entities
-  private starfield: Starfield;
-  private player: Player;
+  // Space objects
   private torpedoes: PhotonTorpedo[] = [];
   private enemyProjectiles: EnemyProjectile[] = [];
   private currentStarbase: Starbase | null = null;
 
+  // Flight
+  /** Ship velocity in KM per game loop (§17.1 VELOCITYTAB), stepping toward the key's value. */
+  private shipVelocity = 0;
+  /** The stick read for the last game loop. */
+  private stick: Stick = STICK_CENTERED;
+  /** Debug override of the stick (window.__sr.stick), or null. */
+  private debugStick: Stick | null = null;
+  /** R: REDALERTLIFE — loops left of the red-alert flash. */
+  private redAlertLife = 0;
+  private hitFlash = 0;
+
   // State
-  private isInitialized: boolean = false;
   private gameTime: number = 0;
   private gameOverCallback: GameOverCallback | null;
   private hasTriggeredGameOver: boolean = false;
-
-  // Key state tracking for single-press actions
-  private keyStates: Map<string, boolean> = new Map();
-
-  // View transition
-  private isViewTransitioning: boolean = false;
-  private viewTransitionProgress: number = 0;
 
   // Hyperwarp state
   private isHyperwarping: boolean = false;
   private hyperwarpProgress: number = 0;
   private hyperwarpTarget: { x: number; y: number } | null = null;
+  /** Marker offset from the playfield centre, in playfield pixels. */
   private hyperwarpAlignment: { x: number; y: number } = { x: 0, y: 0 };
   private hyperwarpDifficulty: number = 1;
-  private preHyperwarpSpeed: number = 0; // Store player's selected speed before hyperwarp
 
   // Docking state
   private isDocking: boolean = false;
@@ -130,43 +150,24 @@ export class Game {
     difficulty: DifficultyLevel = DifficultyLevel.NOVICE,
     onGameOver?: GameOverCallback
   ) {
-    this.container = container;
     this.gameOverCallback = onGameOver || null;
 
-    // Initialize game state
     this.gameState = new GameState();
     this.gameState.reset(difficulty);
 
-    // Initialize Three.js
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x000000);
-
-    // Camera with fixed aspect ratio for retro resolution
-    this.camera = new THREE.PerspectiveCamera(
-      90,
-      320 / 192, // Fixed aspect ratio (5:3)
-      0.1,
-      5000
-    );
-
-    // Set up renderer - RETRO RESOLUTION (320x192)
-    // No antialiasing for sharp pixel edges
-    this.renderer = new THREE.WebGLRenderer({
-      antialias: false,
-      powerPreference: 'high-performance',
+    // Renderer and starfield. The stars use their own seeded stream so that the bend
+    // settings (12 or 48 stars) never change the game's random sequence.
+    this.renderer = new Renderer(container);
+    const settings = getSettings();
+    this.renderer.setCrt(settings.crt);
+    this.starfield = new Starfield(createRng(getSeed() ^ 0x5a17), this.starCount(settings), 'FRONT');
+    this.unsubscribeSettings = onSettingsChange((s) => {
+      this.renderer.setCrt(s.crt);
+      this.starfield.setCount(this.starCount(s), this.spaceView());
     });
 
-    // Fixed internal resolution (2x original Atari 800: 160x96)
-    const INTERNAL_WIDTH = 320;
-    const INTERNAL_HEIGHT = 192;
-
-    this.renderer.setSize(INTERNAL_WIDTH, INTERNAL_HEIGHT);
-    this.renderer.domElement.classList.add('game-canvas');
-    container.appendChild(this.renderer.domElement);
-
-    // Initialize game systems
     this.gameLoop = new GameLoop();
-    this.inputManager = new InputManager(container);
+    this.input = new Input(this.renderer.canvas);
     this.clock = new SimClock();
     this.missionScore = new MissionScore();
     this.energy = new EnergySim(this.gameState, {
@@ -181,86 +182,42 @@ export class Game {
     this.radioFeed = new RadioFeed(this.galaxy);
     this.chartCursor = { x: this.gameState.sectorX, y: this.gameState.sectorY };
 
-    // Initialize entities
-    this.starfield = new Starfield(500, 2000);
-    this.player = new Player();
-
-    // Initialize combat system (needs scene)
-    this.combatSystem = new CombatSystem(this.scene, this.gameState);
-
-    // Initialize VFX and Sound systems
-    this.vfxSystem = new VFXSystem(this.scene);
+    this.combatSystem = new CombatSystem(this.gameState);
     this.soundManager = new SoundManager();
 
-    // Initialize UI
-    this.controlPanel = new ControlPanel(container, this.gameState);
+    this.controlPanel = new ControlPanel(this.gameState, () => this.clock.loops);
     this.galacticChart = new GalacticChart(container);
-    this.longRangeScan = new LongRangeScan(
-      container,
-      this.gameState,
-      this.combatSystem,
-      () => this.currentStarbase,
-      () => this.player.getObject().rotation.y
-    );
-    this.attackComputer = new AttackComputer(container, this.gameState);
+    this.longRangeScan = new LongRangeScan(container, this.gameState, this.combatSystem, () => this.currentStarbase);
 
-    // Set up scene
-    this.setupScene();
+    // §17.1: a game starts at speed key 6.
+    this.shipVelocity = VELOCITY_TAB[this.gameState.targetEngineSpeed];
 
-    // Handle window resize
-    window.addEventListener('resize', this.handleResize);
+    this.spawnSectorContents();
 
-    // Set up game loop callbacks
     this.gameLoop.setUpdateCallback(this.update);
     this.gameLoop.setRenderCallback(this.render);
-
-    this.isInitialized = true;
   }
 
-  /**
-   * Set up the 3D scene
-   */
-  private setupScene(): void {
-    // Add starfield
-    this.scene.add(this.starfield.getObject());
+  private starCount(s: Settings): number {
+    return s.stars === 'enhanced' ? ENHANCED_STARS : CLASSIC_STARS;
+  }
 
-    // Add player ship
-    this.scene.add(this.player.getObject());
-
-    // Position camera inside the cockpit (first-person view)
-    const playerCameraTarget = this.player.getCameraTarget();
-    playerCameraTarget.add(this.camera);
-
-    // Position camera slightly forward and up to simulate cockpit view
-    this.camera.position.set(0, 0.2, -0.5);
-    this.camera.rotation.set(0, 0, 0);
-
-    // Add some ambient light
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    this.scene.add(ambientLight);
-
-    // Spawn enemies and starbase for starting sector
-    this.spawnSectorContents();
+  /** The view whose space the stars belong to (the chart and scan keep the front field). */
+  private spaceView(): SpaceView {
+    return this.gameState.currentView === ViewMode.AFT ? 'AFT' : 'FRONT';
   }
 
   /**
    * Spawn enemies and starbase for current sector
    */
   private spawnSectorContents(): void {
-    // Spawn exactly the Zylons the galaxy map holds for this sector
     const { sectorX: x, sectorY: y } = this.gameState;
     this.debugExtras.clear();
     this.combatSystem.spawnEnemiesForSector(this.galaxy.zylonsAt(x, y));
 
-    // Spawn starbase if present
     if (this.galaxy.hasStarbase(x, y)) {
-      const starbasePos = new THREE.Vector3(
-        (random() - 0.5) * 100,
-        (random() - 0.5) * 30,
-        -100 + random() * 50
-      );
+      const starbasePos = new Vec3((random() - 0.5) * 100, (random() - 0.5) * 30, 100 - random() * 50);
       this.currentStarbase = new Starbase(starbasePos);
-      this.scene.add(this.currentStarbase.getObject());
     }
   }
 
@@ -269,46 +226,15 @@ export class Game {
    */
   private clearSectorContents(): void {
     this.combatSystem.clearEnemies();
-
-    if (this.currentStarbase) {
-      this.scene.remove(this.currentStarbase.getObject());
-      this.currentStarbase.dispose();
-      this.currentStarbase = null;
-    }
-
-    // Clear player torpedoes when leaving sector
-    for (const torpedo of this.torpedoes) {
-      this.scene.remove(torpedo.getObject());
-      torpedo.dispose();
-    }
+    this.currentStarbase = null;
     this.torpedoes = [];
-
-    // Clear enemy projectiles when leaving sector
-    for (const projectile of this.enemyProjectiles) {
-      this.scene.remove(projectile.getObject());
-      projectile.dispose();
-    }
     this.enemyProjectiles = [];
   }
 
-  /**
-   * Start the game
-   */
   public start(): void {
-    if (!this.isInitialized) {
-      console.error('Game not initialized');
-      return;
-    }
-
-    console.log('Star Raiders - Starting game...');
-    console.log('Click to enable mouse control');
-
     this.gameLoop.start();
   }
 
-  /**
-   * Stop the game
-   */
   public stop(): void {
     this.gameLoop.stop();
   }
@@ -326,105 +252,64 @@ export class Game {
 
     this.gameTime += deltaTime;
 
-    // Fixed-timestep rules: energy drains, star date, fleet move ticks (60 loops/s)
-    this.clock.advance(deltaTime, this.simLoop);
-    if (this.gameState.isGameOver) {
-      this.controlPanel.update();
-      return;
-    }
+    // Edge-triggered keys: every press since the last frame, in order (no lost taps).
+    const actions = this.input.drain();
 
-    // Handle docking sequence (energy keeps draining, so the panel keeps updating)
+    // Fixed-timestep rules: energy, star date, fleets, turning and flying (60 loops/s)
+    this.clock.advance(deltaTime, this.simLoop);
+    if (this.gameState.isGameOver) return;
+
     if (this.isDocking) {
       this.updateDocking(deltaTime);
-      this.controlPanel.update();
       return;
     }
 
-    // Handle hyperwarp animation (hyperspace drains 10 per loop; keep E current)
     if (this.isHyperwarping) {
       this.updateHyperwarp(deltaTime);
-      this.controlPanel.update();
       return;
     }
 
-    // Handle input
-    this.handleInput(deltaTime);
+    for (const action of actions) this.handleAction(action);
+    if (this.gameState.isGameOver) return;
 
-    // Update player movement based on speed
-    this.updatePlayerMovement(deltaTime);
-
-    // Update entities
-    this.player.update(deltaTime);
-    this.starfield.update(deltaTime);
-
-    // Update starbase
     if (this.currentStarbase) {
       this.currentStarbase.update(deltaTime);
       this.checkDocking();
     }
 
-    // Update torpedoes and check collisions
     this.updateTorpedoes(deltaTime);
 
-    // Update combat system
-    // Enemies move independently toward player at (0,0,0)
-    // Player movement (updatePlayerMovement) displaces enemies naturally
-    // This creates correct relative motion without needing compensation
-    const playerPos = this.player.getObject().position.clone();
-    this.combatSystem.update(deltaTime, playerPos);
+    // Enemies chase our starship, which sits at the origin.
+    this.combatSystem.update(deltaTime, ORIGIN);
 
-    // Spawn enemy projectiles
-    const firingEnemy = this.combatSystem.getEnemyFiring(this.gameTime, playerPos);
+    const firingEnemy = this.combatSystem.getEnemyFiring(this.gameTime, ORIGIN);
     if (firingEnemy) {
-      const projectilePosition = firingEnemy.getPosition();
-      const firingDirection = firingEnemy.getFiringDirection(playerPos);
-      const projectile = new EnemyProjectile(projectilePosition, firingDirection, firingEnemy.getType());
+      const projectile = new EnemyProjectile(
+        firingEnemy.getPosition(),
+        firingEnemy.getFiringDirection(ORIGIN),
+        firingEnemy.getType()
+      );
       this.enemyProjectiles.push(projectile);
-      this.scene.add(projectile.getObject());
-
-      // Play enemy fire sound
       this.soundManager.playEnemyFire();
     }
 
-    // Update enemy projectiles
     this.updateEnemyProjectiles(deltaTime);
-
-    // Update red alert state based on enemy projectiles
-    this.updateRedAlert();
-
-    // Update VFX system (explosions, shield hits, etc.)
-    this.vfxSystem.update(deltaTime);
+    this.gameState.isUnderAttack = this.enemyProjectiles.length > 0;
 
     // Check torpedo collisions; every kill comes off the galaxy map (one source, §17.4)
     for (const enemy of this.combatSystem.checkTorpedoCollisions(this.torpedoes)) this.zylonKilled(enemy);
     if (this.gameState.isGameOver) return;
 
-    // Update attack computer (with all enemies for proximity radar)
-    const target = this.combatSystem.getCurrentTarget();
-    const allEnemies = this.combatSystem.getEnemies();
-    this.attackComputer.setTarget(target);
-    this.attackComputer.update(playerPos, this.player.getForwardDirection(), allEnemies);
+    this.updateTargetingData(this.combatSystem.getCurrentTarget());
 
-    // Calculate and update targeting data for control panel (θ, Φ, R)
-    this.updateTargetingData(playerPos, target);
-
-    // Handle view transition
-    if (this.isViewTransitioning) {
-      this.updateViewTransition(deltaTime);
-    }
-
-    // Update UI
-    this.controlPanel.update();
-    this.controlPanel.updateTargetsRemaining(this.galaxy.zylonsLeft);
     this.renderChart();
     this.longRangeScan.update();
 
-    // Check victory/defeat conditions
     this.checkGameState();
   };
 
   /**
-   * One fixed 1/60 s simulation loop (MANUAL_SPEC §12, §17.1, §17.4, §17.10).
+   * One fixed 1/60 s simulation loop (MANUAL_SPEC §12, §17.1, §17.4, §17.10, §17.13).
    */
   private simLoop = (events: LoopEvents): void => {
     if (this.gameState.isGameOver) return;
@@ -443,11 +328,61 @@ export class Game {
     if (this.chartTitle && this.clock.loops >= this.chartTitle.until) {
       const next = this.titleQueue.shift();
       this.chartTitle = next ? { text: next.text, until: this.clock.loops + next.loops } : null;
-      if (next) this.controlPanel.showMessage(next.text);
+      if (next) this.controlPanel.showMessage(next.text, next.loops);
     }
+    this.flyLoop();
     this.gameState.starDate = this.clock.starDate;
     this.gameState.score = this.missionScore.score;
   };
+
+  /**
+   * Game loop steps 8–9 and 16–17 (R: GAMELOOP): read the stick, rotate and move every space
+   * object and star, count down the red alert and the hit flash.
+   */
+  private flyLoop(): void {
+    const stick = this.debugStick ?? this.input.readStick();
+    this.stick = stick;
+    const view = this.gameState.currentView;
+
+    // Velocity steps 1 KM/loop toward the chosen key (R: UPDPANEL).
+    const target = this.isHyperwarping ? HYPERWARP_VELOCITY : VELOCITY_TAB[this.gameState.targetEngineSpeed];
+    this.shipVelocity = approachVelocity(this.shipVelocity, target);
+    this.gameState.engineSpeed = keyForVelocity(this.shipVelocity);
+
+    // The ROM does not rotate in the Galactic Chart view; in hyperwarp the stick steers the marker.
+    const turn: Stick = view === ViewMode.GALACTIC_CHART || this.isHyperwarping || this.isDocking ? STICK_CENTERED : stick;
+    const dzUnits = this.shipVelocity / KM_PER_UNIT;
+    for (const p of this.objectPositions()) moveInShipFrame(p, turn, dzUnits);
+    this.wrapSectorObjects();
+
+    this.starfield.loop(turn, this.shipVelocity, this.spaceView(), this.clock.loops & 7);
+
+    if (this.redAlertLife > 0) this.redAlertLife--;
+    if (this.hitFlash > 0) this.hitFlash--;
+  }
+
+  /** Live positions (in units) of every space object that turns and flies with the ship. */
+  private objectPositions(): Vec3[] {
+    const out: Vec3[] = [];
+    for (const e of this.combatSystem.getEnemies()) if (e.isActive) out.push(e.getObject().position);
+    if (this.currentStarbase) out.push(this.currentStarbase.getObject().position);
+    for (const t of this.torpedoes) out.push(t.position);
+    for (const p of this.enemyProjectiles) out.push(p.position);
+    return out;
+  }
+
+  /** Keep ships and the starbase inside the sector (±500 units, toroidal in x and z). */
+  private wrapSectorObjects(): void {
+    const wrap = (p: Vec3) => {
+      const H = 500;
+      if (p.x > H) p.x -= 2 * H;
+      else if (p.x < -H) p.x += 2 * H;
+      if (p.z > H) p.z -= 2 * H;
+      else if (p.z < -H) p.z += 2 * H;
+    };
+    for (const e of this.combatSystem.getEnemies()) if (e.isActive) wrap(e.getObject().position);
+    if (this.currentStarbase) wrap(this.currentStarbase.getObject().position);
+  }
 
   /**
    * A Zylon ship in the player's sector was destroyed: count it and take it off the map.
@@ -476,11 +411,7 @@ export class Game {
           if (this.radioFeed.relaysMessages) this.titleMessage(MSG.STARBASE_DESTROYED, LONG_MESSAGE_LOOPS);
           if (e.x === this.gameState.sectorX && e.y === this.gameState.sectorY) {
             // The debris becomes two Zylons right here: put them in play (§8.2).
-            if (this.currentStarbase) {
-              this.scene.remove(this.currentStarbase.getObject());
-              this.currentStarbase.dispose();
-              this.currentStarbase = null;
-            }
+            this.currentStarbase = null;
             const live = this.combatSystem.getEnemies().filter((en) => en.isActive && !this.debugExtras.has(en)).length;
             this.combatSystem.spawnMore(this.galaxy.zylonsAt(e.x, e.y) - live);
           }
@@ -495,13 +426,13 @@ export class Game {
     }
   }
 
-  /** Show a phrase on the title line (panel message and the chart's title band). */
+  /** Show a phrase on the title line (front view title line and the chart's title band). */
   private titleMessage(text: string, loops = SHORT_MESSAGE_LOOPS): void {
     if (this.chartTitle) {
       this.titleQueue.push({ text, loops });
       return;
     }
-    this.controlPanel.showMessage(text);
+    this.controlPanel.showMessage(text, loops);
     this.chartTitle = { text, until: this.clock.loops + loops };
   }
 
@@ -544,49 +475,26 @@ export class Game {
     this.gameState.isGameOver = true;
     const title = {
       complete: 'MISSION COMPLETE',
-      zeroEnergy: 'MISSION ABORTED  ZERO ENERGY',
+      zeroEnergy: 'MISSION ABORTED',
       destroyed: MSG.SHIP_DESTROYED_BY_ZYLON_FIRE,
       aborted: 'MISSION ABORTED',
     }[outcome];
-    this.controlPanel.showMessage(title);
+    this.controlPanel.showMessage(title, LONG_MESSAGE_LOOPS);
   }
 
   /**
-   * Update targeting data for control panel (θ, Φ, R)
+   * θ, Φ and R of the target for the panel. Our starship faces +z at the origin.
+   * (Phase 4 converts these to the ROM's gradons and centrons.)
    */
-  private updateTargetingData(playerPos: THREE.Vector3, target: import('../entities/Enemy').Enemy | null): void {
+  private updateTargetingData(target: Enemy | null): void {
     if (!target || !target.isActive) {
       this.controlPanel.updateTargetData(0, 0, 0);
       return;
     }
-
-    const targetPos = target.getPosition();
-    const playerDir = this.player.getForwardDirection();
-
-    // Vector from player to target
-    const toTarget = targetPos.clone().sub(playerPos);
-    const range = toTarget.length();
-
-    // Calculate horizontal angle (theta) - angle in XZ plane
-    const toTargetFlat = new THREE.Vector3(toTarget.x, 0, toTarget.z).normalize();
-    const playerDirFlat = new THREE.Vector3(playerDir.x, 0, playerDir.z).normalize();
-
-    // Cross product for sign
-    const cross = playerDirFlat.clone().cross(toTargetFlat);
-    const dotH = playerDirFlat.dot(toTargetFlat);
-    let theta = Math.acos(Math.max(-1, Math.min(1, dotH))) * (180 / Math.PI);
-    if (cross.y < 0) theta = -theta;
-
-    // Calculate vertical angle (phi) - elevation angle
-    toTarget.normalize();
-    const phi = (Math.asin(toTarget.y) - Math.asin(playerDir.y)) * (180 / Math.PI);
-
-    // Update control panel with rounded values
-    this.controlPanel.updateTargetData(
-      Math.round(theta),
-      Math.round(phi),
-      Math.round(range)
-    );
+    const p = target.getPosition();
+    const theta = (Math.atan2(p.x, p.z) * 180) / Math.PI;
+    const phi = (Math.atan2(p.y, Math.hypot(p.x, p.z)) * 180) / Math.PI;
+    this.controlPanel.updateTargetData(Math.round(theta), Math.round(phi), Math.round(p.length()));
   }
 
   /**
@@ -594,29 +502,14 @@ export class Game {
    */
   private checkDocking(): void {
     if (!this.currentStarbase) return;
-
-    // Decrement cooldown
     if (this.dockingCooldown > 0) {
-      this.dockingCooldown -= 1 / 60; // Approximate frame rate
+      this.dockingCooldown -= 1 / 60;
       return;
     }
-
-    const playerPos = this.player.getObject().position.clone();
-    const starbasePos = this.currentStarbase.getObject().position;
-    const distance = playerPos.distanceTo(starbasePos);
-    const speed = this.gameState.engineSpeed;
-
-    // Debug: log every 60 frames (~1 second)
-    if (random() < 0.016) {
-      console.log(`Docking check: dist=${distance.toFixed(1)}, speed=${speed}, radius=${this.currentStarbase.getDockingRadius()}`);
-    }
-
-    if (this.currentStarbase.canDock(playerPos, this.gameState.engineSpeed)) {
-      if (!this.isDocking) {
-        this.isDocking = true;
-        this.dockingProgress = 0;
-        this.controlPanel.showMessage('ORBIT ESTABLISHED - DOCKING...');
-      }
+    if (this.currentStarbase.canDock(ORIGIN, this.gameState.engineSpeed) && !this.isDocking) {
+      this.isDocking = true;
+      this.dockingProgress = 0;
+      this.controlPanel.showMessage(MSG.ORBIT_ESTABLISHED);
     }
   }
 
@@ -624,256 +517,80 @@ export class Game {
    * Update docking sequence
    */
   private updateDocking(deltaTime: number): void {
+    const before = this.dockingProgress;
     this.dockingProgress += deltaTime * 0.5; // 2 seconds to dock
 
-    // Show repair droid message at midpoint
-    if (this.dockingProgress >= 0.4 && this.dockingProgress < 0.45) {
-      this.controlPanel.showMessage('REPAIR DROID DEPLOYED...');
-    }
+    if (before < 0.4 && this.dockingProgress >= 0.4) this.controlPanel.showMessage(MSG.STANDBY);
 
     if (this.dockingProgress >= 1) {
-      // Docking complete - repair and refuel
       this.energy.refill();
-      this.gameState.hull = this.gameState.maxHull; // Repair hull to 100%
+      this.gameState.hull = this.gameState.maxHull;
       for (const sys of SUBSYSTEMS) this.gameState.damage[sys] = 'ok';
-
       this.isDocking = false;
-      this.dockingCooldown = 5; // 5 second cooldown before can dock again
-      this.controlPanel.showMessage('DOCKING COMPLETE - FULLY REPAIRED');
+      this.dockingCooldown = 5;
+      this.controlPanel.showMessage(MSG.TRANSFER_COMPLETE);
     }
   }
 
-  /**
-   * Trigger game over
-   */
   private triggerGameOver(): void {
     this.hasTriggeredGameOver = true;
     this.galacticChart.hide();
+    this.longRangeScan.hide();
     this.gameLoop.stop();
+    this.render();
 
     if (this.gameOverCallback && this.gameState.rating) {
       this.gameOverCallback(this.gameState.rating);
     }
   }
 
-  /**
-   * Check victory/defeat conditions
-   */
   private checkGameState(): void {
     // Mission complete: all Zylons destroyed (§1, §17.10)
-    if (this.galaxy.zylonsLeft <= 0) {
-      this.endMission('complete');
-    }
-
-    // Losing every starbase does not end the game (§17.4).
-    // Zero energy ends it from sim/energy.ts via endMission('zeroEnergy').
-
-    // Ship destroyed
-    if (this.gameState.hull <= 0) {
-      this.endMission('destroyed');
-    }
+    if (this.galaxy.zylonsLeft <= 0) this.endMission('complete');
+    // Losing every starbase does not end the game (§17.4). Zero energy ends it from sim/energy.ts.
+    if (this.gameState.hull <= 0) this.endMission('destroyed');
   }
 
-  /**
-   * Update player movement based on engine speed
-  */
-  private updatePlayerMovement(deltaTime: number): void {
-    // Gradual acceleration/deceleration
-    // Rate of 3.0 means ~7 seconds to decelerate from warp speed (20) to stop
-    const ACCELERATION_RATE = 3.0;
-
-    if (this.gameState.engineSpeed !== this.gameState.targetEngineSpeed) {
-      const diff = this.gameState.targetEngineSpeed - this.gameState.engineSpeed;
-      const change = Math.sign(diff) * ACCELERATION_RATE * deltaTime;
-      if (Math.abs(change) > Math.abs(diff)) {
-        this.gameState.engineSpeed = this.gameState.targetEngineSpeed;
-      } else {
-        this.gameState.engineSpeed += change;
-      }
-    }
-
-    if (this.gameState.engineSpeed > 0) {
-      const moveSpeed = this.gameState.engineSpeed * 50;  // Faster star rush
-      const direction = this.player.getForwardDirection();
-      const displacement = direction.multiplyScalar(-moveSpeed * deltaTime);
-
-      // 1. Update Starfield - individual star recycling for consistent density
-      this.starfield.updateMovement(displacement);
-
-      // 2. Move Starbase (Relative to Player)
-      if (this.currentStarbase) {
-        this.currentStarbase.getObject().position.add(displacement);
-        this.wrapPositionInSector(this.currentStarbase.getObject().position);
-      }
-
-      // 3. Move Enemies - wrap within sector boundaries
-      this.combatSystem.applyPlayerMovement(displacement);
-      for (const enemy of this.combatSystem.getEnemies()) {
-        if (enemy.isActive) {
-          this.wrapPositionInSector(enemy.getObject().position);
-        }
-      }
-
-      // 4. Move Torpedoes - apply displacement to their internal centerPosition
-      // Torpedoes track position via centerPosition (not THREE.Points position)
-      // This keeps torpedoes in correct world-space as player moves
-      // Note: Torpedoes don't wrap - they should expire if they leave the sector
-      this.torpedoes.forEach(t => t.applyDisplacement(displacement));
-
-      // 5. Move Enemy Projectiles - same treatment as torpedoes
-      // They fly through world space, so player movement displaces them
-      // Note: Enemy projectiles don't wrap - they should expire naturally
-      this.enemyProjectiles.forEach(p => p.getObject().position.add(displacement));
-    }
-  }
-
-  /**
-   * Wrap a position within sector boundaries (toroidal space)
-   * Sector matches LRS display range so everything is always visible
-   */
-  private wrapPositionInSector(position: THREE.Vector3): void {
-    // Match LRS RANGE of 500 - sector is ±500 units
-    const SECTOR_HALF_SIZE = 500;
-    let wrapped = false;
-
-    // Wrap X
-    if (position.x > SECTOR_HALF_SIZE) {
-      position.x -= SECTOR_HALF_SIZE * 2;
-      wrapped = true;
-    } else if (position.x < -SECTOR_HALF_SIZE) {
-      position.x += SECTOR_HALF_SIZE * 2;
-      wrapped = true;
-    }
-
-    // Wrap Z (forward/back axis)
-    if (position.z > SECTOR_HALF_SIZE) {
-      position.z -= SECTOR_HALF_SIZE * 2;
-      wrapped = true;
-    } else if (position.z < -SECTOR_HALF_SIZE) {
-      position.z += SECTOR_HALF_SIZE * 2;
-      wrapped = true;
-    }
-
-    // Debug: Log when wrapping occurs
-    if (wrapped) {
-      console.log(`⚠️ Entity wrapped - new position: (${position.x.toFixed(1)}, ${position.z.toFixed(1)})`);
-    }
-    // Y (vertical) stays unchanged - space is flat in this game
-  }
-
-  /**
-   * Update torpedoes
-   */
   private updateTorpedoes(deltaTime: number): void {
     for (let i = this.torpedoes.length - 1; i >= 0; i--) {
       const torpedo = this.torpedoes[i];
       torpedo.update(deltaTime);
-
-      if (!torpedo.isActive) {
-        this.scene.remove(torpedo.getObject());
-        torpedo.dispose();
-        this.torpedoes.splice(i, 1);
-      }
+      if (!torpedo.isActive) this.torpedoes.splice(i, 1);
     }
   }
 
-  /**
-   * Update enemy projectiles - move, age, and remove expired projectiles
-   */
   private updateEnemyProjectiles(deltaTime: number): void {
     for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
       const projectile = this.enemyProjectiles[i];
       projectile.update(deltaTime);
-
-      if (!projectile.isActive) {
-        this.scene.remove(projectile.getObject());
-        projectile.dispose();
-        this.enemyProjectiles.splice(i, 1);
-      }
+      if (!projectile.isActive) this.enemyProjectiles.splice(i, 1);
     }
-
-    // Check for collisions with player
     this.checkEnemyProjectileCollisions();
   }
 
-  /**
-   * Check enemy projectile collisions with player
-   * Player is at origin (0,0,0) since world moves around player
-   */
+  /** Zylon torpedoes against our starship at the origin. */
   private checkEnemyProjectileCollisions(): void {
-    const PLAYER_COLLISION_RADIUS = 2.5; // Player ship hitbox radius
-    const playerPos = new THREE.Vector3(0, 0, 0);
+    const PLAYER_COLLISION_RADIUS = 2.5;
 
     for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
       const projectile = this.enemyProjectiles[i];
-      if (!projectile.isActive) continue;
+      if (!projectile.isActive || !projectile.checkCollision(ORIGIN, PLAYER_COLLISION_RADIUS)) continue;
 
-      if (projectile.checkCollision(playerPos, PLAYER_COLLISION_RADIUS)) {
-        // Hit! Get projectile position for VFX
-        const hitPosition = projectile.getPosition();
+      // Every hit costs 100 units (§12.1, §17.1) and may damage a subsystem (§17.3)
+      this.energy.hit();
+      const harm = rollDamage(this.gameState.difficulty, this.gameState.damage, 0, () => Math.floor(random() * 256));
+      if (harm) this.gameState.damage[harm.system] = harm.status;
 
-        // Every hit costs 100 units (§12.1, §17.1) and may damage a subsystem (§17.3)
-        this.energy.hit();
-        const harm = rollDamage(this.gameState.difficulty, this.gameState.damage, 0, () =>
-          Math.floor(random() * 256)
-        );
-        if (harm) this.gameState.damage[harm.system] = harm.status;
-
-        if (this.gameState.shieldsActive && this.gameState.damage.shields === 'ok') {
-          // Shield audio and visual feedback
-          this.soundManager.playShieldHit();
-          this.vfxSystem.createShieldHit(hitPosition);
-        } else {
-          // Player hit audio
-          this.soundManager.playPlayerHit();
-        }
-
-        if (harm) {
-          this.controlPanel.showDamageMessage(harm.messages[1], 'system');
-        } else if (this.gameState.shieldsActive) {
-          this.controlPanel.showDamageMessage(
-            `SHIELDS ABSORBING FIRE! Energy: ${Math.floor(this.gameState.energy)}`,
-            'shield'
-          );
-        } else {
-          this.controlPanel.showDamageMessage(
-            `TAKING DAMAGE! Energy: ${Math.floor(this.gameState.energy)} remaining`,
-            'damage'
-          );
-        }
-
-        // Deactivate and remove the projectile
-        projectile.deactivate();
-        this.scene.remove(projectile.getObject());
-        projectile.dispose();
-        this.enemyProjectiles.splice(i, 1);
+      if (this.gameState.shieldsActive && this.gameState.damage.shields === 'ok') {
+        this.soundManager.playShieldHit();
+        this.hitFlash = HIT_FLASH_LOOPS; // §17.13: the screen flashes random colours
+      } else {
+        this.soundManager.playPlayerHit();
       }
-    }
-  }
+      if (harm) this.controlPanel.showDamageMessage(harm.messages[1], 'system');
 
-  /**
-   * Update red alert state based on combat situation
-   * Activates when enemy projectiles are in flight
-   */
-  private updateRedAlert(): void {
-    const underAttack = this.enemyProjectiles.length > 0;
-    this.gameState.isUnderAttack = underAttack;
-    this.controlPanel.setRedAlert(underAttack);
-  }
-
-  /**
-   * Handle input when galactic chart is open
-   */
-  private handleChartInput(): void {
-    // Arrow keys to move cursor
-    if (this.isKeyJustPressed('ArrowUp')) this.moveChartCursor(0, -1);
-    if (this.isKeyJustPressed('ArrowDown')) this.moveChartCursor(0, 1);
-    if (this.isKeyJustPressed('ArrowLeft')) this.moveChartCursor(-1, 0);
-    if (this.isKeyJustPressed('ArrowRight')) this.moveChartCursor(1, 0);
-
-    // H key to hyperwarp (Directly from chart)
-    if (this.isKeyJustPressed('KeyH')) {
-      this.initiateHyperwarp();
+      projectile.deactivate();
+      this.enemyProjectiles.splice(i, 1);
     }
   }
 
@@ -883,7 +600,6 @@ export class Game {
   private initiateHyperwarp(): void {
     const cursor = this.chartCursor;
 
-    // Already at this sector?
     if (cursor.x === this.gameState.sectorX && cursor.y === this.gameState.sectorY) {
       this.controlPanel.showMessage('ALREADY IN THIS SECTOR');
       return;
@@ -893,276 +609,149 @@ export class Game {
     // hyperspace drains 10 per loop and can run the tank dry.
     const cost = calcWarpSectors(this.gameState.sectorX, this.gameState.sectorY, cursor.x, cursor.y);
 
-    // Clear current sector contents
     this.clearSectorContents();
-
-    // Start hyperwarp
     this.galacticChart.hide();
+    this.longRangeScan.hide();
     this.isHyperwarping = true;
     this.hyperwarpProgress = 0;
     this.hyperwarpTarget = { x: cursor.x, y: cursor.y };
-    this.preHyperwarpSpeed = this.gameState.targetEngineSpeed; // Remember player's selected speed
 
-    // Initialize Steering State
-    // Start with some random misalignment
-    this.hyperwarpAlignment = {
-      x: (random() - 0.5) * 20, // Start +/- 10vh off center
-      y: (random() - 0.5) * 20
-    };
+    // Start with some misalignment of the marker (playfield pixels from the centre).
+    this.hyperwarpAlignment = { x: (random() - 0.5) * 20, y: (random() - 0.5) * 20 };
 
-    // Calculate difficulty based on distance
-    const dist = Math.sqrt(
-      Math.pow(cursor.x - this.gameState.sectorX, 2) +
-      Math.pow(cursor.y - this.gameState.sectorY, 2)
-    );
-    // Harder if jumping far
-    this.hyperwarpDifficulty = 1 + (dist * 0.5);
-
-    if (this.gameState.difficulty >= 'WARRIOR') {
+    const dist = Math.hypot(cursor.x - this.gameState.sectorX, cursor.y - this.gameState.sectorY);
+    this.hyperwarpDifficulty = 1 + dist * 0.5;
+    if (this.gameState.difficulty === 'WARRIOR' || this.gameState.difficulty === 'COMMANDER') {
       this.hyperwarpDifficulty *= 1.5;
     }
 
-    // Show Marker
     this.controlPanel.setHyperwarpMarkerVisible(true);
     this.controlPanel.updateHyperwarpMarker(this.hyperwarpAlignment.x, this.hyperwarpAlignment.y);
 
     // Hyperspace drain: 10 units per loop for WARPENERGY - 1 loops
     this.energy.beginHyperspace(cost.warpEnergy);
 
-    this.controlPanel.showMessage('HYPERWARPENGAGED - STEER TO TARGET');
-    this.gameState.currentView = ViewMode.FRONT;
-
-    // Reset player rotation so we warp "forward"
-    this.player.resetRotation();
+    this.controlPanel.showMessage(MSG.HYPERWARP_ENGAGED);
+    if (this.gameState.currentView !== ViewMode.FRONT) {
+      this.gameState.currentView = ViewMode.FRONT;
+      this.starfield.resetFor('FRONT');
+    }
   }
 
   /**
-   * Update hyperwarp animation and steering
+   * Update hyperwarp: the stick steers the marker (PILOT and up), then arrival.
+   * (Phase 8 replaces this with the ROM's phases, costs and landing rules.)
    */
   private updateHyperwarp(deltaTime: number): void {
-    const WARP_DURATION = 5.0; // Seconds to complete warp
+    const WARP_DURATION = 5.0;
     this.hyperwarpProgress += deltaTime / WARP_DURATION;
 
-    // --- STEERING MECHANIC ---
-    if (this.gameState.difficulty !== 'NOVICE') { // Novice doesn't need to steer
-      // 1. Apply Drift (pushes away from center or randomly)
-      // Simple Brownian motion for now
+    if (this.gameState.difficulty !== 'NOVICE') {
       const driftStrength = 15 * this.hyperwarpDifficulty * deltaTime;
       this.hyperwarpAlignment.x += (random() - 0.5) * driftStrength;
       this.hyperwarpAlignment.y += (random() - 0.5) * driftStrength;
-
-      // Constant pull away from center scaling with difficulty
-      // this.hyperwarpAlignment.x += Math.sign(this.hyperwarpAlignment.x) * driftStrength * 0.1;
-
-      // 2. Apply Player Input (Mouse steers marker back to center)
-      const mouseMove = this.inputManager.getMouseMovement();
-      const steerPower = 40 * deltaTime; // Tuning value
-      // Note: To "steer into" the marker to fix it, we conceptually move the ship.
-      // If marker is Left, we turn Left. If we turn Left, the visual reference (marker) moves Right?
-      // Usually in flight sims: Steer TO the needle.
-      // Mouse X positive = Turn Right. 
-      // If I turn Right, the object in front looks like it moves Left.
-      this.hyperwarpAlignment.x -= mouseMove.x * steerPower;
-      this.hyperwarpAlignment.y -= mouseMove.y * steerPower;
+      // Steering toward the marker moves it back toward the centre.
+      const steer = 30 * deltaTime;
+      this.hyperwarpAlignment.x -= this.stick.x * steer;
+      this.hyperwarpAlignment.y += this.stick.y * steer;
     } else {
-      // Auto-center for Novice
       this.hyperwarpAlignment.x *= 0.95;
       this.hyperwarpAlignment.y *= 0.95;
     }
-
-    // Update UI
     this.controlPanel.updateHyperwarpMarker(this.hyperwarpAlignment.x, this.hyperwarpAlignment.y);
 
+    if (this.hyperwarpProgress < 1) return;
 
-    // Stretch starfield during warp
-    const starfieldObj = this.starfield.getObject();
-    const stretchFactor = 1 + (Math.sin(this.hyperwarpProgress * Math.PI) * 10); // Pulse effect
-    starfieldObj.scale.z = stretchFactor;
+    this.isHyperwarping = false;
+    this.controlPanel.setHyperwarpMarkerVisible(false);
+    if (!this.hyperwarpTarget) return;
 
-    // Move starfield rapidly using individual star recycling
-    const direction = this.player.getForwardDirection();
-    this.starfield.updateMovement(direction.multiplyScalar(-1000 * deltaTime));
+    const alignmentError = Math.hypot(this.hyperwarpAlignment.x, this.hyperwarpAlignment.y);
+    const TOLERANCE = 10;
+    let arrivalX = this.hyperwarpTarget.x;
+    let arrivalY = this.hyperwarpTarget.y;
+    if (alignmentError > TOLERANCE && this.gameState.difficulty !== 'NOVICE') {
+      arrivalX = Math.max(0, Math.min(GALAXY_COLUMNS - 1, arrivalX + Math.floor(random() * 3) - 1));
+      arrivalY = Math.max(0, Math.min(GALAXY_ROWS - 1, arrivalY + Math.floor(random() * 3) - 1));
+    }
+    this.gameState.sectorX = arrivalX;
+    this.gameState.sectorY = arrivalY;
+    this.hyperwarpTarget = null;
 
-    if (this.hyperwarpProgress >= 1) {
-      // Complete hyperwarp
-      this.isHyperwarping = false;
-      this.controlPanel.setHyperwarpMarkerVisible(false); // Hide marker
+    // Drop out of hyperspace fast and slow down to the chosen speed.
+    this.shipVelocity = WARP_EXIT_VELOCITY;
+    this.spawnSectorContents();
+    this.controlPanel.showMessage(MSG.HYPERWARP_COMPLETE);
 
-      if (!this.hyperwarpTarget) {
-        // Safety abort if target lost
-        this.starfield.getObject().scale.z = 1;
-        this.gameState.engineSpeed = 0;
+    // R: "Flash red alert if Zylon sector entered" (255 loops).
+    if (this.galaxy.zylonsAt(arrivalX, arrivalY) > 0) {
+      this.redAlertLife = RED_ALERT_LOOPS;
+      this.titleMessage(MSG.RED_ALERT);
+      this.soundManager.playAlert();
+    }
+  }
+
+  /** One key press or button (edge-triggered, from the input queue). */
+  private handleAction(action: Action): void {
+    const view = this.gameState.currentView;
+    if (action.startsWith('SPEED_')) {
+      this.setEngineSpeed(Number(action.slice(6)));
+      return;
+    }
+    switch (action) {
+      case 'FRONT':
+        return this.switchView(ViewMode.FRONT);
+      case 'AFT':
+        return this.switchView(ViewMode.AFT);
+      case 'CHART':
+        return this.switchView(ViewMode.GALACTIC_CHART);
+      case 'LRS':
+        return this.switchView(ViewMode.LONG_RANGE_SCAN);
+      case 'STICK_LEFT':
+        if (view === ViewMode.GALACTIC_CHART) this.moveChartCursor(-1, 0);
+        return;
+      case 'STICK_RIGHT':
+        if (view === ViewMode.GALACTIC_CHART) this.moveChartCursor(1, 0);
+        return;
+      case 'STICK_FORWARD':
+        if (view === ViewMode.GALACTIC_CHART) this.moveChartCursor(0, -1);
+        return;
+      case 'STICK_BACK':
+        if (view === ViewMode.GALACTIC_CHART) this.moveChartCursor(0, 1);
+        return;
+      case 'HYPERWARP':
+        // §9: from the chart's destination dot, or from the front view.
+        if (view === ViewMode.GALACTIC_CHART || view === ViewMode.FRONT) this.initiateHyperwarp();
+        return;
+      case 'SHIELDS':
+        if (this.gameState.damage.shields !== 'ok') {
+          this.gameState.shieldsActive = false;
+          this.controlPanel.showMessage(MSG.SUBSYSTEM.shields.damaged);
+        } else {
+          this.gameState.shieldsActive = !this.gameState.shieldsActive;
+          this.controlPanel.showMessage(this.gameState.shieldsActive ? MSG.SHIELDS_ON : MSG.SHIELDS_OFF);
+        }
+        return;
+      case 'COMPUTER':
+        // §5.3: C toggles the attack computer and its cross hairs (the display box is Phase 6).
+        this.gameState.attackComputerOn = !this.gameState.attackComputerOn;
+        this.controlPanel.showMessage(
+          this.gameState.attackComputerOn ? MSG.ATTACK_COMPUTER_ON : MSG.ATTACK_COMPUTER_OFF
+        );
+        return;
+      case 'FIRE':
+        this.fireTorpedo();
+        return;
+      case 'TRACKING': {
+        const target = this.combatSystem.selectNearestTarget(ORIGIN);
+        this.controlPanel.showMessage(target ? MSG.COMPUTER_TRACKING_ON : MSG.TRACKING_OFF);
         return;
       }
-
-      // Check Alignment Success
-
-      // Check Alignment Success
-      const alignmentError = Math.sqrt(
-        this.hyperwarpAlignment.x * this.hyperwarpAlignment.x +
-        this.hyperwarpAlignment.y * this.hyperwarpAlignment.y
-      );
-
-      const TOLERANCE = 10; // Acceptance radius (vh)
-      let arrivalX = this.hyperwarpTarget.x;
-      let arrivalY = this.hyperwarpTarget.y;
-
-      if (alignmentError > TOLERANCE && this.gameState.difficulty !== 'NOVICE') {
-        // MISJUMP!
-        this.controlPanel.showMessage('HYPERWARP ERROR: NAVIGATION FAILURE');
-        // Random adjacent sector
-        arrivalX += Math.floor(random() * 3) - 1;
-        arrivalY += Math.floor(random() * 3) - 1;
-        // Clamp to grid (16×8)
-        arrivalX = Math.max(0, Math.min(GALAXY_COLUMNS - 1, arrivalX));
-        arrivalY = Math.max(0, Math.min(GALAXY_ROWS - 1, arrivalY));
-      }
-
-      this.gameState.sectorX = arrivalX;
-      this.gameState.sectorY = arrivalY;
-
-      // Reset starfield scale (position handled by individual star recycling)
-      starfieldObj.scale.z = 1;
-
-      // Decelerate from warp speed to player's last selected impulse speed
-      // Hyperspace moves at 1000 units/sec, normal impulse = engineSpeed * 50
-      // So warp speed equivalent = 1000 / 50 = 20
-      this.gameState.engineSpeed = 20; // Exit at actual warp velocity
-      this.gameState.targetEngineSpeed = this.preHyperwarpSpeed; // Decelerate to player's selection
-
-      this.hyperwarpTarget = null;
-
-      // Spawn contents for new sector
-      this.spawnSectorContents();
-
-      const sector = this.galaxy.sector(this.gameState.sectorX, this.gameState.sectorY);
-      if (sector) {
-        if (sector.zylons > 0) {
-          this.controlPanel.showMessage(`ARRIVED - ${sector.zylons} ZYLONS DETECTED`);
-        } else if (sector.starbase) {
-          this.controlPanel.showMessage('ARRIVED - STARBASE IN SECTOR');
-        } else {
-          this.controlPanel.showMessage('ARRIVED - SECTOR CLEAR');
-        }
-      }
-    }
-  }
-
-  /**
-   * Handle user input
-   */
-  private handleInput(_deltaTime: number): void {
-    if (this.isViewTransitioning) return;
-
-    // --- Global View Controls ---
-    if (this.isKeyJustPressed('KeyF')) this.switchView(ViewMode.FRONT);
-    if (this.isKeyJustPressed('KeyA')) this.switchView(ViewMode.AFT);
-    if (this.isKeyJustPressed('KeyG')) this.switchView(ViewMode.GALACTIC_CHART);
-    if (this.isKeyJustPressed('KeyL')) this.switchView(ViewMode.LONG_RANGE_SCAN);
-
-    // --- Impulse Engines (0-9) ---
-    for (let i = 0; i <= 9; i++) {
-      const key = i === 0 ? 'Digit0' : `Digit${i}`;
-      if (this.inputManager.isKeyPressed(key)) {
-        this.setEngineSpeed(i);
-      }
-    }
-
-    // --- View Specific Inputs ---
-    if (this.gameState.currentView === ViewMode.GALACTIC_CHART) {
-      this.handleChartInput();
-    }
-    else if (this.gameState.currentView === ViewMode.LONG_RANGE_SCAN) {
-      // Long Range Scan - Allow rotation
-      const mouseMovement = this.inputManager.getMouseMovement();
-      // Only X rotation (Steering), Y (Pitch) is less relevant/visible on 2D map but let's allow both for feel
-      this.player.rotate(mouseMovement.x, mouseMovement.y);
-    }
-    else if (this.gameState.currentView === ViewMode.FRONT || this.gameState.currentView === ViewMode.AFT) {
-      // --- Cockpit Controls (Front/Aft) ---
-
-      // Get mouse movement for ship rotation
-      const mouseMovement = this.inputManager.getMouseMovement();
-
-      // In Aft view, controls are reversed
-      const reverseControls = this.gameState.currentView === ViewMode.AFT;
-      const xMultiplier = reverseControls ? -1 : 1;
-
-      // Rotate player based on mouse input
-      this.player.rotate(mouseMovement.x * xMultiplier, mouseMovement.y);
-
-      // Shields
-      if (this.isKeyJustPressed('KeyS')) {
-        this.gameState.shieldsActive = !this.gameState.shieldsActive;
-        if (this.gameState.damage.shields !== 'ok') {
-          this.controlPanel.showMessage('SHIELDS DAMAGED');
-          this.gameState.shieldsActive = false;
-        } else {
-          this.controlPanel.showMessage(this.gameState.shieldsActive ? 'SHIELDS ACTIVATED' : 'SHIELDS DEACTIVATED');
-        }
-      }
-
-      // Fire Torpedo (Spacebar)
-      if (this.isKeyJustPressed('Space')) {
-        this.fireTorpedo();
-      }
-
-      // Targeting - T key for nearest, M key for next
-      if (this.isKeyJustPressed('KeyT')) {
-        const playerPos = this.player.getObject().position.clone();
-        // Note: selectNearestTarget logic from orphan
-        const target = this.combatSystem.selectNearestTarget(playerPos);
-        if (target) {
-          this.controlPanel.showMessage(`TRACKING: ZYLON ${target.getType()}`);
-        } else {
-          this.controlPanel.showMessage('NO TARGETS IN RANGE');
-        }
-      }
-
-      if (this.isKeyJustPressed('KeyM')) {
-        const target = this.combatSystem.selectNextTarget();
-        if (target) {
-          this.controlPanel.showMessage(`TARGET: ZYLON ${target.getType()}`);
-        }
-      }
-
-      // Hyperwarp Trigger (H Key) - Only works in Front View
-      if (this.isKeyJustPressed('KeyH')) {
-        if (this.gameState.currentView === ViewMode.FRONT) {
-          this.initiateHyperwarp();
-        } else {
-          this.controlPanel.showMessage('HYPERWARP: SWITCH TO FRONT VIEW');
-        }
-      }
-    }
-
-    // Update key states for next frame
-    this.updateKeyStates();
-  }
-
-  /**
-   * Check if a key was just pressed (not held)
-   */
-  private isKeyJustPressed(code: string): boolean {
-    const isPressed = this.inputManager.isKeyPressed(code);
-    const wasPressed = this.keyStates.get(code) || false;
-    return isPressed && !wasPressed;
-  }
-
-  /**
-   * Update key states for tracking single presses
-   */
-  private updateKeyStates(): void {
-    const keysToTrack = [
-      'KeyF', 'KeyA', 'KeyS', 'Space', 'KeyG', 'KeyL', 'KeyH', 'KeyT', 'KeyM',
-      'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'
-    ];
-    for (let i = 0; i <= 9; i++) {
-      keysToTrack.push(i === 0 ? 'Digit0' : `Digit${i}`);
-    }
-
-    for (const key of keysToTrack) {
-      this.keyStates.set(key, this.inputManager.isKeyPressed(key));
+      case 'MANUAL_TARGET':
+        this.combatSystem.selectNextTarget();
+        return;
+      case 'PAUSE':
+        return; // Phase 11
     }
   }
 
@@ -1171,82 +760,36 @@ export class Game {
    */
   private switchView(view: ViewMode): void {
     if (this.gameState.currentView === view) return;
-    if (this.isViewTransitioning) return;
+    const before = this.spaceView();
 
-    // Close any previous overlays
     this.galacticChart.hide();
     this.longRangeScan.hide();
-    // this.attackComputer.hide(); // If Attack Computer had a mode
-
-    const previousView = this.gameState.currentView;
     this.gameState.currentView = view;
 
-    // Open new overlays if applicable
     if (view === ViewMode.GALACTIC_CHART) {
       this.galacticChart.show();
       this.renderChart();
     }
-    if (view === ViewMode.LONG_RANGE_SCAN) {
-      this.longRangeScan.show();
-    }
+    if (view === ViewMode.LONG_RANGE_SCAN) this.longRangeScan.show();
 
-    // Handle view transition for Front/Aft
-    if (
-      (previousView === ViewMode.FRONT && view === ViewMode.AFT) ||
-      (previousView === ViewMode.AFT && view === ViewMode.FRONT)
-    ) {
-      this.isViewTransitioning = true;
-      this.viewTransitionProgress = 0;
-    } else {
-      // Immediate switch (e.g. from Map/LRS)
-      if (view === ViewMode.FRONT) {
-        this.camera.rotation.y = 0;
-      } else if (view === ViewMode.AFT) {
-        this.camera.rotation.y = Math.PI;
-      }
-    }
+    // Front ↔ aft: a fresh field for the new direction (R: offscreen stars get new positions).
+    if (this.spaceView() !== before) this.starfield.resetFor(this.spaceView());
   }
 
   /**
-   * Update view transition animation
-   */
-  private updateViewTransition(deltaTime: number): void {
-    this.viewTransitionProgress += deltaTime * 3;
-
-    if (this.viewTransitionProgress >= 1) {
-      this.viewTransitionProgress = 1;
-      this.isViewTransitioning = false;
-
-      if (this.gameState.currentView === ViewMode.AFT) {
-        this.camera.rotation.y = Math.PI;
-      } else {
-        this.camera.rotation.y = 0;
-      }
-    } else {
-      const targetRotation = this.gameState.currentView === ViewMode.AFT ? Math.PI : 0;
-      const startRotation = this.gameState.currentView === ViewMode.AFT ? 0 : Math.PI;
-      this.camera.rotation.y = startRotation + (targetRotation - startRotation) * this.viewTransitionProgress;
-    }
-  }
-
-  /**
-   * Fire dual photon torpedoes from port and starboard cannons
+   * Fire both photon torpedoes along the view direction.
+   * (Phase 5 brings the ROM's alternating barrels, refire time and homing.)
    */
   private fireTorpedo(): void {
-    if (
-      this.gameState.currentView !== ViewMode.FRONT &&
-      this.gameState.currentView !== ViewMode.AFT
-    ) {
-      return;
-    }
+    const view = this.gameState.currentView;
+    if (view !== ViewMode.FRONT && view !== ViewMode.AFT) return;
 
     if (this.gameState.shieldsActive && this.gameState.difficulty !== DifficultyLevel.NOVICE) {
       this.controlPanel.showMessage('LOWER SHIELDS TO FIRE');
       return;
     }
-
     if (this.gameState.damage.photons !== 'ok') {
-      this.controlPanel.showMessage('WEAPONS DAMAGED');
+      this.controlPanel.showMessage(MSG.SUBSYSTEM.photons.damaged);
       return;
     }
 
@@ -1255,77 +798,49 @@ export class Game {
     this.energy.firePhoton();
     if (this.gameState.isGameOver) return;
 
-    const playerPos = this.player.getObject().position.clone();
-    let direction = this.player.getForwardDirection();
-
-    if (this.gameState.currentView === ViewMode.AFT) {
-      direction.negate();
+    const dir = view === ViewMode.AFT ? -1 : 1;
+    const convergence = new Vec3(0, 0, 50 * dir);
+    for (const barrelX of [-2, 2]) {
+      const start = new Vec3(barrelX, -1.4, 0.2 * dir);
+      this.torpedoes.push(new PhotonTorpedo(start, convergence.clone().sub(start)));
     }
-
-    // Get player's rotation quaternions for transforming offset positions
-    const pitchQuaternion = this.player.getCameraTarget().quaternion;
-    const yawQuaternion = this.player.getObject().quaternion;
-
-    // Define cannon offsets relative to ship center
-    // Port (left) and starboard (right) positions at the WINGS
-    // X offset: ±2.0 creates visible spread angle (~2.3 degrees) toward crosshair
-    // Y offset: large negative to make torpedoes appear from VERY BOTTOM of screen
-    // (near the player status bar showing velocity/energy)
-    // Z offset: 0 to start at camera's Z plane for closest bottom-edge appearance
-    const portOffset = new THREE.Vector3(-2.0, -1.4, 0.0);
-    const starboardOffset = new THREE.Vector3(2.0, -1.4, 0.0);
-
-    // For aft view, we need a slight negative Z to fire from behind
-    if (this.gameState.currentView === ViewMode.AFT) {
-      portOffset.z = -0.1;
-      starboardOffset.z = -0.1;
-    }
-
-    // Apply player rotation to offsets (pitch first, then yaw - same as getForwardDirection)
-    portOffset.applyQuaternion(pitchQuaternion);
-    portOffset.applyQuaternion(yawQuaternion);
-    starboardOffset.applyQuaternion(pitchQuaternion);
-    starboardOffset.applyQuaternion(yawQuaternion);
-
-    // Calculate final firing positions - start close to player (bottom of screen)
-    const portPosition = playerPos.clone().add(portOffset);
-    const starboardPosition = playerPos.clone().add(starboardOffset);
-
-    // Minimal forward offset - torpedoes should start very close to camera at bottom of screen
-    portPosition.add(direction.clone().multiplyScalar(0.2));
-    starboardPosition.add(direction.clone().multiplyScalar(0.2));
-
-    // Calculate convergence point - where both trajectories meet at crosshair
-    // Convergence distance of 50 units places the intersection at crosshair depth
-    const CONVERGENCE_DISTANCE = 50;
-    const convergencePoint = playerPos.clone().add(direction.clone().multiplyScalar(CONVERGENCE_DISTANCE));
-
-    // Calculate converging trajectories - each torpedo angles toward the convergence point
-    const portDirection = convergencePoint.clone().sub(portPosition).normalize();
-    const starboardDirection = convergencePoint.clone().sub(starboardPosition).normalize();
-
-    // Create dual torpedoes with converging trajectories
-    const portTorpedo = new PhotonTorpedo(portPosition, portDirection);
-    const starboardTorpedo = new PhotonTorpedo(starboardPosition, starboardDirection);
-
-    this.torpedoes.push(portTorpedo);
-    this.torpedoes.push(starboardTorpedo);
-    this.scene.add(portTorpedo.getObject());
-    this.scene.add(starboardTorpedo.getObject());
   }
 
-  /**
-   * Set engine speed
-   */
   private setEngineSpeed(speed: number): void {
     const maxSpeed = this.gameState.damage.engines !== 'ok' ? 5 : 9;
-
-    // Set target, don't jump immediately
     this.gameState.targetEngineSpeed = Math.min(speed, maxSpeed);
-
     if (speed > maxSpeed && this.gameState.damage.engines !== 'ok') {
-      this.controlPanel.showMessage('ENGINES DAMAGED - MAX SPEED 5');
+      this.controlPanel.showMessage(MSG.SUBSYSTEM.engines.damaged);
     }
+  }
+
+  /** What the renderer draws for the Front/Aft views this frame. */
+  private spaceFrame(): SpaceFrame {
+    const km = (p: Vec3, kind: SpaceObject['kind']): SpaceObject => ({
+      kind,
+      x: p.x * KM_PER_UNIT,
+      y: p.y * KM_PER_UNIT,
+      z: p.z * KM_PER_UNIT,
+    });
+    const objects: SpaceObject[] = [];
+    for (const e of this.combatSystem.getEnemies()) if (e.isActive) objects.push(km(e.getObject().position, 'zylon'));
+    if (this.currentStarbase) objects.push(km(this.currentStarbase.getObject().position, 'starbase'));
+    for (const t of this.torpedoes) objects.push(km(t.position, 'photon'));
+    for (const p of this.enemyProjectiles) objects.push(km(p.position, 'zylonTorpedo'));
+
+    const hyperspace = this.isHyperwarping;
+    return {
+      view: this.spaceView(),
+      stars: this.starfield.stars,
+      objects,
+      crosshair: this.gameState.attackComputerOn && this.gameState.damage.computer !== 'destroyed',
+      shields: this.gameState.shieldsActive && this.gameState.damage.shields === 'ok',
+      redAlertLife: this.redAlertLife,
+      hitFlash: this.hitFlash,
+      title: this.controlPanel.titleText(),
+      panel: this.controlPanel.panelData(this.shipVelocity, hyperspace && this.hyperwarpProgress > 0.5),
+      warpMarker: this.controlPanel.getWarpMarker(),
+    };
   }
 
   /**
@@ -1339,8 +854,7 @@ export class Game {
       this.update(DT);
       this.render();
     };
-    const ahead = (distance: number) =>
-      this.player.getForwardDirection().multiplyScalar(distance).add(this.player.getObject().position);
+    const ahead = (distance: number) => new Vec3(0, 0, distance);
 
     return {
       state: () => ({
@@ -1364,6 +878,12 @@ export class Game {
         chartTitle: this.chartTitle?.text ?? null,
         chartRenders: this.galacticChart.renders,
         manualStepping: !this.gameLoop.running,
+        shipVelocity: this.shipVelocity,
+        stick: this.stick,
+        redAlertLife: this.redAlertLife,
+        starCount: this.starfield.stars.length,
+        title: this.controlPanel.titleText(),
+        settings: { ...getSettings() },
       }),
       galaxy: () => this.galaxy.sectors().map((s) => ({ ...s })),
       teleport: (x: number, y: number) => {
@@ -1375,21 +895,14 @@ export class Game {
       spawn: (type: DebugSpawnType, distance = 60) => {
         const pos = ahead(distance);
         if (type === 'starbase') {
-          if (this.currentStarbase) {
-            this.currentStarbase.getObject().position.copy(pos);
-          } else {
-            this.currentStarbase = new Starbase(pos);
-            this.scene.add(this.currentStarbase.getObject());
-          }
+          if (this.currentStarbase) this.currentStarbase.getObject().position.copy(pos);
+          else this.currentStarbase = new Starbase(pos);
           return;
         }
         const enemyType = { fighter: EnemyType.FIGHTER, cruiser: EnemyType.CRUISER, basestar: EnemyType.BASESTAR }[type];
         this.debugExtras.add(this.combatSystem.spawnEnemy(enemyType, pos));
       },
-      setView: (view: ViewMode) => {
-        this.switchView(view);
-        if (this.isViewTransitioning) this.updateViewTransition(1);
-      },
+      setView: (view: ViewMode) => this.switchView(view),
       step: (n = 1) => {
         this.gameLoop.stop();
         for (let i = 0; i < n; i++) frame();
@@ -1400,13 +913,11 @@ export class Game {
         this.initiateHyperwarp();
       },
       dock: () => {
-        if (!this.currentStarbase) {
-          this.currentStarbase = new Starbase(new THREE.Vector3());
-          this.scene.add(this.currentStarbase.getObject());
-        }
+        if (!this.currentStarbase) this.currentStarbase = new Starbase(new Vec3());
         this.currentStarbase.getObject().position.copy(ahead(30));
         this.gameState.engineSpeed = 0;
         this.gameState.targetEngineSpeed = 0;
+        this.shipVelocity = 0;
         this.dockingCooldown = 0;
         this.checkDocking();
       },
@@ -1449,24 +960,33 @@ export class Game {
         }
         return live.length;
       },
+      stick: (x: number, y: number) => {
+        const d = (v: number) => (v > 0 ? 1 : v < 0 ? -1 : 0) as -1 | 0 | 1;
+        this.debugStick = x || y ? { x: d(x), y: d(y) } : null;
+      },
+      press: (action: Action) => this.input.push(action),
+      settings: (patch?: Partial<Settings>) => ({ ...(patch ? updateSettings(patch) : getSettings()) }),
+      redAlert: (loops = RED_ALERT_LOOPS) => {
+        this.redAlertLife = loops;
+        if (loops > 0) this.controlPanel.showMessage(MSG.RED_ALERT, loops);
+      },
+      stars: () =>
+        this.starfield.stars.map((s) => ({
+          x: s.x,
+          y: s.y,
+          z: s.z,
+          col: s.pixel?.col ?? null,
+          row: s.pixel?.row ?? null,
+          color: s.color,
+        })),
     };
   }
 
   /**
-   * Render the scene
+   * Render the Front/Aft views (the chart and scan draw themselves over the screen).
    */
   private render = (): void => {
-    this.renderer.render(this.scene, this.camera);
-  };
-
-  /**
-   * Handle window resize
-   * Note: With retro resolution, we don't resize the renderer.
-   * CSS handles the scaling. We just need to ensure the container stays valid.
-   */
-  private handleResize = (): void => {
-    // Fixed internal resolution - no resize needed
-    // CSS scaling handles display size
+    this.renderer.render(this.spaceFrame());
   };
 
   /**
@@ -1474,37 +994,15 @@ export class Game {
    */
   public dispose(): void {
     this.gameLoop.stop();
-    this.inputManager.dispose();
-    this.starfield.dispose();
-    this.player.dispose();
+    this.unsubscribeSettings();
+    this.input.dispose();
     this.controlPanel.dispose();
     this.galacticChart.dispose();
     this.longRangeScan.dispose();
-    this.attackComputer.dispose();
     this.combatSystem.dispose();
-
-    if (this.currentStarbase) {
-      this.scene.remove(this.currentStarbase.getObject());
-      this.currentStarbase.dispose();
-    }
-
-    for (const torpedo of this.torpedoes) {
-      this.scene.remove(torpedo.getObject());
-      torpedo.dispose();
-    }
-    this.torpedoes = [];
-
-    for (const projectile of this.enemyProjectiles) {
-      this.scene.remove(projectile.getObject());
-      projectile.dispose();
-    }
-    this.enemyProjectiles = [];
-
     this.renderer.dispose();
-    window.removeEventListener('resize', this.handleResize);
-
-    if (this.container.contains(this.renderer.domElement)) {
-      this.container.removeChild(this.renderer.domElement);
-    }
+    this.currentStarbase = null;
+    this.torpedoes = [];
+    this.enemyProjectiles = [];
   }
 }
