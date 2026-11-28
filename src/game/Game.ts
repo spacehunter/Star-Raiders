@@ -6,7 +6,7 @@ import { SoundManager } from '../audio/SoundManager';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
 import { EnemyProjectile } from '../entities/EnemyProjectile';
 import { Starbase } from '../entities/Starbase';
-import { ControlPanel, LONG_MESSAGE_LOOPS, SHORT_MESSAGE_LOOPS } from '../ui/ControlPanel';
+import { ControlPanel, type TrackedPosition } from '../ui/ControlPanel';
 import { GalacticChart } from '../views/GalacticChart';
 import { LongRangeScan } from '../views/LongRangeScan';
 import { EnemyType, type Enemy } from '../entities/Enemy';
@@ -21,7 +21,7 @@ import type { MissionOutcome } from '../rules/rating';
 import { VELOCITY_TAB } from '../rules/speed';
 import { calcWarpSectors } from '../rules/warp';
 import { rollDamage, SUBSYSTEMS, type Subsystem, type SubsystemStatus } from '../rules/damage';
-import { MSG } from '../rules/messages';
+import { MSG, PHRASE, endOfMissionPhrase, subsystemPhrase } from '../rules/messages';
 import { Galaxy, RadioFeed, GALAXY_COLUMNS, GALAXY_ROWS, type GalaxyEvent, type SectorPos } from '../sim/galaxy';
 import { Renderer, type SpaceFrame, type SpaceObject } from '../render/Renderer';
 import { CLASSIC_STARS, ENHANCED_STARS, Starfield } from '../render/starfield';
@@ -33,7 +33,7 @@ export interface GameDebugApi {
   state(): Record<string, unknown>;
   galaxy(): Array<Record<string, unknown>>;
   teleport(x: number, y: number): void;
-  spawn(type: DebugSpawnType, distance?: number): void;
+  spawn(type: DebugSpawnType, distance?: number, x?: number, y?: number): void;
   setView(view: ViewMode): void;
   step(n?: number): void;
   resume(): void;
@@ -43,6 +43,8 @@ export interface GameDebugApi {
   setSpeed(key: number): void;
   setShields(on: boolean): void;
   setDamage(system: Subsystem, status: SubsystemStatus): void;
+  damageReport(system: Subsystem, status: 'damaged' | 'destroyed'): void;
+  setKills(n: number): void;
   moveCursor(x: number, y: number): void;
   surround(): SectorPos | null;
   toFleetTick(n?: number): number;
@@ -65,6 +67,8 @@ const WARP_EXIT_VELOCITY = 120;
 /** Velocity used for the streaming stars while hyperwarping (Phase 8 brings the ROM's 254 and trails). */
 const HYPERWARP_VELOCITY = 112;
 const ORIGIN = new Vec3();
+/** Fraction of the placeholder hyperwarp after which the ship counts as in hyperspace (Phase 8 replaces it). */
+const HYPERSPACE_FROM = 0.5;
 
 /** Speed key whose velocity the ship has reached (for rules that read a key, e.g. docking). */
 function keyForVelocity(v: number): number {
@@ -104,10 +108,6 @@ export class Game {
   private longRangeScan: LongRangeScan;
   /** Hyperwarp destination dot on the chart (§8); kept between visits. */
   private chartCursor: SectorPos = { x: 8, y: 4 };
-  /** Title-line message shown on the chart's title band until `until` (loop number). */
-  private chartTitle: { text: string; until: number } | null = null;
-  /** Phrases waiting for the title line, shown one at a time. */
-  private titleQueue: Array<{ text: string; loops: number }> = [];
   /** Ships placed by the debug hook; not part of the galaxy count. */
   private debugExtras = new Set<Enemy>();
 
@@ -185,7 +185,7 @@ export class Game {
     this.combatSystem = new CombatSystem(this.gameState);
     this.soundManager = new SoundManager();
 
-    this.controlPanel = new ControlPanel(this.gameState, () => this.clock.loops);
+    this.controlPanel = new ControlPanel(this.gameState, random);
     this.galacticChart = new GalacticChart(container);
     this.longRangeScan = new LongRangeScan(container, this.gameState, this.combatSystem, () => this.currentStarbase);
 
@@ -300,8 +300,6 @@ export class Game {
     for (const enemy of this.combatSystem.checkTorpedoCollisions(this.torpedoes)) this.zylonKilled(enemy);
     if (this.gameState.isGameOver) return;
 
-    this.updateTargetingData(this.combatSystem.getCurrentTarget());
-
     this.renderChart();
     this.longRangeScan.update();
 
@@ -325,12 +323,9 @@ export class Game {
       const player = { x: this.gameState.sectorX, y: this.gameState.sectorY };
       this.handleGalaxyEvents(this.galaxy.moveTick(player, this.clock.starDateTicks));
     }
-    if (this.chartTitle && this.clock.loops >= this.chartTitle.until) {
-      const next = this.titleQueue.shift();
-      this.chartTitle = next ? { text: next.text, until: this.clock.loops + next.loops } : null;
-      if (next) this.controlPanel.showMessage(next.text, next.loops);
-    }
     this.flyLoop();
+    // R: UPDPANEL, UPDTITLE, FLUSHGAMELOOP — readouts, title line, band and shields colours.
+    this.controlPanel.loop(this.trackedPosition());
     this.gameState.starDate = this.clock.starDate;
     this.gameState.score = this.missionScore.score;
   };
@@ -402,13 +397,13 @@ export class Game {
       switch (e.type) {
         case 'starbaseSurrounded':
           if (this.radioFeed.relaysMessages) {
-            this.titleMessage(MSG.STARBASE_SURROUNDED, LONG_MESSAGE_LOOPS);
+            this.controlPanel.setTitle(PHRASE.STARBASE_SURROUNDED);
             this.soundManager.playAlert();
           }
           break;
         case 'starbaseDestroyed': {
           this.missionScore.starbaseDestroyedByZylons(); // -18 (§14.1)
-          if (this.radioFeed.relaysMessages) this.titleMessage(MSG.STARBASE_DESTROYED, LONG_MESSAGE_LOOPS);
+          if (this.radioFeed.relaysMessages) this.controlPanel.setTitle(PHRASE.STARBASE_DESTROYED);
           if (e.x === this.gameState.sectorX && e.y === this.gameState.sectorY) {
             // The debris becomes two Zylons right here: put them in play (§8.2).
             this.currentStarbase = null;
@@ -426,23 +421,13 @@ export class Game {
     }
   }
 
-  /** Show a phrase on the title line (front view title line and the chart's title band). */
-  private titleMessage(text: string, loops = SHORT_MESSAGE_LOOPS): void {
-    if (this.chartTitle) {
-      this.titleQueue.push({ text, loops });
-      return;
-    }
-    this.controlPanel.showMessage(text, loops);
-    this.chartTitle = { text, until: this.clock.loops + loops };
-  }
-
   /** Draw the Galactic Chart if it is open and something on it changed (§8). */
   private renderChart(): void {
     if (!this.galacticChart.visible) return;
     const { sectorX, sectorY } = this.gameState;
     const c = this.chartCursor;
     this.galacticChart.render({
-      title: this.chartTitle?.text ?? MSG.GALACTIC_CHART,
+      title: this.controlPanel.titleText().trim() || MSG.GALACTIC_CHART,
       sectorsVersion: this.radioFeed.version,
       sectors: () => this.radioFeed.sectors(),
       player: { x: sectorX, y: sectorY },
@@ -473,28 +458,20 @@ export class Game {
     this.gameState.rating = rateMission(this.gameState.difficulty, outcome, this.missionScore.score);
     this.gameState.isVictory = outcome === 'complete';
     this.gameState.isGameOver = true;
-    const title = {
-      complete: 'MISSION COMPLETE',
-      zeroEnergy: 'MISSION ABORTED',
-      destroyed: MSG.SHIP_DESTROYED_BY_ZYLON_FIRE,
-      aborted: 'MISSION ABORTED',
-    }[outcome];
-    this.controlPanel.showMessage(title, LONG_MESSAGE_LOOPS);
+    // R: GAMEOVER clears the title line and enqueues the end sequence, which then repeats.
+    this.controlPanel.title.clear();
+    this.controlPanel.enqueueTitle(endOfMissionPhrase(outcome, this.gameState.rating.messages));
   }
 
   /**
-   * θ, Φ and R of the target for the panel. Our starship faces +z at the origin.
-   * (Phase 4 converts these to the ROM's gradons and centrons.)
+   * Ship-frame position (KM) of the object the panel's θ Φ R read (§6, §17.2). Our starship
+   * sits at the origin facing +z. (Phase 6 brings the ROM's target slots 0–3.)
    */
-  private updateTargetingData(target: Enemy | null): void {
-    if (!target || !target.isActive) {
-      this.controlPanel.updateTargetData(0, 0, 0);
-      return;
-    }
+  private trackedPosition(): TrackedPosition | null {
+    const target = this.combatSystem.getCurrentTarget();
+    if (!target || !target.isActive) return null;
     const p = target.getPosition();
-    const theta = (Math.atan2(p.x, p.z) * 180) / Math.PI;
-    const phi = (Math.atan2(p.y, Math.hypot(p.x, p.z)) * 180) / Math.PI;
-    this.controlPanel.updateTargetData(Math.round(theta), Math.round(phi), Math.round(p.length()));
+    return { x: p.x * KM_PER_UNIT, y: p.y * KM_PER_UNIT, z: p.z * KM_PER_UNIT };
   }
 
   /**
@@ -509,7 +486,9 @@ export class Game {
     if (this.currentStarbase.canDock(ORIGIN, this.gameState.engineSpeed) && !this.isDocking) {
       this.isDocking = true;
       this.dockingProgress = 0;
-      this.controlPanel.showMessage(MSG.ORBIT_ESTABLISHED);
+      // ORBIT ESTABLISHED, then STANDBY; docking also empties the title queue (R: DOCKING).
+      this.controlPanel.setTitle(PHRASE.ORBIT_ESTABLISHED);
+      this.controlPanel.title.clearQueue();
     }
   }
 
@@ -517,18 +496,14 @@ export class Game {
    * Update docking sequence
    */
   private updateDocking(deltaTime: number): void {
-    const before = this.dockingProgress;
-    this.dockingProgress += deltaTime * 0.5; // 2 seconds to dock
-
-    if (before < 0.4 && this.dockingProgress >= 0.4) this.controlPanel.showMessage(MSG.STANDBY);
+    this.dockingProgress += deltaTime * 0.5; // 2 seconds to dock (Phase 10 brings the transfer vessel)
 
     if (this.dockingProgress >= 1) {
       this.energy.refill();
-      this.gameState.hull = this.gameState.maxHull;
       for (const sys of SUBSYSTEMS) this.gameState.damage[sys] = 'ok';
       this.isDocking = false;
       this.dockingCooldown = 5;
-      this.controlPanel.showMessage(MSG.TRANSFER_COMPLETE);
+      this.controlPanel.setTitle(PHRASE.TRANSFER_COMPLETE);
     }
   }
 
@@ -548,7 +523,6 @@ export class Game {
     // Mission complete: all Zylons destroyed (§1, §17.10)
     if (this.galaxy.zylonsLeft <= 0) this.endMission('complete');
     // Losing every starbase does not end the game (§17.4). Zero energy ends it from sim/energy.ts.
-    if (this.gameState.hull <= 0) this.endMission('destroyed');
   }
 
   private updateTorpedoes(deltaTime: number): void {
@@ -579,19 +553,26 @@ export class Game {
       // Every hit costs 100 units (§12.1, §17.1) and may damage a subsystem (§17.3)
       this.energy.hit();
       const harm = rollDamage(this.gameState.difficulty, this.gameState.damage, 0, () => Math.floor(random() * 256));
-      if (harm) this.gameState.damage[harm.system] = harm.status;
 
-      if (this.gameState.shieldsActive && this.gameState.damage.shields === 'ok') {
+      // R: the hit test reads SHIELDSCOLOR, so damaged shields protect only while they flicker on.
+      if (this.controlPanel.colors.shieldsUp) {
         this.soundManager.playShieldHit();
         this.hitFlash = HIT_FLASH_LOOPS; // §17.13: the screen flashes random colours
       } else {
         this.soundManager.playPlayerHit();
       }
-      if (harm) this.controlPanel.showDamageMessage(harm.messages[1], 'system');
+      if (harm) this.reportDamage(harm.system, harm.status);
 
       projectile.deactivate();
       this.enemyProjectiles.splice(i, 1);
     }
+  }
+
+  /** R: DAMAGE — DAMAGE CONTROL now; the subsystem phrase waits in the queue and repeats until docking. */
+  private reportDamage(system: Subsystem, status: 'damaged' | 'destroyed'): void {
+    this.gameState.damage[system] = status;
+    this.controlPanel.setTitle(PHRASE.DAMAGE_CONTROL);
+    this.controlPanel.enqueueTitle(subsystemPhrase(system, status));
   }
 
   /**
@@ -600,10 +581,7 @@ export class Game {
   private initiateHyperwarp(): void {
     const cursor = this.chartCursor;
 
-    if (cursor.x === this.gameState.sectorX && cursor.y === this.gameState.sectorY) {
-      this.controlPanel.showMessage('ALREADY IN THIS SECTOR');
-      return;
-    }
+    if (cursor.x === this.gameState.sectorX && cursor.y === this.gameState.sectorY) return;
 
     // CALCWARP (§12.3, §17.5). The ROM never refuses a jump for lack of energy:
     // hyperspace drains 10 per loop and can run the tank dry.
@@ -631,7 +609,7 @@ export class Game {
     // Hyperspace drain: 10 units per loop for WARPENERGY - 1 loops
     this.energy.beginHyperspace(cost.warpEnergy);
 
-    this.controlPanel.showMessage(MSG.HYPERWARP_ENGAGED);
+    this.controlPanel.setTitle(PHRASE.HYPERWARP_ENGAGED);
     if (this.gameState.currentView !== ViewMode.FRONT) {
       this.gameState.currentView = ViewMode.FRONT;
       this.starfield.resetFor('FRONT');
@@ -644,7 +622,10 @@ export class Game {
    */
   private updateHyperwarp(deltaTime: number): void {
     const WARP_DURATION = 5.0;
+    const before = this.hyperwarpProgress;
     this.hyperwarpProgress += deltaTime / WARP_DURATION;
+    // In hyperspace (the second half here) the panel shows V ∞ and the title HYPERSPACE (§17.5).
+    if (before <= HYPERSPACE_FROM && this.hyperwarpProgress > HYPERSPACE_FROM) this.controlPanel.setTitle(PHRASE.HYPERSPACE);
 
     if (this.gameState.difficulty !== 'NOVICE') {
       const driftStrength = 15 * this.hyperwarpDifficulty * deltaTime;
@@ -681,12 +662,12 @@ export class Game {
     // Drop out of hyperspace fast and slow down to the chosen speed.
     this.shipVelocity = WARP_EXIT_VELOCITY;
     this.spawnSectorContents();
-    this.controlPanel.showMessage(MSG.HYPERWARP_COMPLETE);
+    this.controlPanel.setTitle(PHRASE.HYPERWARP_COMPLETE);
 
     // R: "Flash red alert if Zylon sector entered" (255 loops).
     if (this.galaxy.zylonsAt(arrivalX, arrivalY) > 0) {
       this.redAlertLife = RED_ALERT_LOOPS;
-      this.titleMessage(MSG.RED_ALERT);
+      this.controlPanel.setTitle(PHRASE.RED_ALERT);
       this.soundManager.playAlert();
     }
   }
@@ -723,30 +704,25 @@ export class Game {
         // §9: from the chart's destination dot, or from the front view.
         if (view === ViewMode.GALACTIC_CHART || view === ViewMode.FRONT) this.initiateHyperwarp();
         return;
+      // R: the T, S and C keys toggle their switch whatever the damage and say ON or OFF.
       case 'SHIELDS':
-        if (this.gameState.damage.shields !== 'ok') {
-          this.gameState.shieldsActive = false;
-          this.controlPanel.showMessage(MSG.SUBSYSTEM.shields.damaged);
-        } else {
-          this.gameState.shieldsActive = !this.gameState.shieldsActive;
-          this.controlPanel.showMessage(this.gameState.shieldsActive ? MSG.SHIELDS_ON : MSG.SHIELDS_OFF);
-        }
+        // Damaged or destroyed shields can be switched on; then the panel turns orange (§17.3).
+        this.gameState.shieldsActive = !this.gameState.shieldsActive;
+        this.controlPanel.setTitle(this.gameState.shieldsActive ? PHRASE.SHIELDS_ON : PHRASE.SHIELDS_OFF);
         return;
       case 'COMPUTER':
         // §5.3: C toggles the attack computer and its cross hairs (the display box is Phase 6).
         this.gameState.attackComputerOn = !this.gameState.attackComputerOn;
-        this.controlPanel.showMessage(
-          this.gameState.attackComputerOn ? MSG.ATTACK_COMPUTER_ON : MSG.ATTACK_COMPUTER_OFF
-        );
+        this.controlPanel.setTitle(this.gameState.attackComputerOn ? PHRASE.ATTACK_COMPUTER_ON : PHRASE.ATTACK_COMPUTER_OFF);
         return;
       case 'FIRE':
         this.fireTorpedo();
         return;
-      case 'TRACKING': {
-        const target = this.combatSystem.selectNearestTarget(ORIGIN);
-        this.controlPanel.showMessage(target ? MSG.COMPUTER_TRACKING_ON : MSG.TRACKING_OFF);
+      case 'TRACKING':
+        // §5.10: the panel's T: becomes C: while on. (Front/aft auto-switching is Phase 6.)
+        this.gameState.trackingComputerOn = !this.gameState.trackingComputerOn;
+        this.controlPanel.setTitle(this.gameState.trackingComputerOn ? PHRASE.COMPUTER_TRACKING_ON : PHRASE.TRACKING_OFF);
         return;
-      }
       case 'MANUAL_TARGET':
         this.combatSystem.selectNextTarget();
         return;
@@ -784,14 +760,9 @@ export class Game {
     const view = this.gameState.currentView;
     if (view !== ViewMode.FRONT && view !== ViewMode.AFT) return;
 
-    if (this.gameState.shieldsActive && this.gameState.difficulty !== DifficultyLevel.NOVICE) {
-      this.controlPanel.showMessage('LOWER SHIELDS TO FIRE');
-      return;
-    }
-    if (this.gameState.damage.photons !== 'ok') {
-      this.controlPanel.showMessage(MSG.SUBSYSTEM.photons.damaged);
-      return;
-    }
+    // (The ROM has no title phrase for a refused shot; Phase 5 brings its firing rules.)
+    if (this.gameState.shieldsActive && this.gameState.difficulty !== DifficultyLevel.NOVICE) return;
+    if (this.gameState.damage.photons !== 'ok') return;
 
     // Each photon launched costs 10 units (§12.1); both barrels fire here.
     this.energy.firePhoton();
@@ -809,9 +780,11 @@ export class Game {
   private setEngineSpeed(speed: number): void {
     const maxSpeed = this.gameState.damage.engines !== 'ok' ? 5 : 9;
     this.gameState.targetEngineSpeed = Math.min(speed, maxSpeed);
-    if (speed > maxSpeed && this.gameState.damage.engines !== 'ok') {
-      this.controlPanel.showMessage(MSG.SUBSYSTEM.engines.damaged);
-    }
+  }
+
+  /** The panel as drawn now; V shows ∞ in hyperspace (§17.2). */
+  private panelData() {
+    return this.controlPanel.panelData(this.shipVelocity, this.isHyperwarping && this.hyperwarpProgress > HYPERSPACE_FROM);
   }
 
   /** What the renderer draws for the Front/Aft views this frame. */
@@ -828,17 +801,16 @@ export class Game {
     for (const t of this.torpedoes) objects.push(km(t.position, 'photon'));
     for (const p of this.enemyProjectiles) objects.push(km(p.position, 'zylonTorpedo'));
 
-    const hyperspace = this.isHyperwarping;
     return {
       view: this.spaceView(),
       stars: this.starfield.stars,
       objects,
       crosshair: this.gameState.attackComputerOn && this.gameState.damage.computer !== 'destroyed',
-      shields: this.gameState.shieldsActive && this.gameState.damage.shields === 'ok',
+      shields: this.controlPanel.colors.shieldsUp,
       redAlertLife: this.redAlertLife,
       hitFlash: this.hitFlash,
       title: this.controlPanel.titleText(),
-      panel: this.controlPanel.panelData(this.shipVelocity, hyperspace && this.hyperwarpProgress > 0.5),
+      panel: this.panelData(),
       warpMarker: this.controlPanel.getWarpMarker(),
     };
   }
@@ -875,7 +847,7 @@ export class Game {
         surround: this.galaxy.surround,
         galaxyMoveTicks: this.galaxy.moveTicks,
         chartCursor: this.chartCursor,
-        chartTitle: this.chartTitle?.text ?? null,
+        chartTitle: this.galacticChart.visible ? this.controlPanel.titleText().trim() || MSG.GALACTIC_CHART : null,
         chartRenders: this.galacticChart.renders,
         manualStepping: !this.gameLoop.running,
         shipVelocity: this.shipVelocity,
@@ -883,6 +855,10 @@ export class Game {
         redAlertLife: this.redAlertLife,
         starCount: this.starfield.stars.length,
         title: this.controlPanel.titleText(),
+        titleLife: this.controlPanel.title.lifeLeft,
+        titleQueued: this.controlPanel.title.pending?.map((seg) => seg.text) ?? null,
+        panel: this.panelData(),
+        count256: this.controlPanel.colors.count256,
         settings: { ...getSettings() },
       }),
       galaxy: () => this.galaxy.sectors().map((s) => ({ ...s })),
@@ -892,8 +868,10 @@ export class Game {
         this.gameState.sectorY = y;
         this.spawnSectorContents();
       },
-      spawn: (type: DebugSpawnType, distance = 60) => {
+      spawn: (type: DebugSpawnType, distance = 60, x = 0, y = 0) => {
         const pos = ahead(distance);
+        pos.x = x;
+        pos.y = y;
         if (type === 'starbase') {
           if (this.currentStarbase) this.currentStarbase.getObject().position.copy(pos);
           else this.currentStarbase = new Starbase(pos);
@@ -926,12 +904,19 @@ export class Game {
       },
       setSpeed: (key: number) => this.setEngineSpeed(key),
       setShields: (on: boolean) => {
-        this.gameState.shieldsActive = on && this.gameState.damage.shields === 'ok';
+        this.gameState.shieldsActive = on;
       },
       setDamage: (system: Subsystem, status: SubsystemStatus) => {
         this.gameState.damage[system] = status;
         this.radioFeed.sync(this.gameState.damage.radio);
         this.renderChart();
+      },
+      damageReport: (system: Subsystem, status: 'damaged' | 'destroyed') => {
+        this.reportDamage(system, status);
+        this.radioFeed.sync(this.gameState.damage.radio);
+      },
+      setKills: (n: number) => {
+        this.gameState.enemiesDestroyed = Math.max(0, Math.floor(n));
       },
       moveCursor: (x: number, y: number) => this.moveChartCursor(x - this.chartCursor.x, y - this.chartCursor.y),
       surround: () => {
@@ -968,7 +953,7 @@ export class Game {
       settings: (patch?: Partial<Settings>) => ({ ...(patch ? updateSettings(patch) : getSettings()) }),
       redAlert: (loops = RED_ALERT_LOOPS) => {
         this.redAlertLife = loops;
-        if (loops > 0) this.controlPanel.showMessage(MSG.RED_ALERT, loops);
+        if (loops > 0) this.controlPanel.setTitle(PHRASE.RED_ALERT);
       },
       stars: () =>
         this.starfield.stars.map((s) => ({

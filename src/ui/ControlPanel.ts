@@ -1,58 +1,80 @@
 import { GameState } from '../game/GameState';
-import { panelV } from '../rules/speed';
 import type { PanelData } from '../render/Renderer';
+import { ROM_RGB } from '../render/palette';
+import type { Phrase } from '../rules/messages';
+import {
+  PanelColors,
+  angleReadout,
+  energyReadout,
+  killsReadout,
+  rangeReadout,
+  trackLetter,
+  velocityReadout,
+  type PanelBand,
+} from '../sim/panel';
+import { TitleLine } from '../sim/title';
 
-/** Title-line message lengths in loops (§17.11: 60 short, 254 long). */
-export const SHORT_MESSAGE_LOOPS = 60;
-export const LONG_MESSAGE_LOOPS = 254;
+const BAND_RGB: Record<PanelBand, string> = { 0x90: ROM_RGB.$90, 0x44: ROM_RGB.$44, 0x26: ROM_RGB.$26 };
 
-const sign = (n: number, digits: number) =>
-  `${n < 0 ? '-' : '+'}${String(Math.min(10 ** digits - 1, Math.abs(Math.round(n)))).padStart(digits, '0')}`;
+/** Ship-frame position of the tracked object, in KM. */
+export interface TrackedPosition {
+  x: number;
+  y: number;
+  z: number;
+}
 
 /**
- * Control panel and title line data (MANUAL_SPEC §6, §17.2). The 2D renderer draws both; this
- * class only holds what they show. Phase 4 adds the panel's readout rules (gradons, T/C,
- * flashes, frozen θΦR) and the ROM's one-segment-at-a-time title line.
+ * Control panel and title line (MANUAL_SPEC §6, §17.2, §17.13, §18.1). It holds what both show;
+ * the 2D renderer draws them. `loop()` runs once per game loop like the ROM's UPDPANEL,
+ * UPDTITLE and FLUSHGAMELOOP.
  */
 export class ControlPanel {
-  private theta = 0;
-  private phi = 0;
-  private range = 0;
-  private message = '';
-  private messageUntil = 0;
+  public readonly title = new TitleLine();
+  public readonly colors: PanelColors;
+
+  private theta = '+00';
+  private phi = '+00';
+  private range = '+000';
+  private trackDigit = 0;
   private warpMarker: { dx: number; dy: number } | null = null;
 
   private readonly gameState: GameState;
-  private readonly loops: () => number;
 
-  constructor(gameState: GameState, loops: () => number) {
+  constructor(gameState: GameState, rng: () => number) {
     this.gameState = gameState;
-    this.loops = loops;
+    this.colors = new PanelColors(rng);
   }
 
-  /** Kept for callers; the renderer reads the state every frame. */
-  public update(): void {}
-
-  public updateTargetData(theta: number, phi: number, range: number): void {
-    this.theta = theta;
-    this.phi = phi;
-    this.range = range;
+  /**
+   * One game loop: band and shields colours, the title line, and θ Φ R from the tracked object.
+   * With the attack computer damaged or destroyed the readouts keep their last values (§17.2,
+   * §17.3; R: UPDPANEL "BIT GCSTATCOM / BMI").
+   */
+  public loop(tracked: TrackedPosition | null): void {
+    const s = this.gameState;
+    this.colors.loop({ energy: s.energy, shieldsOn: s.shieldsActive, shieldsStatus: s.damage.shields });
+    this.title.loop();
+    if (s.damage.computer === 'ok' && tracked) {
+      this.theta = angleReadout(tracked.x);
+      this.phi = angleReadout(tracked.y);
+      this.range = rangeReadout(tracked.z);
+    }
   }
 
-  public updateTargetsRemaining(_count: number): void {}
-
-  /** Show a phrase on the title line for `loops` game loops. */
-  public showMessage(message: string, loops: number = SHORT_MESSAGE_LOOPS): void {
-    this.message = message;
-    this.messageUntil = this.loops() + loops;
+  /** Show a phrase now (R: SETTITLE). */
+  public setTitle(phrase: Phrase): void {
+    this.title.set(phrase);
   }
 
-  public showDamageMessage(message: string, _type?: string): void {
-    this.showMessage(message);
+  /** Queue a phrase for when the line next goes blank (R: NEWTITLEPHR). */
+  public enqueueTitle(phrase: Phrase): void {
+    this.title.enqueue(phrase);
   }
 
-  /** Red alert is a background flash drawn by the renderer (§17.13). */
-  public setRedAlert(_active: boolean): void {}
+  /** The target digit after T:/C: (0/1 Zylon, 2 starbase, 3 hyperwarp marker; Phase 6 and 8). */
+  public setTrackDigit(digit: number): void {
+    this.trackDigit = Math.max(0, Math.min(3, Math.floor(digit)));
+  }
 
   public setHyperwarpMarkerVisible(visible: boolean): void {
     this.warpMarker = visible ? (this.warpMarker ?? { dx: 0, dy: 0 }) : null;
@@ -67,22 +89,24 @@ export class ControlPanel {
     return this.warpMarker;
   }
 
-  /** The title-line text now, or '' once it has run out. */
+  /** The title-line text now, or '' while it is hidden. */
   public titleText(): string {
-    return this.loops() < this.messageUntil ? this.message : '';
+    return this.title.text ?? '';
   }
 
   /** Panel fields as drawn: `V:00 K:00 E:9999 T:0` / ` θ:+00 Φ:+00 R:+000` (§17.2). */
   public panelData(velocityKm: number, hyperspace: boolean): PanelData {
     const s = this.gameState;
     return {
-      v: hyperspace ? '∞ ' : String(Math.min(99, panelV(velocityKm))).padStart(2, '0'),
-      k: String(Math.min(99, s.enemiesDestroyed)).padStart(2, '0'),
-      e: String(Math.max(0, Math.min(9999, Math.floor(s.energy)))).padStart(4, '0'),
-      t: 'T:0',
-      theta: sign(this.theta, 2),
-      phi: sign(this.phi, 2),
-      range: sign(this.range, 3),
+      v: velocityReadout(velocityKm, hyperspace),
+      k: killsReadout(s.enemiesDestroyed),
+      e: energyReadout(s.energy),
+      letter: trackLetter(s.trackingComputerOn),
+      t: String(this.trackDigit),
+      theta: this.theta,
+      phi: this.phi,
+      range: this.range,
+      band: BAND_RGB[this.colors.band],
     };
   }
 

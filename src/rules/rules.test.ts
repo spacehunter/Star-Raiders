@@ -196,3 +196,16 @@ describe('message strings', () => {
     expect(MSG.MISSION.COMMANDER).toBe('COMMANDER MISSION');
   });
 });
+
+// MANUAL_SPEC §17.1: "A game starts at speed 6" (V = 12).
+describe('starting speed', () => {
+  it('a new game is set to speed key 6', async () => {
+    const { GameState } = await import('../game/GameState');
+    const s = new GameState();
+    expect(s.targetEngineSpeed).toBe(6);
+    s.targetEngineSpeed = 0;
+    s.reset('PILOT');
+    expect(s.targetEngineSpeed).toBe(6);
+    expect(s.engineSpeed).toBe(6);
+  });
+});

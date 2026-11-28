@@ -1,20 +1,21 @@
 /**
  * 2D pixel renderer for the Front and Aft views (MANUAL_SPEC §5.3, §6, §17.2, §17.6, §17.13,
- * §18.1, §18.2; OVERHAUL_PLAN Phase 3 and Part 4 bends 2 and 4).
+ * §18.1, §18.2; OVERHAUL_PLAN Phase 3, Phase 4 and Part 4 bends 2 and 4).
  *
- * The frame is 160 × 120 square pixels, laid out like the ROM's display lists
- * (R: DLSTFRAG L10417):
+ * The frame is 160 × 123 square pixels:
  *
  *   rows   0– 99  the 160 × 100 playfield
  *                 Front: rows 6–16 show the title line instead of playfield
  *                 Aft:   the top rows show the permanent "AFT VIEW" header
- *   rows 100–119  the control panel band, two 20-character rows
+ *   rows 100–122  the control panel band: 3 blank rows, text row 1, 1 blank row, text row 2,
+ *                 3 blank rows. Measured from the manual's HUD strip photo, where the band is
+ *                 23 character pixels tall and each row is 8 tall (docs/reference/manual).
  *
  * Text uses 8 × 8 characters in playfield pixels, i.e. 20 per line like the ROM's text mode.
  * (The Atari drew them half as tall; at playfield size they read like the manual's photos.)
  *
- * 160 × 120 is exactly 4:3. The frame is scaled by a whole number so every pixel stays crisp,
- * centred, and pillarboxed on 16:9 screens, never stretched. The optional CRT filter darkens a
+ * The frame is scaled by a whole number so every pixel stays crisp, centred with a small safe
+ * margin, and letterboxed or pillarboxed, never stretched. The optional CRT filter darkens a
  * line between pixel rows; it is off by default.
  */
 import { drawPanelText, drawText, GLYPH_COLUMNS } from './font';
@@ -24,9 +25,13 @@ import type { Star } from './starfield';
 import { random } from '../core/rng';
 
 export const FRAME_W = PLAYFIELD_W;
-export const PANEL_LINES = 20;
-export const FRAME_LINES = PLAYFIELD_H + PANEL_LINES; // 120
+export const PANEL_LINES = 23;
+export const FRAME_LINES = PLAYFIELD_H + PANEL_LINES; // 123
 const PANEL_TOP = PLAYFIELD_H;
+/** Top rows of the panel's two text rows, inside the band (3 blank, 8, 1 blank, 8, 3 blank). */
+export const PANEL_ROW_TOPS = [3, 12] as const;
+/** Characters per text line (ROM text mode: 20 × 8 pixels). */
+export const TEXT_COLUMNS = 20;
 
 /** Playfield rows the title line (front) or the view header (aft) replaces, and the text's top row. */
 export const TITLE_ZONE = {
@@ -34,12 +39,19 @@ export const TITLE_ZONE = {
   AFT: { firstRow: 0, rows: 10, textLine: 1 },
 } as const;
 
-/** R: AFTHEADER — the Aft view's permanent header. */
-export const AFT_HEADER = 'AFT VIEW';
+/** R: AFTHEADER — the Aft view's permanent header, "      AFT VIEW      " (from column 6). */
+export const AFT_HEADER = '      AFT VIEW';
 
-/** Whole-number scale of the 160 × 120 frame that fits the viewport. */
+/**
+ * Part 4 bend 4 (readable HUD): a safe margin kept clear on every side, as a fraction of the
+ * viewport, so the panel never sits under a rounded corner, notch or bezel.
+ */
+export const SAFE_MARGIN = 0.02;
+
+/** Whole-number scale of the 160 × 123 frame that fits the viewport inside the safe margin. */
 export function frameScale(viewW: number, viewH: number): number {
-  return Math.max(1, Math.floor(Math.min(viewW / FRAME_W, viewH / FRAME_LINES)));
+  const m = 2 * Math.round(SAFE_MARGIN * Math.min(viewW, viewH));
+  return Math.max(1, Math.floor(Math.min((viewW - m) / FRAME_W, (viewH - m) / FRAME_LINES)));
 }
 
 /** Where the k-scaled frame sits in a viewport (centred, letterboxed or pillarboxed). */
@@ -60,14 +72,19 @@ export interface SpaceObject {
   z: number;
 }
 
+/** The panel's fields as text (sim/panel.ts) plus the band colour. */
 export interface PanelData {
   v: string;
   k: string;
   e: string;
+  /** 'T', or 'C' with the tracking computer on. */
+  letter: 'T' | 'C';
   t: string;
   theta: string;
   phi: string;
   range: string;
+  /** Band colour: $90, $44 (low-energy flash) or $26 (shields out). */
+  band: string;
 }
 
 export interface SpaceFrame {
@@ -222,12 +239,11 @@ export class Renderer {
 
     // Title line / view header: the display list shows text there, not playfield (§18.1).
     this.rect(0, zone.firstRow, FRAME_W, zone.rows, bg);
+    // R: SETTITLE copies the words from column 0; the header and phrases carry their own spaces.
     const title = f.view === 'AFT' ? AFT_HEADER : f.title;
     if (title) {
-      const text = title.slice(0, FRAME_W / GLYPH_COLUMNS);
-      const x0 = Math.floor((FRAME_W - text.length * GLYPH_COLUMNS) / 2);
       this.fctx.fillStyle = pf2;
-      drawText((x, y, w, h) => this.fctx.fillRect(x, y, w, h), text, x0, zone.textLine, 1);
+      drawText((x, y, w, h) => this.fctx.fillRect(x, y, w, h), title.slice(0, TEXT_COLUMNS), 0, zone.textLine, 1);
     }
 
     this.drawPanel(f.panel);
@@ -244,18 +260,18 @@ export class Renderer {
   }
 
   /**
-   * §6 / §17.2 control panel: `V:00 K:00 E:9999 T:0` / ` θ:+00 Φ:+00 R:+000` on the $90 band,
+   * §6 / §17.2 control panel: `V:00 K:00 E:9999 T:0` / ` θ:+00 Φ:+00 R:+000` on the band,
    * coloured per PANELTXTTAB (K field pink, E field yellow, Φ and R labels pink/yellow, the rest
-   * mint). Phase 4 adds the panel's flashes and readout rules.
+   * mint). The band is $90, flashing $44 on low energy and $26 with the shields out.
    */
   private drawPanel(p: PanelData): void {
-    this.rect(0, PANEL_TOP, FRAME_W, PANEL_LINES, ROM_RGB.$90);
+    this.rect(0, PANEL_TOP, FRAME_W, PANEL_LINES, p.band);
     const row1: Array<[string, string]> = [
       [`V:${p.v} `, ROM_RGB.$B8],
       [`K:${p.k}`, ROM_RGB.$5A],
       [' ', ROM_RGB.$B8],
       [`E:${p.e}`, ROM_RGB.$FC],
-      [` ${p.t}`, ROM_RGB.$B8],
+      [` ${p.letter}:${p.t}`, ROM_RGB.$B8],
     ];
     const row2: Array<[string, string]> = [
       [' θ:', ROM_RGB.$B8],
@@ -275,9 +291,8 @@ export class Renderer {
         col += text.length * GLYPH_COLUMNS;
       }
     };
-    // R: panel display list — 1 blank line, text row, gap, text row (8 rows each in the ROM font).
-    line(row1, PANEL_TOP + 1);
-    line(row2, PANEL_TOP + 11);
+    line(row1, PANEL_TOP + PANEL_ROW_TOPS[0]);
+    line(row2, PANEL_TOP + PANEL_ROW_TOPS[1]);
   }
 
   /** Scale the native frame onto the screen canvas by a whole number, centred. */

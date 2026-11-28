@@ -1,4 +1,5 @@
 import { START_ENERGY } from '../rules/energy';
+import { START_SPEED_KEY } from '../rules/speed';
 import { allSystemsOk, type DamageStatus } from '../rules/damage';
 import type { MissionOutcome } from '../rules/rating';
 import type { MissionRating } from '../sim/rating';
@@ -33,18 +34,17 @@ export class GameState {
   public energy: number = START_ENERGY;
 
   // Engine and movement
-  public engineSpeed: number = 0; // Current visible speed
-  public targetEngineSpeed: number = 0; // Desired speed (set by keys)
+  public engineSpeed: number = START_SPEED_KEY; // Speed key the ship has reached
+  public targetEngineSpeed: number = START_SPEED_KEY; // Speed key chosen (0–9); §17.1: a game starts at 6
 
   // Shields
   public shieldsActive: boolean = false;
 
-  // Attack computer (C). Drains ½ unit/s when on (§12.1). No toggle key yet (Phase 6).
+  // Attack computer (C). Drains ½ unit/s when on (§12.1).
   public attackComputerOn: boolean = false;
 
-  // Hull integrity
-  public hull: number = 100;
-  public maxHull: number = 100;
+  // Tracking computer (T): the panel shows C: instead of T: while it is on (§5.10, §17.2).
+  public trackingComputerOn: boolean = false;
 
   // Combat stats
   public isUnderAttack: boolean = false;
@@ -75,10 +75,10 @@ export class GameState {
   public reset(difficulty: DifficultyLevel = DifficultyLevel.NOVICE): void {
     this.currentView = ViewMode.FRONT;
     this.energy = START_ENERGY;
-    this.engineSpeed = 0;
+    this.engineSpeed = START_SPEED_KEY;
+    this.targetEngineSpeed = START_SPEED_KEY;
     this.shieldsActive = false;
-    this.hull = 100;
-    this.maxHull = 100;
+    this.trackingComputerOn = false;
     this.isUnderAttack = false;
     this.enemiesDestroyed = 0;
     this.attackComputerOn = false;
@@ -94,27 +94,5 @@ export class GameState {
     this.sectorY = 4;
 
     this.damage = allSystemsOk();
-  }
-
-  /**
-   * Apply damage to hull, returns true if hull destroyed
-   */
-  public takeDamage(amount: number): boolean {
-    this.hull = Math.max(0, this.hull - amount);
-    return this.hull <= 0;
-  }
-
-  /**
-   * Check if hull is critically low
-   */
-  public isHullLow(): boolean {
-    return this.hull < this.maxHull * 0.25;
-  }
-
-  /**
-   * Repair hull (e.g., from starbase docking)
-   */
-  public repairHull(amount: number): void {
-    this.hull = Math.min(this.maxHull, this.hull + amount);
   }
 }

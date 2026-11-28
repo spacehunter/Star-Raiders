@@ -95,3 +95,83 @@ export const END_SEQUENCE = {
     'CONGRATULATIONS',
   ],
 } as const;
+
+// ---------------------------------------------------------------------------------------------
+// Title-line phrases (R: PHRASETAB L10802, WORDTAB L10897, SETTITLE/UPDTITLE L7722–7903).
+//
+// A phrase is one or more segments, each one line of at most 20 characters, shown one after
+// the other. A segment stays up for 60 game loops; the last segment of the "long" phrases
+// (STARBASE SURROUNDED, STARBASE DESTROYED, HYPERSPACE, RED ALERT) stays 254 loops. After the
+// last segment the title line is hidden. The text is placed from column 0 as the ROM copies it;
+// the leading spaces of RED ALERT and STAR RAIDERS are part of their words in WORDTAB.
+// ---------------------------------------------------------------------------------------------
+
+/** R: SETTITLE — title segment lifetime in game loops. */
+export const TITLE_SEGMENT_LOOPS = 60;
+export const TITLE_LONG_LOOPS = 254;
+/** The title line holds 20 characters (TITLETXT, "19(+1) characters"). */
+export const TITLE_COLUMNS = 20;
+
+export interface TitleSegment {
+  readonly text: string;
+  readonly loops: number;
+}
+export type Phrase = readonly TitleSegment[];
+
+const seg = (text: string, loops: number = TITLE_SEGMENT_LOOPS): TitleSegment => ({ text, loops });
+const long = (text: string): TitleSegment => seg(text, TITLE_LONG_LOOPS);
+/** Word $38 is a single space: the ROM uses it as a blank segment. */
+const BLANK = seg(' ');
+
+/** Every phrase of PHRASETAB the game shows, by its ROM offset's meaning. */
+export const PHRASE = {
+  ATTACK_COMPUTER_ON: [seg(MSG.ATTACK_COMPUTER_ON)], // $01
+  ATTACK_COMPUTER_OFF: [seg(MSG.ATTACK_COMPUTER_OFF)], // $04
+  SHIELDS_ON: [seg(MSG.SHIELDS_ON)], // $07
+  SHIELDS_OFF: [seg(MSG.SHIELDS_OFF)], // $09
+  COMPUTER_TRACKING_ON: [seg(MSG.COMPUTER_TRACKING_ON)], // $0B
+  TRACKING_OFF: [seg(MSG.TRACKING_OFF)], // $0E
+  WHATS_WRONG: [seg(MSG.WHATS_WRONG)], // $10
+  HYPERWARP_ENGAGED: [seg(MSG.HYPERWARP_ENGAGED)], // $11
+  STARBASE_SURROUNDED: [long(MSG.STARBASE_SURROUNDED)], // $13
+  STARBASE_DESTROYED: [long(MSG.STARBASE_DESTROYED)], // $15
+  HYPERWARP_ABORTED: [seg(MSG.HYPERWARP_ABORTED)], // $17
+  HYPERWARP_COMPLETE: [seg(MSG.HYPERWARP_COMPLETE)], // $19
+  HYPERSPACE: [long(MSG.HYPERSPACE)], // $1B
+  /** $1C: ORBIT ESTABLISHED is one segment of a phrase that goes on to STANDBY. */
+  ORBIT_ESTABLISHED: [seg(MSG.ORBIT_ESTABLISHED), seg(MSG.STANDBY)],
+  DOCKING_ABORTED: [seg(MSG.DOCKING_ABORTED)], // $1F
+  TRANSFER_COMPLETE: [seg(MSG.TRANSFER_COMPLETE)], // $21
+  STAR_RAIDERS: [seg(`   ${MSG.STAR_RAIDERS}`), seg(MSG.COPYRIGHT)], // $2F
+  MISSION: {
+    NOVICE: [seg(MSG.MISSION.NOVICE)], // $4A
+    PILOT: [seg(MSG.MISSION.PILOT)], // $4C
+    WARRIOR: [seg(MSG.MISSION.WARRIOR)], // $4E
+    COMMANDER: [seg(MSG.MISSION.COMMANDER)], // $50
+  },
+  /** $52: a blank segment, then DAMAGE CONTROL. The damaged subsystem follows from the queue. */
+  DAMAGE_CONTROL: [BLANK, seg(MSG.DAMAGE_CONTROL)],
+  /** $75: "    RED ALERT" (word $01 starts with four spaces). */
+  RED_ALERT: [long(`    ${MSG.RED_ALERT}`)],
+} as const satisfies Record<string, Phrase | Record<string, Phrase>>;
+
+/**
+ * DAMAGEPHRTAB / DESTROYPHRTAB ($55–$74): the subsystem phrase, then a blank segment.
+ * SECTOR SCAN and SUB-SPACE RADIO put their state on a second segment.
+ */
+export function subsystemPhrase(system: keyof typeof MSG.SUBSYSTEM, status: 'damaged' | 'destroyed'): Phrase {
+  const word = status === 'damaged' ? 'DAMAGED' : 'DESTROYED';
+  if (system === 'sectorScan') return [seg('SECTOR SCAN'), seg(word)];
+  if (system === 'radio') return [seg('SUB-SPACE RADIO'), seg(word)];
+  return [seg(MSG.SUBSYSTEM[system][status]), BLANK];
+}
+
+/**
+ * §17.10 end sequences ($23, $31, $3F, $76): a blank segment first, then one segment per line.
+ * The destroyed sequence ends on a blank segment ($2E).
+ */
+export function endOfMissionPhrase(outcome: keyof typeof END_SEQUENCE, lines: readonly string[]): Phrase {
+  const segments = [BLANK, ...lines.map((l) => seg(l))];
+  if (outcome === 'destroyed') segments.push(BLANK);
+  return segments;
+}
