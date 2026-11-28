@@ -1,7 +1,7 @@
 import { GameLoop } from './GameLoop';
 import { GameState, ViewMode, DifficultyLevel } from './GameState';
 import { Input, type Action } from '../input/Input';
-import { SoundManager } from '../audio/SoundManager';
+import { PokeySynth, barrelPan, panFor, type SoundEvent } from '../audio/pokey';
 import { ControlPanel, type TrackedPosition } from '../ui/ControlPanel';
 import { GalacticChart } from '../views/GalacticChart';
 import { createRng, getSeed, random } from '../core/rng';
@@ -68,6 +68,7 @@ export interface GameDebugApi {
   setIdle(loops: number): void;
   pause(): void;
   abort(): void;
+  audio(): Record<string, unknown>;
 }
 
 /**
@@ -129,7 +130,8 @@ export class Game {
   private attackComputer = new AttackComputer();
   /** Subsystem states, DAMAGE CONTROL reports and repair (sim/damage.ts, §7, §17.3). */
   private damageControl: DamageControl;
-  private soundManager: SoundManager;
+  /** POKEY-style sound (audio/pokey.ts, §17.12, bend 8). Its AudioContext closes with the game. */
+  private audio: PokeySynth;
   private gameState: GameState;
   private unsubscribeSettings: () => void;
 
@@ -196,6 +198,7 @@ export class Game {
     this.starfield = new Starfield(createRng(getSeed() ^ 0x5a17), this.starCount(settings), 'FRONT');
     this.unsubscribeSettings = onSettingsChange((s) => {
       this.renderer.setCrt(s.crt);
+      this.applySoundSettings(s);
       this.starfield.setCount(this.starCount(s), this.starView());
     });
 
@@ -217,11 +220,11 @@ export class Game {
     this.hyperwarp.setArrivalSector(this.gameState.sectorX, this.gameState.sectorY);
 
     this.zylons = new ZylonSim(random);
-    this.soundManager = new SoundManager();
+    this.audio = new PokeySynth({ volume: settings.volume, muted: settings.muted });
 
     this.controlPanel = new ControlPanel(this.gameState, random);
     this.damageControl = new DamageControl(this.gameState, this.controlPanel.title, {
-      beep: () => this.soundManager.playDamageReport(),
+      beep: () => this.audio.play('damageReport'), // R: DAMAGE → BEEP $12 (§17.12)
       computerDestroyed: () => {
         // R: DAMAGE — "Switch Attack Computer off" and clear the playfield.
         this.gameState.attackComputerOn = false;
@@ -319,7 +322,10 @@ export class Game {
     if (this.pause.paused) {
       const stick = this.debugStick ?? this.input.readStick();
       const r = this.pause.update(actions, stick);
-      if (r) this.pauseOverlay.hide();
+      if (r) {
+        this.pauseOverlay.hide();
+        this.audio.setPaused(false);
+      }
       if (r === 'abort') this.endMission('aborted');
       return;
     }
@@ -363,6 +369,7 @@ export class Game {
     }
     this.flyLoop();
     if (this.phase !== 'mission') return;
+    this.audio.engine(this.shipVelocity); // §17.12 engine rumble
     // R: UPDPANEL, UPDTITLE, FLUSHGAMELOOP — readouts, title line, band and shields colours.
     this.controlPanel.loop(this.trackedPosition());
     this.gameState.starDate = this.clock.starDate;
@@ -498,7 +505,8 @@ export class Game {
   private zylonEvent(e: ZylonEvent): void {
     switch (e.type) {
       case 'zylonDestroyed':
-        this.soundManager.playExplosion();
+        // §17.12: the explosion sounds when the torpedo arrives (its flight time is the delay).
+        this.playAt('zylonExplosion', this.explosionPosition());
         this.zylonKilled(e.debug);
         break;
       case 'starbaseDestroyed':
@@ -506,7 +514,8 @@ export class Game {
         break;
       case 'basestarHit':
       case 'shotDown':
-        this.soundManager.playExplosion();
+        // The torpedo bursts (INITEXPL) on a surviving basestar, a meteor or a Zylon torpedo.
+        this.playAt('zylonExplosion', this.explosionPosition());
         break;
       case 'shipHit':
         this.shipHit(e.by, e.torpedoLife);
@@ -514,7 +523,8 @@ export class Game {
       case 'autoFired':
         // R: TRIGGER — the locked salvo's second torpedo, at the usual cost (§12.1, §17.6).
         this.energy.firePhoton();
-        this.soundManager.playTorpedoFire();
+        // The torpedo just launched is the younger one: the higher life.
+        this.playPhoton(this.zylons.photons[1].life > this.zylons.photons[0].life ? 1 : 0);
         break;
       default:
         break;
@@ -536,13 +546,14 @@ export class Game {
     });
     if (r.destroyed) {
       // SHIP DESTROYED BY ZYLON FIRE: the front view, then the end sequence (R: GAMEOVER).
-      this.soundManager.playPlayerHit();
+      this.audio.play('starshipExplosion');
       this.switchView(ViewMode.FRONT);
       this.endMission('destroyed');
       return;
     }
+    // §17.12 shield explosion first: a damage report's beep plays on the beeper voice beside it.
+    this.audio.play('shieldExplosion');
     if (r.damage) this.reportDamage(r.damage.system, r.damage.status);
-    this.soundManager.playShieldHit();
     this.hitFlash = HIT_FLASH_LOOPS; // §17.13: the screen flashes random colours
     this.energy.hit(); // −100 (§12.1, §17.1)
   }
@@ -598,8 +609,11 @@ export class Game {
     for (const e of events) {
       switch (e.type) {
         case 'starbaseSurrounded':
-          // (The "message from starbase" tune is Phase 12; the red alert only sounds on arrival.)
-          if (this.radioFeed.relaysMessages) this.controlPanel.setTitle(PHRASE.STARBASE_SURROUNDED);
+          // §17.4: the long message with the "message from starbase" tune (when the radio relays it).
+          if (this.radioFeed.relaysMessages) {
+            this.controlPanel.setTitle(PHRASE.STARBASE_SURROUNDED);
+            this.audio.play('starbaseMessage');
+          }
           break;
         case 'starbaseDestroyed': {
           this.missionScore.starbaseDestroyedByZylons(); // -18 (§14.1)
@@ -609,7 +623,7 @@ export class Game {
             // R: DOCKING finds the chart no longer marks a starbase: explosion and noise.
             this.zylons.destroyStarbase();
             this.docking.reset();
-            this.soundManager.playShieldHit();
+            this.playAt('shieldExplosion', this.zylons.starbase);
           }
           break;
         }
@@ -676,6 +690,7 @@ export class Game {
     // plays once and the debrief card follows (bend 6).
     this.phase = 'ending';
     this.pause.resume();
+    this.audio.setPaused(false);
     this.pauseOverlay.hide();
     this.enterDemoFlight();
     this.controlPanel.title.clear();
@@ -696,6 +711,11 @@ export class Game {
     this.gameState.shieldsActive = false;
     this.gameState.targetEngineSpeed = DEMO_SPEED_KEY;
     this.debugStick = null;
+    // The demo flight is quiet: engines off, beeps and the whoosh cut; an explosion (our ship's,
+    // or the last Zylon's) plays out under the end sequence.
+    this.audio.engine(0);
+    this.audio.stop('beeper');
+    this.audio.stop('photon');
   }
 
   /** Attract mode: the demo flight with `<LEVEL> MISSION` / `STAR RAIDERS` / `COPYRIGHT ATARI 1979` (§17.11). */
@@ -761,6 +781,7 @@ export class Game {
   /** §3 / §17.11: nine idle minutes abort the mission and go to the attract mode, with no rating. */
   private leaveForIdle(): void {
     this.pause.resume();
+    this.audio.setPaused(false);
     this.pauseOverlay.hide();
     this.gameState.missionOutcome = 'aborted';
     this.gameState.isGameOver = true;
@@ -774,11 +795,13 @@ export class Game {
   private pauseMission(): void {
     this.pause.pause(this.debugStick ?? this.input.readStick());
     this.pauseOverlay.show();
+    this.audio.setPaused(true);
   }
 
   private resumeFromMenu(): void {
     if (!this.pause.paused) return;
     this.pause.resume();
+    this.audio.setPaused(false);
     this.pauseOverlay.hide();
     this.idle.reset();
   }
@@ -786,8 +809,33 @@ export class Game {
   private abortFromMenu(): void {
     if (!this.pause.paused) return;
     this.pause.resume();
+    this.audio.setPaused(false);
     this.pauseOverlay.hide();
     this.endMission('aborted');
+  }
+
+  /** Bend 8: volume and mute from the settings (N, - and =); the pause card shows them. */
+  private applySoundSettings(s: Settings): void {
+    const changed = s.volume !== this.audio.currentVolume || s.muted !== this.audio.isMuted;
+    this.audio.setVolume(s.volume);
+    this.audio.setMuted(s.muted);
+    if (changed && this.pause.paused) this.pauseOverlay.show();
+  }
+
+  /** Play an event panned to where a ship-frame position shows on screen (bend 8). */
+  private playAt(event: SoundEvent, at: { x: number; z: number } | null): void {
+    this.audio.play(event, { pan: at ? panFor(at.x, at.z, this.gameState.currentView === ViewMode.AFT) : 0 });
+  }
+
+  /** The photon whoosh from its barrel: 0 left, 1 right (bend 8). */
+  private playPhoton(barrel: number): void {
+    this.audio.play('photon', { pan: barrelPan(barrel, this.gameState.currentView === ViewMode.AFT) });
+  }
+
+  /** Where the explosion just started (INITEXPL puts its fragments at the object), or null. */
+  private explosionPosition(): { x: number; z: number } | null {
+    const f = this.zylons.explosion?.fragments[0];
+    return f ? { x: f.x, z: f.z } : null;
   }
 
   /** What the Game is doing now. */
@@ -857,7 +905,7 @@ export class Game {
         break;
       case 'transferComplete':
         // ACKNOWLEDGE beep, TRANSFER COMPLETE, all six subsystems repaired, ENERGY 9999.
-        this.soundManager.playDocking();
+        this.audio.play('acknowledge');
         this.controlPanel.setTitle(PHRASE.TRANSFER_COMPLETE);
         this.repairAll();
         this.energy.refill();
@@ -876,7 +924,7 @@ export class Game {
    * gone from the galaxy and the chart, and it explodes with the shield-explosion noise.
    */
   private starbaseShot(): void {
-    this.soundManager.playShieldHit();
+    this.playAt('shieldExplosion', this.explosionPosition() ?? this.zylons.starbase);
     this.missionScore.starbaseShotByYou();
     this.galaxy.removeStarbase(this.gameState.sectorX, this.gameState.sectorY);
     this.docking.reset();
@@ -950,7 +998,7 @@ export class Game {
         this.starfield.clearTrails();
         this.clearSectorContents();
         this.zylons.trackDigit = 0;
-        this.soundManager.playHyperwarpTransit();
+        this.audio.play('hyperwarpTransit');
         this.controlPanel.setTitle(PHRASE.HYPERSPACE);
         break;
       case 'charge':
@@ -977,7 +1025,7 @@ export class Game {
     if (this.galaxy.zylonsAt(x, y) > 0 && !this.galaxy.hasStarbase(x, y)) {
       this.redAlertLife = RED_ALERT_LOOPS;
       this.controlPanel.setTitle(PHRASE.RED_ALERT);
-      this.soundManager.playAlert();
+      this.audio.play('redAlert');
     }
   }
 
@@ -1032,12 +1080,14 @@ export class Game {
         this.gameState.shieldsActive = !this.gameState.shieldsActive;
         this.attackComputer.reset(); // R: UPDSCREEN clears the playfield
         this.controlPanel.setTitle(this.gameState.shieldsActive ? PHRASE.SHIELDS_ON : PHRASE.SHIELDS_OFF);
+        this.audio.play('acknowledge'); // §17.12: C, S, T acknowledge
         return;
       case 'COMPUTER':
         // §5.3, §11: C toggles the attack computer: cross hairs, and the display in the Front view.
         this.gameState.attackComputerOn = !this.gameState.attackComputerOn;
         this.attackComputer.reset();
         this.controlPanel.setTitle(this.gameState.attackComputerOn ? PHRASE.ATTACK_COMPUTER_ON : PHRASE.ATTACK_COMPUTER_OFF);
+        this.audio.play('acknowledge');
         return;
       case 'FIRE':
         this.fireTorpedo();
@@ -1047,6 +1097,7 @@ export class Game {
         this.gameState.trackingComputerOn = !this.gameState.trackingComputerOn;
         this.attackComputer.reset();
         this.controlPanel.setTitle(this.gameState.trackingComputerOn ? PHRASE.COMPUTER_TRACKING_ON : PHRASE.TRACKING_OFF);
+        this.audio.play('acknowledge');
         return;
       case 'MANUAL_TARGET':
         // §5.8: M switches the target between 0 and 1 (from 2 or 3 too; a starbase sector sets 2 again).
@@ -1095,10 +1146,11 @@ export class Game {
     const locked = this.computerWorking() && this.attackComputer.inLockOn;
     const result = this.zylons.fire(this.simView(), this.gameState.damage.photons, this.isHyperwarping, locked);
     if (result === 'blocked') return;
+    const barrel = this.zylons.barrel;
     this.attackComputer.triggered();
     if (result !== 'launched') return;
     this.energy.firePhoton(); // §12.1: −10 per photon
-    this.soundManager.playTorpedoFire();
+    this.playPhoton(barrel);
   }
 
   /** A speed key 0–9 (§5.1); destroyed engines cap it at key 5 (§17.3, R: KEYBOARD L7202). */
@@ -1248,8 +1300,8 @@ export class Game {
             markerShown: w.markerShown,
             trailStars: this.starfield.trails.length,
             velocityBoost: w.velocityBoost,
-            transitBeeps: this.soundManager.beeperPatterns.hyperwarpTransit,
-            redAlertBeeps: this.soundManager.beeperPatterns.redAlert,
+            transitBeeps: this.audio.counts.hyperwarpTransit,
+            redAlertBeeps: this.audio.counts.redAlert,
           })
         );
       },
@@ -1308,7 +1360,7 @@ export class Game {
           status: this.damageControl.snapshot(),
           bits,
           reports: this.damageControl.reports,
-          beeps: this.soundManager.damageReportBeeps,
+          beeps: this.audio.counts.damageReport,
           effects: {
             photonBarrels: d.photons === 'ok' ? 2 : d.photons === 'damaged' ? 1 : 0,
             speedJitter: d.engines !== 'ok',
@@ -1432,6 +1484,21 @@ export class Game {
       abort: () => {
         if (this.phase === 'mission') this.endMission('aborted');
       },
+      audio: () => {
+        const ctx = this.audio.context;
+        return JSON.parse(
+          JSON.stringify({
+            state: ctx ? (ctx as AudioContext).state ?? 'offline' : 'locked',
+            contextsCreated: this.audio.contextsCreated,
+            volume: this.audio.currentVolume,
+            muted: this.audio.isMuted,
+            engine: this.audio.engineLevel,
+            voices: this.audio.voices(),
+            counts: this.audio.counts,
+            log: this.audio.log,
+          })
+        );
+      },
       meteor: (x: number, y: number, z: number) => {
         const p = this.zylons.pl2;
         Object.assign(p, { kind: 'meteor', life: 60, x, y, z, vel: { x: 0, y: 0, z: -8 } });
@@ -1467,7 +1534,7 @@ export class Game {
     this.controlPanel.dispose();
     this.galacticChart.dispose();
     this.pauseOverlay.dispose();
-    this.soundManager.dispose();
+    this.audio.dispose();
     this.renderer.dispose();
     this.zylons.clear();
   }

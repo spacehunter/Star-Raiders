@@ -52,6 +52,12 @@
  *   __sr.attack()                  attack computer: blip place and rows, marks (0 none, 1 A, 2 B,
  *                                  3 C), lock flag, lock-on lifetime, target digit and position
  *   __sr.meteor(x, y, z)           put a meteor at a ship-frame KM position (flying in at −8 KM/loop)
+ *   __sr.audio()                   the POKEY synth (§17.12): context state (locked before the first
+ *                                  key or tap), volume, mute, engine AUDF/volume, what each voice
+ *                                  plays, requests per event and the log of every request
+ *                                  (played / dropped by priority / silent)
+ *   __sr.audioDemo()               render every §17.12 sound in order offline (OfflineAudioContext):
+ *                                  { wav (base64), cues, rms per cue, log }
  */
 import type { Game, DebugSpawnType } from '../game/Game';
 import type { Action } from '../input/Input';
@@ -59,6 +65,7 @@ import type { Settings } from './settings';
 import type { DifficultyLevel, ViewMode } from '../game/GameState';
 import type { Subsystem, SubsystemStatus } from '../rules/damage';
 import { getSeed, setSeed } from './rng';
+import { renderAudioDemo } from '../audio/demo';
 
 export interface DebugHost {
   getGame(): Game | null;
@@ -126,6 +133,8 @@ export function installDebugHook(host: DebugHost): void {
     zylons: () => api().zylons(),
     meteor: (x: number, y: number, z: number) => api().meteor(x, y, z),
     attack: () => api().attack(),
+    audio: () => api().audio(),
+    audioDemo: () => renderAudioDemo(),
   };
 
   (window as unknown as { __sr: typeof sr }).__sr = sr;
