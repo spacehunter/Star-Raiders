@@ -53,3 +53,23 @@ export function calcWarpSectors(fromX: number, fromY: number, toX: number, toY: 
     toY * CHART_ROW_UNITS
   );
 }
+
+/**
+ * §17.5 R: VEERMASKTAB ($BED7) — sign-magnitude masks for the hyperwarp marker's random veer-off
+ * velocity: ±16..31, ±16..63, ±16..95, ±16..127 KM per loop. The ROM's comment ties the entries
+ * to the mission level, but the code (KEYBOARD 'H', L7303) indexes the table with bits 7..6 of
+ * WARPENERGY: the kicks grow with the cost of the jump (MANUAL_SPEC §17.5 code ≠ comment).
+ */
+export const VEER_MASK_TAB = [0x9f, 0xbf, 0xdf, 0xff] as const;
+
+/** VEERMASK for a jump: 0 on NOVICE (no drift, "hyperwarp automatically", §9), else by WARPENERGY. */
+export function veerMask(steeringRequired: boolean, warpEnergy: number): number {
+  if (!steeringRequired) return 0;
+  return VEER_MASK_TAB[(warpEnergy >> 6) & 3];
+}
+
+/** A random veer-off velocity: (RANDOM OR $10) AND VEERMASK, read as sign-magnitude (bit 7 = minus). */
+export function veerVelocity(randomByte: number, mask: number): number {
+  const v = (randomByte | 0x10) & mask;
+  return v & 0x80 ? -(v & 0x7f) : v & 0x7f;
+}

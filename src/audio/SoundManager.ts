@@ -111,36 +111,37 @@ export class SoundManager {
     source.start();
   }
 
+  /** How many beeper patterns were asked for (for the debug hook). */
+  public readonly beeperPatterns = { hyperwarpTransit: 0, redAlert: 0 };
+
   /**
-   * Play hyperwarp sound - rising sweep
+   * A beeper pattern (R: BEEP): square-wave tones, `on` seconds each with `off` seconds of
+   * silence, cycling through `freqs` for `count` tones.
    */
-  public playHyperwarp(): void {
+  private beeper(freqs: readonly number[], count: number, on: number, off: number): void {
     if (!this.audioContext || !this.masterGain) return;
-
-    const osc1 = this.audioContext.createOscillator();
-    const osc2 = this.audioContext.createOscillator();
-    const gain = this.audioContext.createGain();
-
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(100, this.audioContext.currentTime);
-    osc1.frequency.exponentialRampToValueAtTime(2000, this.audioContext.currentTime + 2);
-
-    osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(102, this.audioContext.currentTime);
-    osc2.frequency.exponentialRampToValueAtTime(2010, this.audioContext.currentTime + 2);
-
-    gain.gain.setValueAtTime(0.2, this.audioContext.currentTime);
-    gain.gain.linearRampToValueAtTime(0.3, this.audioContext.currentTime + 1);
-    gain.gain.linearRampToValueAtTime(0.01, this.audioContext.currentTime + 2);
-
-    osc1.connect(gain);
-    osc2.connect(gain);
+    const ctx = this.audioContext;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    const t0 = ctx.currentTime;
+    gain.gain.setValueAtTime(0, t0);
+    for (let i = 0; i < count; i++) {
+      const t = t0 + i * (on + off);
+      osc.frequency.setValueAtTime(freqs[i % freqs.length], t);
+      gain.gain.setValueAtTime(0.12, t);
+      gain.gain.setValueAtTime(0, t + on);
+    }
+    osc.connect(gain);
     gain.connect(this.masterGain);
+    osc.start(t0);
+    osc.stop(t0 + count * (on + off));
+  }
 
-    osc1.start();
-    osc2.start();
-    osc1.stop(this.audioContext.currentTime + 2);
-    osc2.stop(this.audioContext.currentTime + 2);
+  /** HYPERWARP TRANSIT on entering hyperspace: 1280 Hz beeps, 13× (MANUAL_SPEC §17.5, §17.12). */
+  public playHyperwarpTransit(): void {
+    this.beeperPatterns.hyperwarpTransit++;
+    this.beeper([1280], 13, 0.05, 0.05);
   }
 
   /**
@@ -195,32 +196,10 @@ export class SoundManager {
     });
   }
 
-  /**
-   * Play alert sound - warning beep
-   */
+  /** RED ALERT on entering a Zylon sector: alternating ≈490/330 Hz, 8× (MANUAL_SPEC §9, §17.12). */
   public playAlert(): void {
-    if (!this.audioContext || !this.masterGain) return;
-
-    const osc = this.audioContext.createOscillator();
-    const gain = this.audioContext.createGain();
-
-    osc.type = 'square';
-    osc.frequency.value = 880;
-
-    gain.gain.setValueAtTime(0, this.audioContext.currentTime);
-
-    // Beep pattern
-    for (let i = 0; i < 3; i++) {
-      const t = this.audioContext.currentTime + i * 0.15;
-      gain.gain.setValueAtTime(0.15, t);
-      gain.gain.setValueAtTime(0, t + 0.08);
-    }
-
-    osc.connect(gain);
-    gain.connect(this.masterGain);
-
-    osc.start();
-    osc.stop(this.audioContext.currentTime + 0.5);
+    this.beeperPatterns.redAlert++;
+    this.beeper([490, 330], 8, 0.15, 0.02);
   }
 
   /**

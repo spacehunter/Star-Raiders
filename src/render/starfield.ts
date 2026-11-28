@@ -50,8 +50,25 @@ export interface Star {
 /** Aft-view stars further than this behind the ship are replaced (R step 17: z < −$F000). */
 export const AFT_FAR_LIMIT = -4096;
 
+/** R: INITTRAIL — trail stars use space objects 17..48: 32 slots, reused in a ring. */
+export const TRAIL_SLOTS = 32;
+/** R: INITTRAIL — 6 stars per trail, the first just beyond +4608 KM, then every +80 KM. */
+export const TRAIL_STARS = 6;
+export const TRAIL_START_Z = 0x1200;
+export const TRAIL_STEP_Z = 80;
+/** R: WARPSTARXTAB, WARPSTARYTAB — high bytes of a trail's x and y (signs random). */
+export const WARP_STAR_X_HI = [0x04, 0x04, 0x03, 0x02] as const;
+export const WARP_STAR_Y_HI = [0x02, 0x03, 0x04, 0x04] as const;
+
 export class Starfield {
   public readonly stars: Star[] = [];
+  /**
+   * Hyperwarp star trails (§17.5, R: INITTRAIL): extra stars that exist from the star trail
+   * phase until hyperspace. A trail star that leaves the view becomes an ordinary star, as the
+   * ROM re-initialises any offscreen PLAYFIELD object.
+   */
+  public readonly trails: Star[] = [];
+  private trailIndex = 0;
 
   private readonly rng: RandomFn;
 
@@ -94,6 +111,35 @@ export class Starfield {
     s.color = 0;
   }
 
+  /**
+   * R: INITTRAIL — a new trail: 6 stars on one line of sight (the same x and y, picked from
+   * WARPSTARXTAB/YTAB with random signs) at +4688..+5088 KM, standing still.
+   */
+  addTrail(): void {
+    const i = this.byte() & 3;
+    let x = WARP_STAR_X_HI[i] * 256 + this.byte();
+    let y = WARP_STAR_Y_HI[i] * 256 + this.byte();
+    if (this.byte() & 1) y = -y;
+    if (this.byte() & 1) x = -x;
+    for (let k = 1; k <= TRAIL_STARS; k++) {
+      const s: Star = { x, y, z: TRAIL_START_Z + k * TRAIL_STEP_Z, pixel: null, color: 0 };
+      if (this.trails.length < TRAIL_SLOTS) this.trails.push(s);
+      else this.trails[this.trailIndex] = s;
+      this.trailIndex = (this.trailIndex + 1) % TRAIL_SLOTS;
+    }
+  }
+
+  /** R: CLEANUPWARP — back to the normal number of space objects: the trails are gone. */
+  clearTrails(): void {
+    this.trails.length = 0;
+    this.trailIndex = 0;
+  }
+
+  /** Every star drawn this loop: the field plus any trail stars. */
+  get all(): Star[] {
+    return this.trails.length ? [...this.stars, ...this.trails] : this.stars;
+  }
+
   /** Respawn every star for a new view (front ↔ aft). */
   resetFor(view: SpaceView): void {
     for (const s of this.stars) {
@@ -118,7 +164,7 @@ export class Starfield {
    * stars that left the view and colour the rest.
    */
   loop(stick: Stick, velocityKm: number, view: SpaceView, count8: number): void {
-    for (const s of this.stars) {
+    for (const s of this.all) {
       moveInShipFrame(s, stick, velocityKm);
       if (view === 'AFT' && s.z < AFT_FAR_LIMIT) this.respawn(s, view);
       let px = projectPoint(s.x, s.y, s.z, view);

@@ -72,8 +72,10 @@ describe('§17.1 lump costs', () => {
     const { host, sim } = setup();
     const cost = calcWarpSectors(8, 4, 13, 4); // 5 sectors: 500
     expect(cost.units).toBe(500);
-    sim.beginHyperspace(cost.warpEnergy);
-    for (let i = 0; i < 200; i++) sim.loop({ ...idle, hyperwarp: true });
+    for (let i = 0; i < 200; i++) {
+      sim.loop({ ...idle, hyperwarp: true });
+      if (i < cost.warpEnergy - 1) sim.hyperspaceLoop();
+    }
     const continuous = Math.floor((200 * 31 * 64) / 60 / 256);
     expect(9999 - host.energy).toBe(490 + continuous);
   });

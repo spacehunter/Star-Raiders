@@ -20,7 +20,7 @@
  */
 import { drawPanelText, drawText, GLYPH_COLUMNS } from './font';
 import { ROM_RGB, atariColor } from './palette';
-import { CENTER_COL, CENTER_ROW, PLAYFIELD_H, PLAYFIELD_W, projectPoint, type SpaceView } from './projection';
+import { PLAYFIELD_H, PLAYFIELD_W, projectPoint, type SpaceView } from './projection';
 import { starColor, type Star } from './starfield';
 import { random } from '../core/rng';
 import { ATTACK_COMPUTER_LINES, BLIP_SHAPE, LOCK_MARKS, type AttackDisplay } from '../sim/attackComputer';
@@ -64,7 +64,7 @@ export function frameRect(viewW: number, viewH: number): { x: number; y: number;
   return { x: Math.floor((viewW - w) / 2), y: Math.floor((viewH - h) / 2), w, h, k };
 }
 
-export type SpaceObjectKind = 'fighter' | 'cruiser' | 'basestar' | 'starbase' | 'photon' | 'zylonTorpedo' | 'meteor';
+export type SpaceObjectKind = 'fighter' | 'cruiser' | 'basestar' | 'starbase' | 'photon' | 'zylonTorpedo' | 'meteor' | 'warpMarker';
 
 export interface SpaceObject {
   kind: SpaceObjectKind;
@@ -90,6 +90,7 @@ export const OBJECT_SHAPE: Readonly<Record<SpaceObjectKind, ShapeType>> = {
   photon: SHAPE.PHOTON,
   zylonTorpedo: SHAPE.PHOTON,
   meteor: SHAPE.METEOR,
+  warpMarker: SHAPE.HYPERWARP_MARKER,
 };
 
 /** The panel's fields as text (sim/panel.ts) plus the band colour. */
@@ -128,8 +129,6 @@ export interface SpaceFrame {
   /** Text on the front view's title line, or empty. (The aft view always shows AFT VIEW.) */
   title: string;
   panel: PanelData;
-  /** Hyperwarp target marker, as a pixel offset from the playfield centre. */
-  warpMarker: { dx: number; dy: number } | null;
 }
 
 /** Colours of the three star registers: PF0 far, PF1 mid, PF2 near (§17.13). */
@@ -308,8 +307,6 @@ export class Renderer {
       if (c) this.pf(px.col, px.row, 1, 1, c === 3 ? pf2 : STAR_RGB[c]);
     }
 
-    if (f.warpMarker) this.drawWarpMarker(f.warpMarker.dx, f.warpMarker.dy);
-
     if (f.crosshair) for (const [c, r, w, h] of crosshairRects(f.view)) this.pf(c, r, w, h, ROM_RGB.$A6);
     if (f.attackComputer && f.view === 'FRONT') {
       const rgb = { 1: ROM_RGB.$A6, 2: ROM_RGB.$AA, 3: pf2 } as const;
@@ -344,16 +341,6 @@ export class Renderer {
         if (col < 0 || col >= PLAYFIELD_W) continue;
         this.fctx.fillRect(col, line / 2, 1, 0.5);
       }
-    });
-  }
-
-  /** §18.3 hyperwarp target marker, sky blue, around an offset from the centre. */
-  private drawWarpMarker(dx: number, dy: number): void {
-    const shape = ['..#.#..', '###.###', '.......', '###.###', '..#.#..'];
-    const c0 = CENTER_COL + Math.round(dx) - 3;
-    const r0 = CENTER_ROW + Math.round(dy) - 2;
-    shape.forEach((line, r) => {
-      for (let c = 0; c < line.length; c++) if (line[c] === '#') this.pf(c0 + c, r0 + r, 1, 1, ROM_RGB.$9F);
     });
   }
 
