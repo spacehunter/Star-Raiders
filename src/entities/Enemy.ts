@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { Transform, Vec3 } from '../core/vec3';
 import { ENEMY_CONFIG } from '../config/EnemyConfig';
 import { random } from '../core/rng';
 
@@ -71,15 +71,15 @@ export const DIFFICULTY_SETTINGS: Record<string, DifficultySettings> = {
  * Enemy - Base class for all Zylon enemy ships
  */
 export class Enemy {
-  protected mesh: THREE.Group;
+  protected mesh: Transform = new Transform();
   protected type: EnemyType;
   protected state: EnemyState;
   protected health: number;
   protected maxHealth: number;
   protected speed: number;
-  protected position: THREE.Vector3;
-  protected velocity: THREE.Vector3;
-  protected targetPosition: THREE.Vector3 | null = null;
+  protected position: Vec3;
+  protected velocity: Vec3;
+  protected targetPosition: Vec3 | null = null;
 
   // Combat
   protected hasShields: boolean = false;
@@ -95,7 +95,7 @@ export class Enemy {
 
   // Cruiser-specific
   protected provoked: boolean = false;
-  protected patrolWaypoints: THREE.Vector3[] = [];
+  protected patrolWaypoints: Vec3[] = [];
   protected currentWaypointIndex: number = 0;
   protected waypointPauseTimer: number = 0;
 
@@ -103,13 +103,13 @@ export class Enemy {
   protected shieldRegenTimer: number = 0;
 
   // Smooth movement system - prevents teleporting
-  protected currentVelocity: THREE.Vector3 = new THREE.Vector3();
-  protected targetVelocity: THREE.Vector3 = new THREE.Vector3();
+  protected currentVelocity: Vec3 = new Vec3();
+  protected targetVelocity: Vec3 = new Vec3();
   protected maxAcceleration: number = 50; // Units per second squared
 
   // Evasive maneuver state (smooth instead of instant)
   protected isEvading: boolean = false;
-  protected evadeTarget: THREE.Vector3 | null = null;
+  protected evadeTarget: Vec3 | null = null;
   protected evadeTimer: number = 0;
 
   // Honing behavior for sector entry
@@ -126,13 +126,13 @@ export class Enemy {
   public isDestroyed: boolean = false;
 
   // Track last known player velocity for lead targeting
-  protected lastPlayerPosition: THREE.Vector3 | null = null;
-  protected estimatedPlayerVelocity: THREE.Vector3 = new THREE.Vector3();
+  protected lastPlayerPosition: Vec3 | null = null;
+  protected estimatedPlayerVelocity: Vec3 = new Vec3();
 
-  constructor(type: EnemyType, position: THREE.Vector3) {
+  constructor(type: EnemyType, position: Vec3) {
     this.type = type;
     this.position = position.clone();
-    this.velocity = new THREE.Vector3();
+    this.velocity = new Vec3();
     this.state = EnemyState.IDLE;
 
     // Set type-specific properties
@@ -184,7 +184,6 @@ export class Enemy {
     this.isHoningIn = true;
     this.honeInTimer = 0;
 
-    this.mesh = this.createModel();
     this.mesh.position.copy(position);
   }
 
@@ -226,186 +225,21 @@ export class Enemy {
 
     // Figure-8 pattern with 6 waypoints
     this.patrolWaypoints = [
-      new THREE.Vector3(centerX + patternSize, centerY, centerZ),
-      new THREE.Vector3(centerX + patternSize * 0.5, centerY + 20, centerZ + patternSize * 0.5),
-      new THREE.Vector3(centerX, centerY, centerZ + patternSize),
-      new THREE.Vector3(centerX - patternSize, centerY, centerZ),
-      new THREE.Vector3(centerX - patternSize * 0.5, centerY - 20, centerZ - patternSize * 0.5),
-      new THREE.Vector3(centerX, centerY, centerZ - patternSize),
+      new Vec3(centerX + patternSize, centerY, centerZ),
+      new Vec3(centerX + patternSize * 0.5, centerY + 20, centerZ + patternSize * 0.5),
+      new Vec3(centerX, centerY, centerZ + patternSize),
+      new Vec3(centerX - patternSize, centerY, centerZ),
+      new Vec3(centerX - patternSize * 0.5, centerY - 20, centerZ - patternSize * 0.5),
+      new Vec3(centerX, centerY, centerZ - patternSize),
     ];
 
     this.currentWaypointIndex = 0;
   }
 
   /**
-   * Create the enemy ship model
-   */
-  protected createModel(): THREE.Group {
-    const group = new THREE.Group();
-
-    switch (this.type) {
-      case EnemyType.FIGHTER:
-        this.createFighterModel(group);
-        break;
-      case EnemyType.CRUISER:
-        this.createCruiserModel(group);
-        break;
-      case EnemyType.BASESTAR:
-        this.createBasestarModel(group);
-        break;
-    }
-
-    return group;
-  }
-
-  /**
-   * Create Zylon Fighter model - pixel art style diamond shape
-   * Based on original Atari 800 sprite
-   */
-  private createFighterModel(group: THREE.Group): void {
-    const material = new THREE.MeshBasicMaterial({ color: 0x00ffff });
-    const pixelSize = 0.4;
-
-    // Create pixel art diamond shape (like original)
-    // Row pattern from top to bottom:
-    //     X       (row 0)
-    //    XXX      (row 1)
-    //   XXXXX     (row 2) - widest
-    //    XXX      (row 3)
-    //     X       (row 4)
-    const pattern = [
-      [0],                    // row 0
-      [-1, 0, 1],            // row 1
-      [-2, -1, 0, 1, 2],     // row 2
-      [-1, 0, 1],            // row 3
-      [0],                    // row 4
-    ];
-
-    const pixelGeometry = new THREE.BoxGeometry(pixelSize, pixelSize * 0.5, pixelSize);
-
-    pattern.forEach((row, rowIndex) => {
-      const y = (2 - rowIndex) * pixelSize * 0.6;
-      row.forEach((x) => {
-        const pixel = new THREE.Mesh(pixelGeometry, material);
-        pixel.position.set(x * pixelSize, y, 0);
-        group.add(pixel);
-      });
-    });
-
-    // Add small engine pixels at back
-    const enginePixel1 = new THREE.Mesh(pixelGeometry, material);
-    enginePixel1.position.set(0, 0, pixelSize);
-    group.add(enginePixel1);
-
-    group.scale.set(1.5, 1.5, 1.5);
-  }
-
-  /**
-   * Create Zylon Cruiser model - pixel art H-shape style
-   * Based on original Atari 800 sprite
-   */
-  private createCruiserModel(group: THREE.Group): void {
-    const material = new THREE.MeshBasicMaterial({ color: 0xff00ff });
-    const pixelSize = 0.5;
-
-    // Create pixel art H-shape cruiser (like original manual shows)
-    // Pattern:
-    //  XX   XX    (row 0) - engine pods
-    //  XX   XX    (row 1)
-    //  XXXXXXX    (row 2) - center hull
-    //  XXXXXXX    (row 3)
-    //  XX   XX    (row 4)
-    //  XX   XX    (row 5) - engine pods
-    const pattern = [
-      [-3, -2, 2, 3],           // row 0 - outer pods
-      [-3, -2, 2, 3],           // row 1
-      [-3, -2, -1, 0, 1, 2, 3], // row 2 - full center
-      [-3, -2, -1, 0, 1, 2, 3], // row 3
-      [-3, -2, 2, 3],           // row 4
-      [-3, -2, 2, 3],           // row 5 - outer pods
-    ];
-
-    const pixelGeometry = new THREE.BoxGeometry(pixelSize, pixelSize * 0.4, pixelSize);
-
-    pattern.forEach((row, rowIndex) => {
-      const z = (2.5 - rowIndex) * pixelSize;
-      row.forEach((x) => {
-        const pixel = new THREE.Mesh(pixelGeometry, material);
-        pixel.position.set(x * pixelSize * 0.5, 0, z);
-        group.add(pixel);
-      });
-    });
-
-    // Add command bridge on top
-    const bridgeGeometry = new THREE.BoxGeometry(pixelSize, pixelSize * 0.6, pixelSize);
-    const bridge = new THREE.Mesh(bridgeGeometry, material);
-    bridge.position.set(0, pixelSize * 0.4, 0);
-    group.add(bridge);
-
-    group.scale.set(1.2, 1.2, 1.2);
-  }
-
-  /**
-   * Create Zylon Basestar model - pixel art pyramid style
-   * Based on original Atari 800 sprite (gold pyramid)
-   */
-  private createBasestarModel(group: THREE.Group): void {
-    const material = new THREE.MeshBasicMaterial({ color: 0xffd700 });
-    const pixelSize = 0.6;
-
-    // Create pixel art stepped pyramid (like original)
-    // Layers from bottom to top, each smaller than the last
-    const layers = [
-      { size: 5, y: 0 },      // Bottom layer - 5x5
-      { size: 4, y: 1 },      // Layer 2 - 4x4
-      { size: 3, y: 2 },      // Layer 3 - 3x3
-      { size: 2, y: 3 },      // Layer 4 - 2x2
-      { size: 1, y: 4 },      // Top - 1x1
-    ];
-
-    const pixelGeometry = new THREE.BoxGeometry(pixelSize, pixelSize * 0.6, pixelSize);
-
-    layers.forEach((layer) => {
-      const halfSize = Math.floor(layer.size / 2);
-      for (let x = -halfSize; x <= halfSize; x++) {
-        for (let z = -halfSize; z <= halfSize; z++) {
-          // For odd sizes, include center; for even, offset
-          if (layer.size % 2 === 0 && (x === 0 || z === 0)) continue;
-          const pixel = new THREE.Mesh(pixelGeometry, material);
-          pixel.position.set(
-            x * pixelSize,
-            layer.y * pixelSize * 0.5 - 1,
-            z * pixelSize
-          );
-          group.add(pixel);
-        }
-      }
-    });
-
-    // Shield effect - pixelated cube outline
-    const shieldMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffff00,
-      transparent: true,
-      opacity: 0.25,
-      wireframe: true,
-    });
-    const shieldGeometry = new THREE.BoxGeometry(
-      pixelSize * 6,
-      pixelSize * 4,
-      pixelSize * 6
-    );
-    const shield = new THREE.Mesh(shieldGeometry, shieldMaterial);
-    shield.position.y = 0.5;
-    shield.name = 'shield';
-    group.add(shield);
-
-    group.scale.set(1.3, 1.3, 1.3);
-  }
-
-  /**
    * Get the Three.js object
    */
-  public getObject(): THREE.Object3D {
+  public getObject(): Transform {
     return this.mesh;
   }
 
@@ -419,7 +253,7 @@ export class Enemy {
   /**
    * Get position
    */
-  public getPosition(): THREE.Vector3 {
+  public getPosition(): Vec3 {
     return this.mesh.position.clone();
   }
 
@@ -470,16 +304,13 @@ export class Enemy {
    * Update shield visual
    */
   private updateShieldVisual(): void {
-    const shield = this.mesh.getObjectByName('shield');
-    if (shield) {
-      shield.visible = this.shieldsActive;
-    }
+    // Drawn by the renderer from hasActiveShields() once the ROM sprites exist (Phase 5).
   }
 
   /**
    * Update enemy state
    */
-  public update(deltaTime: number, playerPosition: THREE.Vector3): void {
+  public update(deltaTime: number, playerPosition: Vec3): void {
     if (!this.isActive) return;
 
     // Track player velocity for lead targeting
@@ -608,7 +439,7 @@ export class Enemy {
    */
   private updateFighter(
     deltaTime: number,
-    playerPosition: THREE.Vector3,
+    playerPosition: Vec3,
     distanceToPlayer: number
   ): void {
     // Handle honing behavior - approach player aggressively when entering sector
@@ -655,7 +486,7 @@ export class Enemy {
    * Universal honing behavior - aggressively approach player at max speed
    * Used when player enters a sector to ensure enemies always find the player
    */
-  private updateHoningBehavior(playerPosition: THREE.Vector3): void {
+  private updateHoningBehavior(playerPosition: Vec3): void {
     // Calculate direction to player
     const toPlayer = playerPosition.clone().sub(this.mesh.position);
     const direction = toPlayer.normalize();
@@ -694,7 +525,7 @@ export class Enemy {
    */
   private updateFighterPursuit(
     deltaTime: number,
-    playerPosition: THREE.Vector3,
+    playerPosition: Vec3,
     _distanceToPlayer: number
   ): void {
     // Update weave phase
@@ -707,7 +538,7 @@ export class Enemy {
     // Add sinusoidal weaving perpendicular to approach direction
     // Weave is now a velocity component, not a position offset
     const weaveAmplitude = 20; // Units per second lateral velocity
-    const perpendicular = new THREE.Vector3(-direction.z, 0, direction.x).normalize();
+    const perpendicular = new Vec3(-direction.z, 0, direction.x).normalize();
     const weaveVelocity = perpendicular.multiplyScalar(Math.sin(this.weavePhase) * weaveAmplitude);
 
     // Set target velocity: approach + weave
@@ -722,7 +553,7 @@ export class Enemy {
    */
   private updateFighterOrbit(
     deltaTime: number,
-    playerPosition: THREE.Vector3,
+    playerPosition: Vec3,
     _distanceToPlayer: number
   ): void {
     const ORBIT_RADIUS = ENEMY_CONFIG.distances.FIGHTER_ORBIT_RADIUS; // Desired orbit distance
@@ -737,14 +568,14 @@ export class Enemy {
     const orbitY =
       playerPosition.y + Math.sin(this.orbitAngle * 0.5) * 10; // Slight vertical variation
 
-    const targetOrbitPos = new THREE.Vector3(orbitX, orbitY, orbitZ);
+    const targetOrbitPos = new Vec3(orbitX, orbitY, orbitZ);
 
     // Calculate velocity to move toward orbit position
     const toOrbit = targetOrbitPos.clone().sub(this.mesh.position);
     const orbitDistance = toOrbit.length();
 
     // Calculate tangent velocity (for smooth orbiting)
-    const tangent = new THREE.Vector3(
+    const tangent = new Vec3(
       -Math.sin(this.orbitAngle),
       0,
       Math.cos(this.orbitAngle)
@@ -774,7 +605,7 @@ export class Enemy {
   private initiateEvasiveManeuver(): void {
     // Set evade target position (relative to current position)
     const dodgeDistance = 15 + random() * 15; // 15-30 units
-    const dodgeOffset = new THREE.Vector3(
+    const dodgeOffset = new Vec3(
       (random() - 0.5) * dodgeDistance,
       (random() - 0.5) * dodgeDistance * 0.3, // Less vertical
       (random() - 0.5) * dodgeDistance
@@ -790,7 +621,7 @@ export class Enemy {
    */
   private updateCruiser(
     deltaTime: number,
-    playerPosition: THREE.Vector3,
+    playerPosition: Vec3,
     distanceToPlayer: number
   ): void {
     // Handle honing behavior - approach player when entering sector
@@ -861,7 +692,7 @@ export class Enemy {
    */
   private updateCruiserAttack(
     _deltaTime: number,
-    playerPosition: THREE.Vector3,
+    playerPosition: Vec3,
     distanceToPlayer: number
   ): void {
     const PREFERRED_MIN = ENEMY_CONFIG.distances.CRUISER_PREFERRED_MIN;
@@ -879,7 +710,7 @@ export class Enemy {
       this.targetVelocity.copy(direction).multiplyScalar(this.speed);
     } else {
       // In preferred range - strafe slowly
-      const perpendicular = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x).normalize();
+      const perpendicular = new Vec3(-toPlayer.z, 0, toPlayer.x).normalize();
       this.targetVelocity.copy(perpendicular).multiplyScalar(this.speed * ENEMY_CONFIG.multipliers.CRUISER_STRAFE);
     }
 
@@ -892,7 +723,7 @@ export class Enemy {
    */
   private updateBasestar(
     deltaTime: number,
-    playerPosition: THREE.Vector3,
+    playerPosition: Vec3,
     _distanceToPlayer: number
   ): void {
     if (this.state === EnemyState.ATTACK) {
@@ -935,7 +766,7 @@ export class Enemy {
   /**
    * Check near miss - may provoke Cruisers based on difficulty
    */
-  public checkNearMiss(torpedoPosition: THREE.Vector3, missDistance: number): void {
+  public checkNearMiss(torpedoPosition: Vec3, missDistance: number): void {
     if (this.type !== EnemyType.CRUISER || this.provoked) return;
 
     const distance = this.mesh.position.distanceTo(torpedoPosition);
@@ -950,7 +781,7 @@ export class Enemy {
   /**
    * Check if enemy should fire at player
    */
-  public shouldFire(currentTime: number, playerPosition: THREE.Vector3): boolean {
+  public shouldFire(currentTime: number, playerPosition: Vec3): boolean {
     if (!this.isActive || this.state !== EnemyState.ATTACK) return false;
 
     // Cruisers only fire when provoked
@@ -979,9 +810,9 @@ export class Enemy {
    * Returns a position ahead of the player based on projectile travel time
    */
   public getLeadTargetPosition(
-    playerPosition: THREE.Vector3,
+    playerPosition: Vec3,
     projectileSpeed: number = 200
-  ): THREE.Vector3 {
+  ): Vec3 {
     const distance = this.mesh.position.distanceTo(playerPosition);
     const travelTime = distance / projectileSpeed;
 
@@ -1002,7 +833,7 @@ export class Enemy {
   /**
    * Get firing direction (for creating projectiles)
    */
-  public getFiringDirection(playerPosition: THREE.Vector3): THREE.Vector3 {
+  public getFiringDirection(playerPosition: Vec3): Vec3 {
     const targetPos = this.getLeadTargetPosition(playerPosition);
     return targetPos.sub(this.mesh.position).normalize();
   }
@@ -1025,13 +856,6 @@ export class Enemy {
    * Dispose of resources
    */
   public dispose(): void {
-    this.mesh.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        child.geometry.dispose();
-        if (child.material instanceof THREE.Material) {
-          child.material.dispose();
-        }
-      }
-    });
+    // Nothing to free: the 2D renderer draws from the position each frame.
   }
 }

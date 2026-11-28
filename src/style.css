@@ -22,21 +22,10 @@ canvas {
   display: block;
 }
 
-/* Retro Resolution Scaling */
+/* The 2D renderer scales its 160 × 120 frame by whole numbers and letterboxes it itself. */
 .game-canvas {
-  /* Explicitly set display size to fill viewport */
-  width: 100vw !important;
-  height: 100vh !important;
-
-  /* Pixelated upscaling for authentic Atari 800 look */
-  image-rendering: pixelated;
-  image-rendering: -moz-crisp-edges;
-  /* Firefox fallback */
-  image-rendering: crisp-edges;
-  /* Other fallback */
-
-  /* Position to fill container */
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
 }

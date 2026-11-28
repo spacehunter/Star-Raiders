@@ -16,7 +16,8 @@ known to be unfaithful (see the audit). If the spec is silent, say so in the PR 
 
 ## Stack and commands
 
-Vite + TypeScript + Three.js, plain DOM/CSS for the HUD, Web Audio for sound.
+Vite + TypeScript, a 2D canvas pixel renderer (`src/render/`), plain DOM/CSS for menus and overlays,
+Web Audio for sound.
 
 ```bash
 npm run dev        # dev server

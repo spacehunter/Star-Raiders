@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { Vec3 } from '../core/vec3';
 import { Enemy, EnemyType } from '../entities/Enemy';
 import { PhotonTorpedo } from '../entities/PhotonTorpedo';
 import { GameState, DifficultyLevel } from '../game/GameState';
@@ -8,7 +8,6 @@ import { random } from '../core/rng';
  * CombatSystem - Manages enemies, combat, and targeting
  */
 export class CombatSystem {
-  private scene: THREE.Scene;
   private gameState: GameState;
 
   // Enemies in current sector
@@ -17,8 +16,7 @@ export class CombatSystem {
   // Targeting
   private currentTargetIndex: number = -1;
 
-  constructor(scene: THREE.Scene, gameState: GameState) {
-    this.scene = scene;
+  constructor(gameState: GameState) {
     this.gameState = gameState;
   }
 
@@ -71,7 +69,7 @@ export class CombatSystem {
       const distance = 50 + random() * 150;
       const height = (random() - 0.5) * 50;
 
-      const position = new THREE.Vector3(
+      const position = new Vec3(
         Math.cos(angle) * distance,
         height,
         Math.sin(angle) * distance
@@ -83,7 +81,6 @@ export class CombatSystem {
       // Activate honing behavior to ensure enemies pursue player after hyperwarp
       enemy.activateHoning();
       this.enemies.push(enemy);
-      this.scene.add(enemy.getObject());
     }
 
     // Auto-select first target
@@ -96,12 +93,11 @@ export class CombatSystem {
    * Spawn one enemy at a given position (used by the ?debug=1 hook).
    * Configured exactly like a sector spawn.
    */
-  public spawnEnemy(type: EnemyType, position: THREE.Vector3): Enemy {
+  public spawnEnemy(type: EnemyType, position: Vec3): Enemy {
     const enemy = new Enemy(type, position);
     enemy.setDifficulty(this.gameState.difficulty);
     enemy.activateHoning();
     this.enemies.push(enemy);
-    this.scene.add(enemy.getObject());
     if (this.currentTargetIndex < 0) {
       this.currentTargetIndex = this.enemies.length - 1;
     }
@@ -113,7 +109,6 @@ export class CombatSystem {
    */
   public clearEnemies(): void {
     for (const enemy of this.enemies) {
-      this.scene.remove(enemy.getObject());
       enemy.dispose();
     }
     this.enemies = [];
@@ -137,7 +132,7 @@ export class CombatSystem {
   /**
    * Select nearest enemy as target (T key)
    */
-  public selectNearestTarget(playerPosition: THREE.Vector3): Enemy | null {
+  public selectNearestTarget(playerPosition: Vec3): Enemy | null {
     let nearest: Enemy | null = null;
     let nearestDistance = Infinity;
 
@@ -216,7 +211,7 @@ export class CombatSystem {
   /**
    * Update all enemies
    */
-  public update(deltaTime: number, playerPosition: THREE.Vector3): void {
+  public update(deltaTime: number, playerPosition: Vec3): void {
     for (const enemy of this.enemies) {
       enemy.update(deltaTime, playerPosition);
     }
@@ -225,8 +220,7 @@ export class CombatSystem {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       if (enemy.isDestroyed) {
-        this.scene.remove(enemy.getObject());
-        enemy.dispose();
+          enemy.dispose();
         this.enemies.splice(i, 1);
 
         // Update target index
@@ -240,7 +234,7 @@ export class CombatSystem {
   /**
    * Check if any enemy should fire
    */
-  public getEnemyFiring(currentTime: number, playerPosition: THREE.Vector3): Enemy | null {
+  public getEnemyFiring(currentTime: number, playerPosition: Vec3): Enemy | null {
     for (const enemy of this.enemies) {
       if (enemy.shouldFire(currentTime, playerPosition)) {
         return enemy;
@@ -259,7 +253,7 @@ export class CombatSystem {
   /**
    * Check for near misses that may provoke Cruisers
    */
-  public checkNearMisses(torpedoPosition: THREE.Vector3): void {
+  public checkNearMisses(torpedoPosition: Vec3): void {
     const NEAR_MISS_DISTANCE = 50; // Units within which a torpedo provokes
 
     for (const enemy of this.enemies) {
@@ -274,17 +268,6 @@ export class CombatSystem {
    */
   public getEnemies(): Enemy[] {
     return this.enemies;
-  }
-
-  /**
-   * Apply player movement to all enemies (relative motion)
-   */
-  public applyPlayerMovement(displacement: THREE.Vector3): void {
-    for (const enemy of this.enemies) {
-      if (enemy.isActive) {
-        enemy.getObject().position.add(displacement);
-      }
-    }
   }
 
   /**

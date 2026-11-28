@@ -17,7 +17,27 @@ export const ROM_RGB = {
   $FC: '#FCE08C', // E, R label, TARGETS, DC damaged
   $5E: '#FFB8FF', // STAR DATE, DC destroyed
   $9F: '#A0C8FF', // hyperwarp marker
+  $4F: '#FFA898', // title line and near stars during a red alert (PF2, R: GAMELOOP step 16)
+  $60: '#24105C', // title line and near stars while the red-alert background is lit
+  $28: '#F0A040', // starbase (orange $2x, Phase 3 placeholder blob)
+  $58: '#C070E0', // photon torpedoes (purple $5x)
+  $0E: '#E0E0E0', // Zylon ships, near (grey/white $0x)
+  $06: '#808080', // Zylon ships, far
 } as const;
+
+/**
+ * Approximate sRGB of any Atari colour byte (hue in the high nibble, luminance in the low).
+ * Used where the ROM picks random colours (hit flash, basestar flicker); fixed elements use
+ * ROM_RGB above.
+ */
+export function atariColor(byte: number): string {
+  const hue = (byte >> 4) & 0x0f;
+  const lum = byte & 0x0f;
+  const l = Math.round(6 + lum * 5.6);
+  if (hue === 0) return `hsl(0 0% ${l}%)`;
+  const angle = (((55 - (hue - 1) * 25.7) % 360) + 360) % 360;
+  return `hsl(${angle.toFixed(0)} 70% ${l}%)`;
+}
 
 /** Colours of the Galactic Chart (§8, §17.3, §17.13, §18.1). */
 export const CHART_COLORS = {

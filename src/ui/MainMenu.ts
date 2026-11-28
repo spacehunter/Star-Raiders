@@ -1,6 +1,15 @@
 import { DifficultyLevel } from '../game/GameState';
 import type { MissionRating } from '../sim/rating';
 import { random } from '../core/rng';
+import { getSettings, updateSettings, type Settings } from '../core/settings';
+
+/** The bend settings on the title screen (Part 4 bends 1–3); each button cycles its value. */
+const OPTION_LABELS: Array<{ key: keyof Settings; label: (s: Settings) => string; next: (s: Settings) => Partial<Settings> }> = [
+  { key: 'stars', label: (s) => `STARS: ${s.stars === 'enhanced' ? 'ENHANCED' : 'CLASSIC'}`, next: (s) => ({ stars: s.stars === 'enhanced' ? 'classic' : 'enhanced' }) },
+  { key: 'crt', label: (s) => `CRT: ${s.crt ? 'ON' : 'OFF'}`, next: (s) => ({ crt: !s.crt }) },
+  { key: 'wasd', label: (s) => `WASD: ${s.wasd ? 'ON' : 'OFF'}`, next: (s) => ({ wasd: !s.wasd }) },
+  { key: 'mouse', label: (s) => `MOUSE: ${s.mouse ? 'ON' : 'OFF'}`, next: (s) => ({ mouse: !s.mouse }) },
+];
 
 /**
  * MainMenu - Title screen and difficulty selection
@@ -135,19 +144,25 @@ export class MainMenu {
           </div>
         </div>
 
+        <div class="options-row">
+          ${OPTION_LABELS.map((o) => `<button class="option-btn" data-option="${o.key}"></button>`).join('')}
+        </div>
+
         <button class="start-btn">START MISSION</button>
 
         <div class="controls-section">
           <p class="section-title">CONTROLS</p>
           <div class="controls-grid">
-            <span>MOUSE</span><span>AIM SHIP</span>
+            <span>ARROWS / PAD</span><span>STICK (UP = DIVE)</span>
             <span>SPACE</span><span>FIRE</span>
             <span>0-9</span><span>SPEED</span>
             <span>S</span><span>SHIELDS</span>
-            <span>F/A</span><span>VIEWS</span>
+            <span>F / A</span><span>FRONT / AFT VIEW</span>
+            <span>C</span><span>ATTACK COMPUTER</span>
             <span>G</span><span>CHART</span>
             <span>L</span><span>SCAN</span>
             <span>H</span><span>WARP</span>
+            <span>WASD ON</span><span>R = AFT, Q = SHIELDS</span>
           </div>
         </div>
       </div>
@@ -162,6 +177,21 @@ export class MainMenu {
         this.selectedDifficulty = (btn as HTMLElement).dataset.difficulty as DifficultyLevel;
       });
     });
+
+    const options = menu.querySelectorAll<HTMLButtonElement>('.option-btn');
+    const paintOptions = () =>
+      options.forEach((btn) => {
+        const o = OPTION_LABELS.find((x) => x.key === btn.dataset.option)!;
+        btn.textContent = o.label(getSettings());
+      });
+    options.forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const o = OPTION_LABELS.find((x) => x.key === btn.dataset.option)!;
+        updateSettings(o.next(getSettings()));
+        paintOptions();
+      })
+    );
+    paintOptions();
 
     const startBtn = menu.querySelector('.start-btn');
     startBtn?.addEventListener('click', () => {
@@ -281,6 +311,28 @@ export class MainMenu {
 
       .diff-name {
         font-size: 2vh;
+      }
+
+      .options-row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 1vh 1.5vw;
+        margin-bottom: 3vh;
+      }
+
+      .option-btn {
+        background: #000;
+        border: 0.3vh solid #3CA884;
+        color: #A8F0B8;
+        font-family: 'Press Start 2P', monospace;
+        font-size: 1.4vh;
+        padding: 1vh 1.2vw;
+        cursor: pointer;
+      }
+
+      .option-btn:hover {
+        border-color: #C8FFE8;
       }
 
       .start-btn {

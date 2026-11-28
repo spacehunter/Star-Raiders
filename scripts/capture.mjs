@@ -4,13 +4,14 @@
  *
  *   node scripts/capture.mjs [--seed 1979] [--out captures/seed-1979] [--difficulty NOVICE]
  *                            [--width 1280] [--height 800] [--url http://localhost:5173/]
+ *                            [--query "stars=enhanced&crt=1"]   (extra URL parameters, e.g. settings)
  *
  * Starts its own Vite dev server (unless --url is given), opens the game headless with
  * ?debug=1&seed=<seed>, freezes the page clock (Date, performance.now, timers and
  * requestAnimationFrame) and drives the game only through window.__sr.step(), so the
  * same seed always gives the same pixels. Writes the standard shots:
  *
- *   01-title  02-front  03-aft  04-galactic-chart  04a-chart-surrounded
+ *   01-title  02-front  02a-front-crosshair  02b-shields  02c-red-alert  03-aft  04-galactic-chart  04a-chart-surrounded
  *   04b-chart-surround-holding  04c-chart-starbase-destroyed  04d-chart-damage
  *   05-long-range-scan  06-attack-computer  07-hyperwarp  08-docking  09-zero-energy
  *
@@ -26,7 +27,7 @@ import { chromium } from 'playwright';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function parseArgs(argv) {
-  const opts = { seed: 1979, difficulty: 'NOVICE', width: 1280, height: 800, out: null, url: null };
+  const opts = { seed: 1979, difficulty: 'NOVICE', width: 1280, height: 800, out: null, url: null, query: '' };
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i].replace(/^--/, '');
     if (!(key in opts)) throw new Error(`Unknown option --${key}`);
@@ -49,7 +50,25 @@ const SHOTS = [
       }, o);
     },
   },
-  { name: '03-aft', run: async (sr) => sr(() => { window.__sr.setView('AFT'); window.__sr.step(30); }) },
+  // Phase 3 (MANUAL_SPEC §5.3, §17.6, §17.13): C shows the cross hairs; shields tint; red alert.
+  {
+    name: '02a-front-crosshair',
+    run: async (sr) => sr(() => { window.__sr.press('COMPUTER'); window.__sr.step(70); }),
+  },
+  { name: '02b-shields', run: async (sr) => sr(() => { window.__sr.setShields(true); window.__sr.step(2); }) },
+  {
+    name: '02c-red-alert',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.setShields(false);
+        window.__sr.redAlert(120); // bit 5 set: the dark red background half of the flash
+        window.__sr.step(2);
+      }),
+  },
+  {
+    name: '03-aft',
+    run: async (sr) => sr(() => { window.__sr.redAlert(0); window.__sr.setView('AFT'); window.__sr.step(30); }),
+  },
   {
     name: '04-galactic-chart',
     run: async (sr) => sr(() => { window.__sr.setView('GALACTIC_CHART'); window.__sr.step(10); }),
@@ -183,6 +202,7 @@ async function main() {
     const url = new URL(base);
     url.searchParams.set('debug', '1');
     url.searchParams.set('seed', String(opts.seed));
+    for (const [k, v] of new URLSearchParams(opts.query)) url.searchParams.set(k, v);
     await page.goto(url.toString(), { waitUntil: 'networkidle' });
     await page.waitForFunction(() => window.__sr !== undefined);
     await page.evaluate(() => document.fonts.ready);
