@@ -1,0 +1,47 @@
+<html><body style="background:#111;color:#cfc;font:13px monospace"><h3>npm test + npm run build (Phase 7)</h3><pre> ✓ src/sim/panel.test.ts &gt; panel band colour &gt; damaged shields stay up on a roll below 200/256 and go out (orange) otherwise 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; chance 0 / 80 / 180 / 254 of 256 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; NOVICE never takes damage 1ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; one byte decides chance and slot; slots 6 and 7 harm nothing 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; PILOT harms a system on 60 of 256 bytes (80 below chance, 2 of 8 slots empty) 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; close torpedoes (life ≥ 30) destroy; messages name the system 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; computer and sector scan are never both destroyed 0ms
+ ✓ src/rules/rules.test.ts &gt; §17.3 damage &gt; an already destroyed system makes the ROM draw again 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; photons ok 6ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; photons damaged 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; photons destroyed 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; engines ok 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; engines damaged 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; engines destroyed 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; shields ok 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; shields damaged 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; shields destroyed 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; computer ok 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; computer damaged 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; computer destroyed 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; sectorScan ok 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; sectorScan damaged 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; sectorScan destroyed 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; radio ok 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; radio damaged 3ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 each subsystem in each state &gt; radio destroyed 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 effect details &gt; damaged photons keep using the barrel they had; OK ones alternate 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 effect details &gt; engines: only destroyed caps the key, and only for keys 6–9 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 effect details &gt; engines: the jitter is NEWVELOCITY AND RANDOM, and stops in hyperwarp 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 effect details &gt; damaged shields are up about 200/256 of the time 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 effect details &gt; a destroyed computer is switched off (R: DAMAGE) and hides our ship on the scan (R: DRAWLINES) 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 state bits (code, not the comment) &gt; OK %00, damaged %10, destroyed %11 in bits 7–6 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 state bits (code, not the comment) &gt; a state never improves without repair 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 DAMAGE CONTROL messages, beep and repair &gt; blank, DAMAGE CONTROL, then the subsystem phrase, which repeats until docking clears it 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 DAMAGE CONTROL messages, beep and repair &gt; every subsystem has its ROM phrase in both states 0ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 DAMAGE CONTROL messages, beep and repair &gt; repairAll restores all six from any mix; only docking calls it 1ms
+ ✓ src/sim/damage.test.ts &gt; §17.3 DAMAGE CONTROL messages, beep and repair &gt; the roll feeds the report: rates per level and damaged vs destroyed by torpedo age 0ms
+ ✓ src/sim/damage.test.ts &gt; §7 the radio freeze holds from the moment of damage &gt; the chart keeps the map it had when the radio was hit, and repair brings it back 1ms
+ ✓ src/sim/zylons.test.ts &gt; photon torpedoes &gt; damaged photons fire one barrel every 23 loops; destroyed ones never 0ms
+ ✓ src/sim/zylons.test.ts &gt; meteors &gt; with shields up a meteor cannot damage at NOVICE, and always destroys a subsystem otherwise 0ms
+ ✓ src/sim/galaxy.test.ts &gt; Sub-Space Radio and the chart (§7, §17.3) &gt; damaged freezes the chart but TARGETS stays live; destroyed freezes both and mutes messages 0ms
+ Test Files  17 passed (17)
+      Tests  240 passed (240)
+dist/assets/index-BSqR9L10.css   0.26 kB │ gzip:  0.19 kB
+dist/assets/index-44BPMzC7.js   99.98 kB │ gzip: 31.56 kB
+✓ built in 220ms
+</pre></body></html>
