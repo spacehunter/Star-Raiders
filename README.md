@@ -41,8 +41,18 @@ npm run capture    # the 8 standard screenshots (see below)
 | S | Shields |
 | C | Attack computer (cross hairs) |
 | T / M | Nearest / next target |
+| P or Esc | Pause until the stick moves or a key is pressed; the pause menu shows this key help |
+| X (in the pause menu) | Abort the mission and get a rating |
+| Tab or 1–4 (attract mode) | SELECT the mission level (also the on-screen SELECT button) |
+| Enter (attract mode) | START (also the on-screen START button) |
+| Enter / Space / Esc | Skip the end sequence; leave the debrief card |
 
-Title-screen options (also `?stars=enhanced&crt=1&wasd=1&mouse=1` in the URL), all off by default:
+There is no title screen: power-on is the attract mode, a demo flight with `NOVICE MISSION` /
+`STAR RAIDERS` / `COPYRIGHT ATARI 1979` on the title line. Nine idle minutes return to it. After a
+mission the end sequence plays on the title line, then a debrief card shows the score breakdown and
+the last ranks (kept in localStorage).
+
+Attract-mode options (also `?stars=enhanced&crt=1&wasd=1&mouse=1` in the URL), all off by default:
 **Stars** Classic (12, as the ROM) or Enhanced (48); **CRT** scanline filter; **WASD** steering (then
 the aft view is R and shields Q); **Mouse** steering with pointer lock (click the screen; click fires).
 
@@ -72,7 +82,7 @@ src/
   entities/  Zylons, starbase, torpedoes (placeholder blobs until Phase 5)
   systems/   combat
   views/     galactic chart, long-range scan
-  ui/        control panel data, title menu
+  ui/        control panel data, attract console, pause menu, debrief card, insignia
   audio/     sound
 scripts/     capture.mjs
 docs/        spec, plan, manual reference

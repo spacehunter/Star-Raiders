@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actionForKey, stickDirForKey } from './Input';
+import { actionForKey, keyAction, stickDirForKey } from './Input';
 
 // MANUAL_SPEC §4, §5; Part 4 bend 1.
 describe('key map', () => {
@@ -37,5 +37,38 @@ describe('key map', () => {
     expect(actionForKey('KeyR', wasd)).toBe('AFT');
     expect(actionForKey('KeyQ', wasd)).toBe('SHIELDS');
     expect(actionForKey('KeyR', classic)).toBeNull();
+  });
+});
+
+// MANUAL_SPEC §5.11, §17.11; Part 4 bend 7.
+describe('pause, abort and unknown keys', () => {
+  const classic = { wasd: false };
+  const wasd = { wasd: true };
+
+  it('P and Esc pause; X is the pause menu abort', () => {
+    expect(keyAction('KeyP', 'p', classic)).toBe('PAUSE');
+    expect(keyAction('Escape', 'Escape', classic)).toBe('PAUSE');
+    expect(keyAction('KeyX', 'x', classic)).toBe('ABORT');
+  });
+
+  it('character keys the game does not use are UNKNOWN (WHATS WRONG?)', () => {
+    for (const [code, key] of [['KeyZ', 'z'], ['KeyB', 'b'], ['KeyQ', 'q'], ['Slash', '/'], ['Comma', ','], ['KeyR', 'r']]) {
+      expect(keyAction(code, key, classic)).toBe('UNKNOWN');
+    }
+  });
+
+  it('known keys keep their action; console, modifier and function keys are not UNKNOWN', () => {
+    expect(keyAction('KeyS', 's', classic)).toBe('SHIELDS');
+    expect(keyAction('Digit7', '7', classic)).toBe('SPEED_7');
+    expect(keyAction('Space', ' ', classic)).toBe('FIRE');
+    for (const code of ['Tab', 'Enter', 'ShiftLeft', 'ControlLeft', 'AltLeft', 'MetaLeft', 'CapsLock', 'F5', 'ArrowUp']) {
+      expect(keyAction(code, code, classic)).toBe(code === 'ArrowUp' ? 'STICK_FORWARD' : null);
+    }
+  });
+
+  it('with WASD on, R and Q are views/shields and W/A/S/D steer (never UNKNOWN)', () => {
+    expect(keyAction('KeyR', 'r', wasd)).toBe('AFT');
+    expect(keyAction('KeyQ', 'q', wasd)).toBe('SHIELDS');
+    expect(keyAction('KeyW', 'w', wasd)).toBe('STICK_FORWARD');
   });
 });

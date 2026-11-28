@@ -18,6 +18,8 @@ export class SoundManager {
   /**
    * Initialize audio context on user interaction
    */
+  private removeInitListeners: (() => void) | null = null;
+
   private initOnInteraction(): void {
     const init = () => {
       if (!this.audioContext) {
@@ -32,6 +34,10 @@ export class SoundManager {
 
     document.addEventListener('click', init);
     document.addEventListener('keydown', init);
+    this.removeInitListeners = () => {
+      document.removeEventListener('click', init);
+      document.removeEventListener('keydown', init);
+    };
   }
 
   /**
@@ -376,6 +382,9 @@ export class SoundManager {
    * Dispose of resources
    */
   public dispose(): void {
+    // A game disposed before any key or click must not open an AudioContext later.
+    this.removeInitListeners?.();
+    this.removeInitListeners = null;
     if (this.engineOsc) {
       this.engineOsc.stop();
       this.engineOsc.disconnect();

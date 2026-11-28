@@ -3,7 +3,10 @@
  * Nothing here runs unless the URL has debug=1.
  *
  *   __sr.seed                      seed of the shared RNG (set with ?seed=<n>)
- *   __sr.start('NOVICE', seed?)    skip the title screen; reseeds the RNG first
+ *   __sr.start('NOVICE', seed?)    skip the attract mode and start a mission; reseeds the RNG first
+ *   __sr.session()                 console mode (attract|mission|ending|debrief) and selected level
+ *   __sr.setIdle(loops)            set the idle timer (32768 loops ≈ 9.1 min returns to attract mode)
+ *   __sr.pause() / __sr.abort()    press P / abort the mission (as X in the pause menu does)
  *   __sr.state                     snapshot of the game state (null before a game starts)
  *   __sr.galaxy()                  all 16x8 sectors
  *   __sr.teleport({x, y}) / (x, y) jump to a sector at once (no hyperwarp, no energy cost)
@@ -60,6 +63,7 @@ import { getSeed, setSeed } from './rng';
 export interface DebugHost {
   getGame(): Game | null;
   startGame(difficulty: DifficultyLevel): void;
+  session(): { mode: string; level: string };
 }
 
 type Sector = { x: number; y: number } | [number, number];
@@ -83,6 +87,10 @@ export function installDebugHook(host: DebugHost): void {
       setSeed(seed);
       host.startGame(difficulty);
     },
+    session: () => host.session(),
+    setIdle: (loops: number) => api().setIdle(loops),
+    pause: () => api().pause(),
+    abort: () => api().abort(),
     galaxy: () => api().galaxy(),
     teleport(sector: Sector | number, y?: number) {
       const [sx, sy] =

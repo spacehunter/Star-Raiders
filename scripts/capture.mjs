@@ -7,13 +7,14 @@
  *                            [--query "stars=enhanced&crt=1"]   (extra URL parameters, e.g. settings)
  *                            [--sequence title-line]   (instead of the shots: numbered frames of a
  *                                                       timed sequence, e.g. for a GIF)
+ *                            [--touch 1]               (a touch-screen context: page.tap works)
  *
  * Starts its own Vite dev server (unless --url is given), opens the game headless with
  * ?debug=1&seed=<seed>, freezes the page clock (Date, performance.now, timers and
  * requestAnimationFrame) and drives the game only through window.__sr.step(), so the
  * same seed always gives the same pixels. Writes the standard shots:
  *
- *   01-title  02-front  02a-front-crosshair  02b-shields  02c-red-alert  03-aft  04-galactic-chart  04a-chart-surrounded
+ *   01-title (power-on attract)  01a-attract-select  02-front (1-4 + Enter)  02a-front-crosshair  02b-shields  02c-red-alert  03-aft  04-galactic-chart  04a-chart-surrounded
  *   04b-chart-surround-holding  04c-chart-starbase-destroyed  04d-chart-damage
  *   05-long-range-scan  05a-scan-target-ahead  06-attack-computer  06a-attack-lock  06b-starbase-t2  07-hyperwarp  07a-hyperspace
  *   07b-hyperwarp-arrival  08-docking  08a-docking-standby  08b-transfer-vessel  08c-transfer-complete
@@ -22,7 +23,8 @@
  *   11b-explosion  12-meteor  12a-meteor-shot  13-fighter  13a-cruiser  13b-basestar
  *   14-dc-photons  14a-dc-engines  14b-dc-shields  14c-dc-computer  14d-dc-scan-mirror  14e-dc-scan-destroyed
  *   14e2-dc-scan-no-computer  14f-dc-radio-frozen  14g-dc-radio-repaired  14h-chart-dc-colours  14i-repaired
- *   09-zero-energy (last: mission end)
+ *   15-pause  15a-whats-wrong
+ *   09-zero-energy (mission end)  09a-end-rank  09b-debrief  09c-attract-again  09d-idle-to-attract
  *
  * plus manifest.json with each file's SHA-256. Later phases reuse this script; add new
  * shots to SHOTS below rather than writing another harness.
@@ -36,7 +38,7 @@ import { chromium } from 'playwright';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function parseArgs(argv) {
-  const opts = { seed: 1979, difficulty: 'NOVICE', width: 1280, height: 800, out: null, url: null, query: '', sequence: null };
+  const opts = { seed: 1979, difficulty: 'NOVICE', width: 1280, height: 800, out: null, url: null, query: '', sequence: null, touch: '0' };
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i].replace(/^--/, '');
     if (!(key in opts)) throw new Error(`Unknown option --${key}`);
@@ -47,16 +49,30 @@ function parseArgs(argv) {
   return opts;
 }
 
+const LEVELS = ['NOVICE', 'PILOT', 'WARRIOR', 'COMMANDER'];
+
+/** Press a key as the browser would (keydown + keyup on window), inside the page. */
+const KEY_IN_PAGE = `window.__key = (code, key = code) => {
+  window.dispatchEvent(new KeyboardEvent('keydown', { code, key, bubbles: true }));
+  window.dispatchEvent(new KeyboardEvent('keyup', { code, key, bubbles: true }));
+};`;
+
 /** Each shot runs in page context order; state carries over from the previous shot. */
 const SHOTS = [
-  { name: '01-title', run: async () => {} },
+  // Phase 11 (MANUAL_SPEC §17.11): power-on is the attract mode — NOVICE MISSION over the demo flight.
+  { name: '01-title', run: async (sr) => sr(() => window.__sr.step(30)) },
   {
+    // SELECT (Tab) cycles to PILOT MISSION; the title goes on to STAR RAIDERS / COPYRIGHT ATARI 1979.
+    name: '01a-attract-select',
+    run: async (sr) => sr(() => { window.__key('Tab'); window.__sr.step(80); }),
+  },
+  {
+    // Keyboard only: 1-4 picks the level, Enter is START (with ?seed the mission replays from it).
     name: '02-front',
-    run: async (sr, o) => {
-      await sr((d) => {
-        window.__sr.start(d.difficulty, d.seed);
-        window.__sr.step(60);
-      }, o);
+    run: async (sr, o, page) => {
+      await page.keyboard.press(`Digit${LEVELS.indexOf(o.difficulty) + 1}`);
+      await page.keyboard.press('Enter');
+      await sr(() => window.__sr.step(60));
     },
   },
   // Phase 3 (MANUAL_SPEC §5.3, §17.6, §17.13): C shows the cross hairs; shields tint; red alert.
@@ -537,6 +553,24 @@ const SHOTS = [
       }),
   },
   {
+    // Phase 11 (MANUAL_SPEC §5.11, bend 7): P pauses; the pause menu shows the key help.
+    name: '15-pause',
+    run: async (sr, o, page) => {
+      await page.keyboard.press('p');
+      await sr(() => window.__sr.step(30)); // nothing moves while paused
+    },
+  },
+  {
+    // §17.11: any key goes on (P again here); an unknown key (Z) shows WHATS WRONG?.
+    name: '15a-whats-wrong',
+    run: async (sr, o, page) => {
+      await page.keyboard.press('p');
+      await sr(() => window.__sr.step(1));
+      await page.keyboard.press('z');
+      await sr(() => window.__sr.step(2));
+    },
+  },
+  {
     // Phase 1: energy really runs out and aborts the mission (MANUAL_SPEC §12, §17.1, §17.10).
     name: '09-zero-energy',
     run: async (sr) =>
@@ -552,13 +586,90 @@ const SHOTS = [
         window.__sr.step(400);
       }),
   },
+  {
+    // Phase 11 (§17.10): the end sequence on the title line reaches NEW RANK IS: / <rank>.
+    name: '09a-end-rank',
+    run: async (sr) =>
+      sr(() => {
+        const rank = window.__sr.state.rating?.rank;
+        for (let i = 0; i < 1200 && window.__sr.state.title !== rank; i++) window.__sr.step(1);
+        window.__sr.step(20);
+      }),
+  },
+  {
+    // Bend 6: after the end sequence, the debrief card with the score breakdown.
+    name: '09b-debrief',
+    run: async (sr) =>
+      sr(() => {
+        for (let i = 0; i < 1200 && window.__sr.session().mode !== 'debrief'; i++) window.__sr.step(1);
+        window.__sr.step(10);
+      }),
+  },
+  {
+    // Enter leaves the card: back to the attract mode.
+    name: '09c-attract-again',
+    run: async (sr, o, page) => {
+      await page.keyboard.press('Enter');
+      await sr(() => window.__sr.step(20));
+    },
+  },
+  {
+    // §3 / §17.11: START again, then 9.1 idle minutes (32768 loops) return to the attract mode.
+    name: '09d-idle-to-attract',
+    run: async (sr, o, page) => {
+      await page.keyboard.press('Enter');
+      await sr(() => {
+        window.__sr.step(30);
+        window.__sr.setIdle(32768 - 10);
+        window.__sr.step(20);
+      });
+    },
+  },
 ];
 
 /**
  * Timed sequences for --sequence <name>: `setup` runs once, then `frames` screenshots are taken
- * `every` game loops apart; `at[i]` runs just before frame i.
+ * `every` game loops apart; `at[i]` runs just before frame i (a page function, or `{ tap: selector }`
+ * to tap an on-screen button; needs --touch 1).
  */
 const SEQUENCES = {
+  // Phase 11 (MANUAL_SPEC §17.11): power-on attract mode; SELECT (Tab) twice, then 4 (COMMANDER).
+  attract: {
+    setup: () => window.__sr.step(1),
+    frames: 100,
+    every: 4,
+    at: {
+      45: () => window.__key('Tab'),
+      70: () => window.__key('Tab'),
+      85: () => window.__key('Digit1', '1'),
+    },
+    probe: () => window.__sr.session(),
+  },
+  // Phase 11 (§17.10, bend 6): every Zylon destroyed → MISSION COMPLETE end sequence → debrief → attract.
+  'end-sequence': {
+    setup: (d) => {
+      window.__sr.start(d.difficulty, d.seed);
+      window.__sr.step(30);
+      for (const g of window.__sr.galaxy()) {
+        if (!g.zylons) continue;
+        window.__sr.teleport(g);
+        window.__sr.killSector();
+        if (window.__sr.state.missionOutcome) break;
+      }
+    },
+    frames: 110,
+    every: 6,
+    at: { 100: () => window.__key('Enter') },
+    probe: () => ({ mode: window.__sr.session().mode, outcome: window.__sr.state.missionOutcome, rating: window.__sr.state.rating?.title ?? null }),
+  },
+  // Phase 11: the SELECT and START buttons by touch: tap SELECT twice (WARRIOR), then START.
+  'tap-start': {
+    setup: () => window.__sr.step(1),
+    frames: 12,
+    every: 5,
+    at: { 2: { tap: '.select-btn' }, 4: { tap: '.select-btn' }, 7: { tap: '.start-btn' } },
+    probe: () => ({ ...window.__sr.session(), difficulty: window.__sr.state.difficulty, phase: window.__sr.state.phase }),
+  },
   // Phase 10 (MANUAL_SPEC §13, §17.9): the full docking — approach at speed 2 in a starbase
   // sector, 0 once inside 512 KM, ORBIT ESTABLISHED, STANDBY, the transfer vessel, TRANSFER COMPLETE.
   docking: {
@@ -839,6 +950,7 @@ async function main() {
       args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--mute-audio', '--disable-gpu-rasterization'],
     });
     const context = await browser.newContext({
+      hasTouch: opts.touch === '1',
       viewport: { width: opts.width, height: opts.height },
       deviceScaleFactor: 1,
       reducedMotion: 'reduce',
@@ -859,6 +971,7 @@ async function main() {
     for (const [k, v] of new URLSearchParams(opts.query)) url.searchParams.set(k, v);
     await page.goto(url.toString(), { waitUntil: 'networkidle' });
     await page.waitForFunction(() => window.__sr !== undefined);
+    await page.evaluate(KEY_IN_PAGE);
     await page.evaluate(() => document.fonts.ready);
 
     const sr = (fn, arg) => page.evaluate(fn, arg);
@@ -872,7 +985,8 @@ async function main() {
       const titles = [];
       const probes = [];
       for (let i = 0; i < seq.frames; i++) {
-        if (seq.at[i]) await sr(seq.at[i]);
+        if (seq.at[i]?.tap) await page.tap(seq.at[i].tap);
+        else if (seq.at[i]) await sr(seq.at[i]);
         if (seq.each) await sr(seq.each);
         await sr(() => window.__sr.step(1));
         await page.screenshot({ path: join(dir, `${String(i).padStart(3, '0')}.png`), animations: 'disabled', caret: 'hide' });
@@ -891,7 +1005,7 @@ async function main() {
     const manifest = { seed: opts.seed, difficulty: opts.difficulty, viewport: [opts.width, opts.height], shots: {} };
 
     for (const shot of SHOTS) {
-      await shot.run(sr, { seed: opts.seed, difficulty: opts.difficulty });
+      await shot.run(sr, { seed: opts.seed, difficulty: opts.difficulty }, page);
       await page.evaluate(() => document.fonts.ready);
       const file = join(opts.out, `${shot.name}.png`);
       await page.screenshot({ path: file, animations: 'disabled', caret: 'hide' });
@@ -899,10 +1013,10 @@ async function main() {
       manifest.shots[shot.name] = hash;
       const st = await page.evaluate(() => {
         const s = window.__sr.state;
-        return s && { energy: s.energy, starDate: s.starDate, score: s.score, loops: s.loops, outcome: s.missionOutcome, rating: s.rating?.title ?? null, zylons: s.remainingEnemies, starbases: s.starbasesLeft, chartTitle: s.chartTitle, chartRenders: s.chartRenders };
+        return s && { session: window.__sr.session().mode, phase: s.phase, paused: s.paused, title: s.title, energy: s.energy, starDate: s.starDate, score: s.score, loops: s.loops, outcome: s.missionOutcome, rating: s.rating?.title ?? null, zylons: s.remainingEnemies, starbases: s.starbasesLeft, chartTitle: s.chartTitle, chartRenders: s.chartRenders };
       });
       if (st) (manifest.state ??= {})[shot.name] = st;
-      console.log(`${shot.name.padEnd(20)} ${hash.slice(0, 16)}${st ? `  E:${st.energy} STAR DATE:${st.starDate} score:${st.score}${st.rating ? ` ${st.outcome} -> ${st.rating}` : ''}` : ''}`);
+      console.log(`${shot.name.padEnd(20)} ${hash.slice(0, 16)}${st ? `  [${st.session}${st.paused ? ' paused' : ''}] "${st.title.trim()}" E:${st.energy} STAR DATE:${st.starDate} score:${st.score}${st.rating ? ` ${st.outcome} -> ${st.rating}` : ''}` : ''}`);
     }
 
     if (errors.length) {
