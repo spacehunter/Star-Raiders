@@ -8,11 +8,18 @@
  * by a new one at the far end of the view. Each star's colour comes from its distance and an
  * 8-loop counter, which makes the far ones twinkle.
  *
+ * In the Long-Range Scan (R: INITPOSVEC L9632) a new star gets a random x and z high byte
+ * (±65,535 KM) and is drawn on the z-x plane; off-screen ones are replaced the same way.
+ *
  * "Enhanced" (Part 4 bend 3) keeps the same rules with about 48 stars.
  */
 import type { RandomFn } from '../core/rng';
 import { moveInShipFrame, type Stick } from '../sim/motion';
 import { projectPoint, type Pixel, type SpaceView } from './projection';
+import { scanPixel, scanStarDistance } from './scan';
+
+/** The views with a starfield: Front, Aft and the Long-Range Scan's z-x plane (§10). */
+export type StarView = SpaceView | 'LRS';
 
 export const CLASSIC_STARS = 12;
 export const ENHANCED_STARS = 48;
@@ -72,18 +79,18 @@ export class Starfield {
 
   private readonly rng: RandomFn;
 
-  constructor(rng: RandomFn, count: number = CLASSIC_STARS, view: SpaceView = 'FRONT') {
+  constructor(rng: RandomFn, count: number = CLASSIC_STARS, view: StarView = 'FRONT') {
     this.rng = rng;
     this.setCount(count, view);
   }
 
   /** Change the number of stars (Classic 12 / Enhanced 48). */
-  setCount(count: number, view: SpaceView): void {
+  setCount(count: number, view: StarView): void {
     this.stars.length = Math.min(this.stars.length, count);
     while (this.stars.length < count) {
       const s: Star = { x: 0, y: 0, z: 0, pixel: null, color: 0 };
       this.respawn(s, view);
-      this.spread(s);
+      if (view !== 'LRS') this.spread(s);
       this.stars.push(s);
     }
   }
@@ -93,10 +100,16 @@ export class Starfield {
   }
 
   /** R: INITPOSVEC + RNDINVXY — a new star at the far end of the view. */
-  respawn(s: Star, view: SpaceView): void {
+  respawn(s: Star, view: StarView): void {
     const rndY = this.byte() & 0x0f;
     const rndX = this.byte() & 0x0f;
-    if (view === 'FRONT') {
+    if (view === 'LRS') {
+      // x and z high bytes RND($00..$FF), z sign random (negative z in two's complement).
+      s.x = this.byte() * 256 + this.byte();
+      s.y = rndY * 256 + this.byte();
+      const zHi = this.byte();
+      s.z = zHi & 1 ? zHi * 256 + this.byte() : zHi * 256 + this.byte() - 0x10000;
+    } else if (view === 'FRONT') {
       s.x = rndX * 256 + this.byte();
       s.y = rndY * 256 + this.byte();
       s.z = 0x0f00 + this.byte(); // +3840..+4095 KM
@@ -140,11 +153,11 @@ export class Starfield {
     return this.trails.length ? [...this.stars, ...this.trails] : this.stars;
   }
 
-  /** Respawn every star for a new view (front ↔ aft). */
-  resetFor(view: SpaceView): void {
+  /** Respawn every star for a new view (R: SETVIEW creates a new field of 12 stars). */
+  resetFor(view: StarView): void {
     for (const s of this.stars) {
       this.respawn(s, view);
-      this.spread(s);
+      if (view !== 'LRS') this.spread(s);
     }
   }
 
@@ -163,18 +176,19 @@ export class Starfield {
    * One game loop: rotate by the stick, move by `velocityKm` toward −z, project, replace the
    * stars that left the view and colour the rest.
    */
-  loop(stick: Stick, velocityKm: number, view: SpaceView, count8: number): void {
+  loop(stick: Stick, velocityKm: number, view: StarView, count8: number): void {
+    const project = (s: Star) => (view === 'LRS' ? scanPixel(s.x, s.z) : projectPoint(s.x, s.y, s.z, view));
     for (const s of this.all) {
       moveInShipFrame(s, stick, velocityKm);
       if (view === 'AFT' && s.z < AFT_FAR_LIMIT) this.respawn(s, view);
-      let px = projectPoint(s.x, s.y, s.z, view);
+      let px = project(s);
       // A few new spots can themselves fall just off screen (the ROM retries on the next loop).
       for (let tries = 0; !px && tries < 8; tries++) {
         this.respawn(s, view);
-        px = projectPoint(s.x, s.y, s.z, view);
+        px = project(s);
       }
       s.pixel = px;
-      s.color = px ? starColor(s.z, px.col, count8) : 0;
+      s.color = px ? starColor(view === 'LRS' ? scanStarDistance(s.z) : s.z, px.col, count8) : 0;
     }
   }
 }

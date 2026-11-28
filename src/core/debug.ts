@@ -27,7 +27,8 @@
  *   __sr.damage()                  each subsystem's state, its ROM bits (%00 OK, %10 damaged,
  *                                  %11 destroyed), report and beep counts, and the live effects
  *   __sr.repairAll()               repair all six subsystems (what docking does)
- *   __sr.scan()                    what the Long-Range Scan drew last: state, blips (KM), stars
+ *   __sr.scan()                    the Long-Range Scan of the last loop: state, shown, ship, blips
+ *                                  (KM as drawn, col/row, colour byte), star and pixel counts
  *   __sr.setKills(n)               set the K readout (Zylons destroyed)
  *   __sr.moveCursor(x, y)          put the chart's hyperwarp destination dot on a sector
  *   __sr.surround()                move existing Zylon groups next to the hunted starbase so

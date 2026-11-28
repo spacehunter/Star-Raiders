@@ -15,12 +15,12 @@
  *
  *   01-title  02-front  02a-front-crosshair  02b-shields  02c-red-alert  03-aft  04-galactic-chart  04a-chart-surrounded
  *   04b-chart-surround-holding  04c-chart-starbase-destroyed  04d-chart-damage
- *   05-long-range-scan  06-attack-computer  06a-attack-lock  06b-starbase-t2  07-hyperwarp  07a-hyperspace
+ *   05-long-range-scan  05a-scan-target-ahead  06-attack-computer  06a-attack-lock  06b-starbase-t2  07-hyperwarp  07a-hyperspace
  *   07b-hyperwarp-arrival  08-docking  10-panel-hud  10a-panel-tracking-c
  *   10b-panel-low-energy  10c-panel-shields-out  10d-panel-hyperspace  11-fighter-approach  11a-fighter-hit
  *   11b-explosion  12-meteor  12a-meteor-shot  13-fighter  13a-cruiser  13b-basestar
  *   14-dc-photons  14a-dc-engines  14b-dc-shields  14c-dc-computer  14d-dc-scan-mirror  14e-dc-scan-destroyed
- *   14f-dc-radio-frozen  14g-dc-radio-repaired  14h-chart-dc-colours  14i-repaired
+ *   14e2-dc-scan-no-computer  14f-dc-radio-frozen  14g-dc-radio-repaired  14h-chart-dc-colours  14i-repaired
  *   09-zero-energy (last: mission end)
  *
  * plus manifest.json with each file's SHA-256. Later phases reuse this script; add new
@@ -125,11 +125,39 @@ const SHOTS = [
       }),
   },
   {
+    // Phase 9 (MANUAL_SPEC §10): the manual's steps — select a target, steer left until it is
+    // straight ahead (above our ship), then it should be as far up the screen as it goes.
+    name: '05a-scan-target-ahead',
+    run: async (sr) =>
+      sr(() => {
+        const s = window.__sr.state;
+        const empty = window.__sr.galaxy().find((g) => !g.zylons && !g.starbase && (g.x !== s.sectorX || g.y !== s.sectorY));
+        window.__sr.teleport(empty);
+        window.__sr.setSpeed(0);
+        window.__sr.step(40);
+        window.__sr.spawn('fighter', 6000, -18000, 0); // ahead-left
+        window.__sr.stick(-1, 0);
+        for (let i = 0; i < 200; i++) {
+          const t = window.__sr.zylons().ships.find((z) => z.alive);
+          if (!t || (t.z > 0 && Math.abs(t.x) < 600)) break;
+          window.__sr.step(1);
+        }
+        window.__sr.stick(0, 0);
+        window.__sr.step(1);
+        window.__back = [s.sectorX, s.sectorY, s.targetEngineSpeed];
+      }),
+  },
+  {
     // Phase 6 (MANUAL_SPEC §5.3, §11, §17.6): the Attack Computer Display with the blip and the
     // A and B marks (x and y locked, not yet in range).
     name: '06-attack-computer',
     run: async (sr) =>
       sr(() => {
+        // Back to the Zylon sector of 05 (after the empty sector of 05a).
+        if (window.__back) {
+          window.__sr.teleport(window.__back[0], window.__back[1]);
+          window.__sr.setSpeed(window.__back[2]);
+        }
         window.__sr.setView('FRONT');
         window.__sr.spawn('fighter', 5000, 300, 200); // KM ahead: A and B, too far for C
         window.__sr.step(1);
@@ -375,6 +403,7 @@ const SHOTS = [
     run: async (sr) =>
       sr(() => {
         window.__sr.repairAll();
+        window.__sr.setShields(false); // the scan's black field (shields tint it $A0 as in front)
         if (window.__sr.state.attackComputerOn) window.__sr.press('COMPUTER');
         const s = window.__sr.state;
         window.__sr.teleport(s.sectorX, s.sectorY);
@@ -394,6 +423,16 @@ const SHOTS = [
       sr(() => {
         window.__sr.damageReport('sectorScan', 'destroyed');
         for (let i = 0; i < 200 && !/SECTOR SCAN/.test(window.__sr.state.title); i++) window.__sr.step(1);
+      }),
+  },
+  {
+    // Phase 9 (§17.3; R: DRAWLINES): sector scan OK, computer destroyed: the objects without our ship.
+    name: '14e2-dc-scan-no-computer',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.setDamage('sectorScan', 'ok');
+        window.__sr.setDamage('computer', 'destroyed');
+        window.__sr.step(2);
       }),
   },
   {
@@ -540,6 +579,37 @@ SEQUENCES['scan-mirror'] = {
   every: 1,
   at: {},
   probe: () => window.__sr.scan(),
+};
+
+// Phase 9 (MANUAL_SPEC §10): the manual's scan procedure. A target off to the left; stick left
+// swings the whole picture round our ship until the target is straight ahead, then the engines
+// close in on it.
+SEQUENCES['scan-steer'] = {
+  setup: (d) => {
+    window.__sr.start(d.difficulty, d.seed);
+    window.__sr.step(10);
+    const s = window.__sr.state;
+    const empty = window.__sr.galaxy().find((g) => !g.zylons && !g.starbase && (g.x !== s.sectorX || g.y !== s.sectorY));
+    window.__sr.teleport(empty);
+    window.__sr.setSpeed(0);
+    window.__sr.step(40);
+    window.__sr.spawn('cruiser', 4000, -24000, 0);
+    window.__sr.setView('LONG_RANGE_SCAN');
+    window.__sr.step(1);
+  },
+  frames: 60,
+  every: 2,
+  at: {
+    0: () => window.__sr.stick(-1, 0),
+  },
+  each: () => {
+    const t = window.__sr.zylons().ships.find((z) => z.alive);
+    if (window.__sr.state.stick.x && t && t.z > 0 && Math.abs(t.x) < 600) {
+      window.__sr.stick(0, 0);
+      window.__sr.setSpeed(9);
+    }
+  },
+  probe: () => window.__sr.scan().blips.map((b) => [b.col, b.row]),
 };
 
 // Phase 6 (MANUAL_SPEC §11, §17.6): a fighter closes in, the marks go A, B, C, the locked salvo

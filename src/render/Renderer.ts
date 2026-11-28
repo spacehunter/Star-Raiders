@@ -24,6 +24,7 @@ import { PLAYFIELD_H, PLAYFIELD_W, projectPoint, type SpaceView } from './projec
 import { starColor, type Star } from './starfield';
 import { random } from '../core/rng';
 import { ATTACK_COMPUTER_LINES, BLIP_SHAPE, LOCK_MARKS, type AttackDisplay } from '../sim/attackComputer';
+import { SCAN_HEADER, type ScanPicture } from './scan';
 import { placeSprite, SHAPE, shapeColor, STARBASE_WING_DROP, STARBASE_WING_OFFSET, type ShapeType, type SpritePlacement } from './sprites';
 
 export const FRAME_W = PLAYFIELD_W;
@@ -128,6 +129,19 @@ export interface SpaceFrame {
   hitFlash: number;
   /** Text on the front view's title line, or empty. (The aft view always shows AFT VIEW.) */
   title: string;
+  panel: PanelData;
+}
+
+/**
+ * What the renderer draws for the Long-Range Scan (§10, §17.3): the picture from buildScan,
+ * the background state and the panel. No title-line messages, cross hairs or attack computer:
+ * the ROM's LRS display list has only the header and the playfield (R: DLSTFRAGLRS).
+ */
+export interface ScanFrame {
+  picture: ScanPicture;
+  shields: boolean;
+  redAlertLife: number;
+  hitFlash: number;
   panel: PanelData;
 }
 
@@ -270,6 +284,12 @@ export class Renderer {
     this.present();
   }
 
+  /** Draw one Long-Range Scan frame. */
+  renderScan(f: ScanFrame): void {
+    this.drawScan(f);
+    this.present();
+  }
+
   private rect(col: number, line: number, w: number, h: number, color: string): void {
     this.fctx.fillStyle = color;
     this.fctx.fillRect(col, line, w, h);
@@ -326,6 +346,24 @@ export class Renderer {
     const objs = [...f.objects].sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
     for (const o of objs) for (const s of objectSprites(o, f.view, f.count256, this.rng)) this.drawSprite(s);
 
+    this.drawPanel(f.panel);
+  }
+
+  private drawScan(f: ScanFrame): void {
+    const { bg: baseBg, pf2 } = backgroundColors(f);
+    const bg = f.hitFlash > 0 ? atariColor(Math.floor(this.rng() * 256) & 0xf6) : baseBg;
+    this.rect(0, 0, FRAME_W, PANEL_TOP, bg);
+    const rgb = { 1: STAR_RGB[1], 2: STAR_RGB[2], 3: pf2 } as const;
+    for (const [c, r, reg] of f.picture.pixels) this.pf(c, r, 1, 1, rgb[reg]);
+    // The header line (same display list as the Aft view's).
+    const zone = TITLE_ZONE.AFT;
+    this.rect(0, zone.firstRow, FRAME_W, zone.rows, bg);
+    this.fctx.fillStyle = pf2;
+    drawText((x, y, w, h) => this.fctx.fillRect(x, y, w, h), SCAN_HEADER.slice(0, TEXT_COLUMNS), 0, zone.textLine, 1);
+    // Blips are PLAYERs: over the playfield and the header.
+    for (const b of f.picture.blips) {
+      this.drawSprite({ type: SHAPE.PHOTON, range: 13, cell: 6, col: b.col, line: b.line, rows: b.rows, color: b.color });
+    }
     this.drawPanel(f.panel);
   }
 
