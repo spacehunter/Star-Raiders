@@ -22,6 +22,10 @@
  *                                  status ok|damaged|destroyed (DC letters, radio freeze)
  *   __sr.damageReport(sys, status) damage a subsystem as a hit does: DAMAGE CONTROL on the title
  *                                  line, then the queued subsystem phrase (repeats until docking)
+ *   __sr.damage()                  each subsystem's state, its ROM bits (%00 OK, %10 damaged,
+ *                                  %11 destroyed), report and beep counts, and the live effects
+ *   __sr.repairAll()               repair all six subsystems (what docking does)
+ *   __sr.scan()                    what the Long-Range Scan drew last: state, blips (KM), stars
  *   __sr.setKills(n)               set the K readout (Zylons destroyed)
  *   __sr.moveCursor(x, y)          put the chart's hyperwarp destination dot on a sector
  *   __sr.surround()                move existing Zylon groups next to the hunted starbase so
@@ -89,6 +93,9 @@ export function installDebugHook(host: DebugHost): void {
     setShields: (on: boolean) => api().setShields(on),
     setDamage: (system: Subsystem, status: SubsystemStatus) => api().setDamage(system, status),
     damageReport: (system: Subsystem, status: 'damaged' | 'destroyed') => api().damageReport(system, status),
+    damage: () => api().damage(),
+    repairAll: () => api().repairAll(),
+    scan: () => api().scan(),
     setKills: (n: number) => api().setKills(n),
     moveCursor: (x: number, y: number) => api().moveCursor(x, y),
     surround: () => api().surround(),

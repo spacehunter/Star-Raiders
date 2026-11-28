@@ -1,5 +1,6 @@
 import { GameState } from '../game/GameState';
-import { random } from '../core/rng';
+import { createRng, getSeed, random } from '../core/rng';
+import { scanState, scanZ, type ScanState } from '../sim/damage';
 
 /**
  * LongRangeScan - Tactical view of current sector showing object positions
@@ -14,6 +15,13 @@ export class LongRangeScan {
   private getBlips: () => Array<{ x: number; z: number; kind: 'enemy' | 'starbase' }>;
 
   private isVisible: boolean = false;
+  /** The scan's own POKEY stream for the damaged mirror (never shifts the game's sequence). */
+  private readonly mirrorRng = createRng(getSeed() ^ 0x15c4);
+  private drawn: { scan: ScanState; blips: Array<{ x: number; z: number; kind: string }>; stars: number } = {
+    scan: { objects: true, mirrored: false, ship: true },
+    blips: [],
+    stars: 0,
+  };
   private animationId: number | null = null;
   private lastTime: number = 0;
 
@@ -246,10 +254,7 @@ export class LongRangeScan {
    * Show the scan
    */
   public show(): void {
-    if (this.gameState.damage.sectorScan !== 'ok') {
-      return; // Can't use if damaged
-    }
-
+    // Damaged or destroyed, the scan still opens: it shows mirror images or nothing (§7, §17.3).
     this.isVisible = true;
     this.scanElement.style.display = 'flex';
     // this.generateObjectPositions(); // Deprecated
@@ -363,10 +368,17 @@ export class LongRangeScan {
     const cos = Math.cos(rotationRad);
     const sin = Math.sin(rotationRad);
 
+    // §17.3: damaged → each object lands above or below at random (mirror); destroyed → only our
+    // ship; a destroyed computer hides even our ship (R: DRAWLINES). Phase 9 redraws the scan.
+    const scan = scanState(this.gameState.damage.sectorScan, this.gameState.damage.computer);
+    const byte = () => Math.floor(this.mirrorRng() * 256);
+    this.drawn = { scan, blips: [], stars: 0 };
+
     // Player Sprite is Fixed Up (Heads-Up Display)
     const playerSprite = this.scanElement.querySelector('.scan-player-sprite') as HTMLElement;
     if (playerSprite) {
       playerSprite.style.transform = `translate(-50%, -50%) scale(1.5)`;
+      playerSprite.style.display = scan.ship ? '' : 'none';
     }
 
     // Update Objects (Read from Real World)
@@ -400,10 +412,12 @@ export class LongRangeScan {
       // 1. Update Stars (already in DOM, just move them)
       const starElements = this.scanElement.querySelectorAll('.scan-star');
       this.stars.forEach((star, index) => {
-        const result = renderObj(star.x * (RANGE / 500), star.y * (RANGE / 500), 'star'); // stars live in ±500
+        const sz = scanZ(scan, star.y * (RANGE / 500), byte);
+        const result = renderObj(star.x * (RANGE / 500), sz ?? 0, 'star'); // stars live in ±500
         const el = starElements[index] as HTMLElement;
         if (el) {
-          if (result.visible) {
+          if (sz !== null && result.visible) {
+            this.drawn.stars++;
             el.style.left = `${result.px * 100}%`;
             el.style.top = `${result.py * 100}%`;
             el.style.opacity = star.brightness.toString();
@@ -426,8 +440,18 @@ export class LongRangeScan {
         }
       };
 
-      for (const b of this.getBlips()) createBlip(b.x, -b.z, b.kind);
+      for (const b of this.getBlips()) {
+        const z = scanZ(scan, b.z, byte);
+        if (z === null) continue;
+        this.drawn.blips.push({ x: b.x, z, kind: b.kind });
+        createBlip(b.x, -z, b.kind);
+      }
     }
+  }
+
+  /** What the last update drew (debug hook): the scan state, the blips (KM) and the star count. */
+  public lastDrawn(): { scan: ScanState; blips: Array<{ x: number; z: number; kind: string }>; stars: number } {
+    return { scan: { ...this.drawn.scan }, blips: this.drawn.blips.map((b) => ({ ...b })), stars: this.drawn.stars };
   }
 
   /**
