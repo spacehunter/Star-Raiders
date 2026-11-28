@@ -5,7 +5,6 @@ import { SoundManager } from '../audio/SoundManager';
 import { Starbase } from '../entities/Starbase';
 import { ControlPanel, type TrackedPosition } from '../ui/ControlPanel';
 import { GalacticChart } from '../views/GalacticChart';
-import { LongRangeScan } from '../views/LongRangeScan';
 import { createRng, getSeed, random } from '../core/rng';
 import { Vec3 } from '../core/vec3';
 import { getSettings, onSettingsChange, updateSettings, type Settings } from '../core/settings';
@@ -22,9 +21,10 @@ import { DamageControl, STATUS_BITS, computerFunctions, computerReadoutsLive, en
 import { MSG, PHRASE, endOfMissionPhrase } from '../rules/messages';
 import { Galaxy, RadioFeed, GALAXY_COLUMNS, GALAXY_ROWS, type GalaxyEvent, type SectorPos } from '../sim/galaxy';
 import { Renderer, type SpaceFrame, type SpaceObject } from '../render/Renderer';
+import { buildScan, type ScanObject, type ScanPicture } from '../render/scan';
 import { resolveShipHit, VICINITY_MASK_TABLE, ZylonSim, type SimView, type ZylonEvent, type ZylonType } from '../sim/zylons';
 import { AttackComputer, trackingView, type AttackDisplay, type TrackedObject } from '../sim/attackComputer';
-import { CLASSIC_STARS, ENHANCED_STARS, Starfield } from '../render/starfield';
+import { CLASSIC_STARS, ENHANCED_STARS, Starfield, type StarView } from '../render/starfield';
 import type { SpaceView } from '../render/projection';
 
 export type DebugSpawnType = ZylonType | 'starbase';
@@ -110,7 +110,13 @@ export class Game {
   // UI
   private controlPanel: ControlPanel;
   private galacticChart: GalacticChart;
-  private longRangeScan: LongRangeScan;
+  /**
+   * The Long-Range Scan picture of the last game loop (render/scan.ts, §10, §17.3), or null
+   * outside the scan. Its own POKEY stream drives the damaged mirror and the blip colours, so
+   * the scan never shifts the game's random sequence.
+   */
+  private scanPicture: ScanPicture | null = null;
+  private readonly scanRng = createRng(getSeed() ^ 0x15c4);
 
   // Space objects
   private currentStarbase: Starbase | null = null;
@@ -159,7 +165,7 @@ export class Game {
     this.starfield = new Starfield(createRng(getSeed() ^ 0x5a17), this.starCount(settings), 'FRONT');
     this.unsubscribeSettings = onSettingsChange((s) => {
       this.renderer.setCrt(s.crt);
-      this.starfield.setCount(this.starCount(s), this.spaceView());
+      this.starfield.setCount(this.starCount(s), this.starView());
     });
 
     this.gameLoop = new GameLoop();
@@ -192,7 +198,6 @@ export class Game {
       },
     });
     this.galacticChart = new GalacticChart(container);
-    this.longRangeScan = new LongRangeScan(container, this.gameState, () => this.scanBlips());
 
     // §17.1: a game starts at speed key 6.
     this.shipVelocity = VELOCITY_TAB[this.gameState.targetEngineSpeed];
@@ -220,6 +225,11 @@ export class Game {
   /** The view whose space the stars belong to (the chart and scan keep the front field). */
   private spaceView(): SpaceView {
     return this.gameState.currentView === ViewMode.AFT ? 'AFT' : 'FRONT';
+  }
+
+  /** The starfield's view: the scan has its own z-x field (R: SETVIEW, INITPOSVEC). */
+  private starView(): StarView {
+    return this.gameState.currentView === ViewMode.LONG_RANGE_SCAN ? 'LRS' : this.spaceView();
   }
 
   /**
@@ -289,7 +299,6 @@ export class Game {
     this.gameState.isUnderAttack = this.zylons.torpedoFlying;
 
     this.renderChart();
-    this.longRangeScan.update();
 
     this.checkGameState();
   };
@@ -345,7 +354,7 @@ export class Game {
     if (this.currentStarbase) moveInShipFrame(this.currentStarbase.getObject().position, turn, dzUnits);
     this.wrapSectorObjects();
 
-    this.starfield.loop(turn, flyVelocity, this.spaceView(), this.clock.loops & 7);
+    this.starfield.loop(turn, flyVelocity, this.starView(), this.clock.loops & 7);
 
     // Zylons, torpedoes, meteors and explosions (R: GAMELOOP steps 8–12, 21, 23, 25–27).
     const { sectorX: sx, sectorY: sy } = this.gameState;
@@ -376,6 +385,9 @@ export class Game {
 
     if (this.redAlertLife > 0) this.redAlertLife--;
     if (this.hitFlash > 0) this.hitFlash--;
+
+    // GAMELOOP steps 14–15: the scan's pixels and blips for this loop.
+    this.scanPicture = view === ViewMode.LONG_RANGE_SCAN ? this.buildScanPicture() : null;
   }
 
   /** The attack computer is switched on (C) and not destroyed (§5.3, §17.3). */
@@ -491,17 +503,40 @@ export class Game {
     this.energy.hit(); // −100 (§12.1, §17.1)
   }
 
-  /** Long-range scan blips in KM: Zylon ships, the meteor and the starbase (Phase 9 redraws the scan). */
-  private scanBlips(): Array<{ x: number; z: number; kind: 'enemy' | 'starbase' }> {
-    const out: Array<{ x: number; z: number; kind: 'enemy' | 'starbase' }> = [];
-    for (const s of this.zylons.ships) if (s.alive) out.push({ x: s.x, z: s.z, kind: 'enemy' });
-    const m = this.zylons.pl2;
-    if (m.kind === 'meteor' && m.life > 0) out.push({ x: m.x, z: m.z, kind: 'enemy' });
+  /**
+   * Every live PLAYER on the Long-Range Scan, ship frame in KM (R step 15 draws all of them as
+   * blips): Zylon ships, the meteor or Zylon torpedo, photons, the starbase, the warp marker.
+   */
+  private scanObjects(): ScanObject[] {
+    const out: ScanObject[] = [];
+    const z = this.zylons;
+    for (const s of z.ships) if (s.alive) out.push({ kind: s.type, x: s.x, z: s.z });
+    if (z.pl2.life > 0) out.push({ kind: z.pl2.kind === 'meteor' ? 'meteor' : 'zylonTorpedo', x: z.pl2.x, z: z.pl2.z });
+    for (const p of z.photons) if (p.life > 0) out.push({ kind: 'photon', x: p.x, z: p.z });
     if (this.currentStarbase) {
       const p = this.currentStarbase.getObject().position;
-      out.push({ x: p.x * KM_PER_UNIT, z: p.z * KM_PER_UNIT, kind: 'starbase' });
+      out.push({ kind: 'starbase', x: p.x * KM_PER_UNIT, z: p.z * KM_PER_UNIT });
     }
+    const warp = this.hyperwarp;
+    if (warp.markerShown) out.push({ kind: 'warpMarker', x: warp.marker.x, z: warp.marker.z });
     return out;
+  }
+
+  /** One loop of the Long-Range Scan (render/scan.ts; §10, §17.3, §17.13). */
+  private buildScanPicture(): ScanPicture {
+    const d = this.gameState.damage;
+    const byte = () => Math.floor(this.scanRng() * 256);
+    return buildScan(
+      {
+        scan: scanState(d.sectorScan, d.computer),
+        stars: this.hyperwarp.phase === 'hyperspace' ? [] : this.starfield.all,
+        fragments: this.zylons.explosion?.fragments ?? [],
+        objects: this.scanObjects(),
+        count8: this.clock.loops & 7,
+      },
+      byte,
+      byte
+    );
   }
 
   /** Keep the starbase inside the sector (±500 units, toroidal in x and z; Phase 10 rebuilds it). */
@@ -646,7 +681,6 @@ export class Game {
   private triggerGameOver(): void {
     this.hasTriggeredGameOver = true;
     this.galacticChart.hide();
-    this.longRangeScan.hide();
     this.gameLoop.stop();
     this.render();
 
@@ -823,10 +857,9 @@ export class Game {
    */
   private switchView(view: ViewMode): void {
     if (this.gameState.currentView === view) return;
-    const before = this.spaceView();
+    const before = this.starView();
 
     this.galacticChart.hide();
-    this.longRangeScan.hide();
     this.gameState.currentView = view;
     this.attackComputer.reset(); // R: SETVIEW → UPDSCREEN clears the playfield and the lock
 
@@ -834,10 +867,10 @@ export class Game {
       this.galacticChart.show();
       this.renderChart();
     }
-    if (view === ViewMode.LONG_RANGE_SCAN) this.longRangeScan.show();
 
-    // Front ↔ aft: a fresh field for the new direction (R: offscreen stars get new positions).
-    if (this.spaceView() !== before) this.starfield.resetFor(this.spaceView());
+    // Front ↔ aft ↔ scan: a fresh field for the new view (R: SETVIEW → INITPOSVEC).
+    if (this.starView() !== before) this.starfield.resetFor(this.starView());
+    this.scanPicture = null;
   }
 
   /**
@@ -1056,7 +1089,18 @@ export class Game {
         };
       },
       repairAll: () => this.repairAll(),
-      scan: () => this.longRangeScan.lastDrawn(),
+      scan: () => {
+        const d = this.gameState.damage;
+        const p = this.scanPicture;
+        return {
+          scan: scanState(d.sectorScan, d.computer),
+          shown: p !== null,
+          ship: p?.ship ?? false,
+          blips: p?.blips.map((b) => ({ kind: b.kind, x: b.x, z: b.z, col: b.col + 3, row: b.line / 2 + 1, color: b.color })) ?? [],
+          stars: p?.stars ?? 0,
+          pixels: p?.pixels.length ?? 0,
+        };
+      },
       setKills: (n: number) => {
         this.gameState.enemiesDestroyed = Math.max(0, Math.floor(n));
       },
@@ -1151,9 +1195,20 @@ export class Game {
   }
 
   /**
-   * Render the Front/Aft views (the chart and scan draw themselves over the screen).
+   * Render the Front/Aft views or the Long-Range Scan (the chart draws itself over the screen).
    */
   private render = (): void => {
+    if (this.gameState.currentView === ViewMode.LONG_RANGE_SCAN) {
+      this.scanPicture ??= this.buildScanPicture();
+      this.renderer.renderScan({
+        picture: this.scanPicture,
+        shields: this.controlPanel.colors.shieldsUp,
+        redAlertLife: this.redAlertLife,
+        hitFlash: this.hitFlash,
+        panel: this.panelData(),
+      });
+      return;
+    }
     this.renderer.render(this.spaceFrame());
   };
 
@@ -1166,7 +1221,6 @@ export class Game {
     this.input.dispose();
     this.controlPanel.dispose();
     this.galacticChart.dispose();
-    this.longRangeScan.dispose();
     this.renderer.dispose();
     this.zylons.clear();
     this.currentStarbase = null;
