@@ -15,7 +15,8 @@
  *
  *   01-title  02-front  02a-front-crosshair  02b-shields  02c-red-alert  03-aft  04-galactic-chart  04a-chart-surrounded
  *   04b-chart-surround-holding  04c-chart-starbase-destroyed  04d-chart-damage
- *   05-long-range-scan  06-attack-computer  06a-attack-lock  06b-starbase-t2  07-hyperwarp  08-docking  10-panel-hud  10a-panel-tracking-c
+ *   05-long-range-scan  06-attack-computer  06a-attack-lock  06b-starbase-t2  07-hyperwarp  07a-hyperspace
+ *   07b-hyperwarp-arrival  08-docking  10-panel-hud  10a-panel-tracking-c
  *   10b-panel-low-energy  10c-panel-shields-out  10d-panel-hyperspace  11-fighter-approach  11a-fighter-hit
  *   11b-explosion  12-meteor  12a-meteor-shot  13-fighter  13a-cruiser  13b-basestar
  *   14-dc-photons  14a-dc-engines  14b-dc-shields  14c-dc-computer  14d-dc-scan-mirror  14e-dc-scan-destroyed
@@ -157,20 +158,38 @@ const SHOTS = [
         window.__sr.step(12);
       }),
   },
+  // Phase 8 (MANUAL_SPEC §9, §17.5): H in the front view; the marker between the cross hairs and
+  // the star trails (velocity ≥ 128), then HYPERSPACE (no stars, V ∞), then the arrival.
   {
     name: '07-hyperwarp',
     run: async (sr) =>
       sr(() => {
         const s = window.__sr.state;
         window.__sr.hyperwarp((s.sectorX + 3) % 16, s.sectorY);
-        window.__sr.step(120);
+        window.__sr.step(150); // velocity 162: star trails
+      }),
+  },
+  {
+    name: '07a-hyperspace',
+    run: async (sr) =>
+      sr(() => {
+        for (let i = 0; i < 400 && window.__sr.warp().phase !== 'hyperspace'; i++) window.__sr.step(1);
+        window.__sr.step(4);
+      }),
+  },
+  {
+    name: '07b-hyperwarp-arrival',
+    run: async (sr) =>
+      sr(() => {
+        for (let i = 0; i < 400 && window.__sr.warp().phase !== 'off'; i++) window.__sr.step(1);
+        window.__sr.step(20); // HYPERWARP COMPLETE (or RED ALERT), slowing down
       }),
   },
   {
     name: '08-docking',
     run: async (sr) =>
       sr(() => {
-        window.__sr.step(300); // let the hyperwarp finish
+        window.__sr.step(1);
         if (window.__sr.state.attackComputerOn) window.__sr.press('COMPUTER'); // no display over the docking shot
         window.__sr.step(1);
         window.__sr.dock();
@@ -225,7 +244,8 @@ const SHOTS = [
         window.__sr.step(2);
         const s = window.__sr.state;
         window.__sr.hyperwarp((s.sectorX + 2) % 16, s.sectorY);
-        window.__sr.step(160); // past the placeholder warp's midpoint: V ∞, HYPERSPACE
+        for (let i = 0; i < 400 && window.__sr.warp().phase !== 'hyperspace'; i++) window.__sr.step(1);
+        window.__sr.step(3); // V ∞, HYPERSPACE
       }),
   },
   // Phase 5 (MANUAL_SPEC §16, §17.7, §17.8, §18.3): a fighter's H approaches, is shot and explodes;
@@ -234,7 +254,7 @@ const SHOTS = [
     name: '11-fighter-approach',
     run: async (sr) =>
       sr(() => {
-        window.__sr.step(200); // let the hyperwarp finish
+        for (let i = 0; i < 400 && window.__sr.warp().phase !== 'off'; i++) window.__sr.step(1); // let the hyperwarp finish
         const s = window.__sr.state;
         const empty = window.__sr.galaxy().find((g) => !g.zylons && !g.starbase && (g.x !== s.sectorX || g.y !== s.sectorY));
         window.__sr.teleport(empty);
@@ -581,6 +601,59 @@ SEQUENCES['tracking-aft'] = {
   every: 2,
   at: {},
   probe: () => ({ view: window.__sr.state.currentView, ...window.__sr.attack() }),
+};
+
+// Phase 8 (MANUAL_SPEC §9, §17.5): a full hyperwarp, flown by a scripted pilot that keeps the
+// target marker on PM column window.__pilotCol (125 = centred) and its row centred. Run with
+// --difficulty PILOT to have the marker drift. The last frames show the Galactic Chart.
+function warpPilot() {
+  const w = window.__sr.warp();
+  if (w.phase !== 'accel') {
+    window.__sr.stick(0, 0);
+    return;
+  }
+  const m = w.marker;
+  const tc = window.__pilotCol;
+  window.__sr.stick(m.col < tc ? -1 : m.col > tc ? 1 : 0, m.row < 118 ? 1 : m.row > 120 ? -1 : 0);
+}
+const warpProbe = () => {
+  const s = window.__sr.state;
+  const w = window.__sr.warp();
+  return { phase: w.phase, sector: [s.sectorX, s.sectorY], chosen: w.chosen, arrival: w.arrival, marker: [w.marker.col, w.marker.row], velocity: s.shipVelocity, v: s.panel.v, energy: s.energy, charges: w.charges, trailStars: w.trailStars, redAlert: s.redAlertLife };
+};
+const WARP_FRAMES = 140;
+const WARP_EVERY = 4;
+SEQUENCES['hyperwarp'] = {
+  // Dot on a Zylon sector three columns over, F, H: lands there (RED ALERT).
+  setup: (d) => {
+    window.__sr.start(d.difficulty, d.seed);
+    window.__sr.step(30);
+    const s = window.__sr.state;
+    const g = window.__sr.galaxy();
+    const target = g.find((t) => t.zylons > 0 && t.y === s.sectorY && Math.abs(t.x - s.sectorX) >= 2) ?? { x: (s.sectorX + 3) % 16, y: s.sectorY };
+    window.__pilotCol = 125;
+    window.__sr.hyperwarp(target.x, target.y);
+  },
+  frames: WARP_FRAMES,
+  every: WARP_EVERY,
+  at: { [WARP_FRAMES - 4]: () => window.__sr.setView('GALACTIC_CHART') },
+  each: warpPilot,
+  probe: warpProbe,
+};
+SEQUENCES['hyperwarp-right'] = {
+  // M §IX: H without the chart (the dot on our own sector), marker pushed to the right cross hair.
+  setup: (d) => {
+    window.__sr.start(d.difficulty, d.seed);
+    window.__sr.step(30);
+    const s = window.__sr.state;
+    window.__pilotCol = 125 + 8;
+    window.__sr.hyperwarp(s.sectorX, s.sectorY);
+  },
+  frames: WARP_FRAMES,
+  every: WARP_EVERY,
+  at: { [WARP_FRAMES - 4]: () => window.__sr.setView('GALACTIC_CHART') },
+  each: warpPilot,
+  probe: warpProbe,
 };
 
 async function startServer() {

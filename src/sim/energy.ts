@@ -4,8 +4,8 @@
  * - Every loop adds the drains (shields 8, computer 2, life support 1, engine rate) in 1/256
  *   units to a counter; each carry costs one unit. The ROM rates are scaled by 64/LOOP_HZ so
  *   the player gets the manual's per-second figures (see rules/energy.ts).
- * - Lump costs: photon 10, hit 100, hyperwarp abort 100, hyperspace 10 per loop for
- *   WARPENERGY - 1 loops.
+ * - Lump costs: photon 10, hit 100, hyperwarp abort 100, hyperspace 10 per loop (sim/hyperwarp.ts
+ *   charges WARPENERGY − 1 of them).
  * - Taking 1 or 10 units across a 100-unit boundary costs one point of score (the ROM's
  *   "energy used / 100"); 100-unit lumps never do, as in DECENERGY.
  * - Taking energy below zero ends the mission: energy shows 0 and `zeroEnergy` is set
@@ -74,24 +74,19 @@ export class EnergySim {
   private readonly host: EnergyHost;
   private readonly callbacks: EnergyCallbacks;
   private counter = 0;
-  private hyperspaceLoops = 0;
 
   constructor(host: EnergyHost, callbacks: EnergyCallbacks = {}) {
     this.host = host;
     this.callbacks = callbacks;
   }
 
-  /** Run one loop's continuous drains and hyperspace drain. */
+  /** Run one loop's continuous drains. */
   public loop(load: EnergyLoad): void {
     if (this.zeroEnergy) return;
     this.counter += loopDrainSubunits(load) * MANUAL_LOOPS_PER_SECOND;
     while (this.counter >= COUNTER_PER_UNIT && !this.zeroEnergy) {
       this.counter -= COUNTER_PER_UNIT;
       this.take(1);
-    }
-    if (this.hyperspaceLoops > 0 && !this.zeroEnergy) {
-      this.hyperspaceLoops--;
-      this.take(COST.hyperspacePerLoop);
     }
   }
 
@@ -105,20 +100,14 @@ export class EnergySim {
     this.take(COST.hit);
   }
 
-  /** Hyperwarp aborted with a 0–9 key: −100; any hyperspace drain left is cancelled. */
+  /** Hyperwarp aborted with a 0–9 key: −100 (R: ABORTWARP). */
   public abortHyperwarp(): void {
-    this.hyperspaceLoops = 0;
     this.take(COST.hyperwarpAbort);
   }
 
-  /** Enter hyperspace with WARPENERGY from CALCWARP: −10 per loop for WARPENERGY − 1 loops. */
-  public beginHyperspace(warpEnergy: number): void {
-    this.hyperspaceLoops = Math.max(0, warpEnergy - 1);
-  }
-
-  /** Loops of hyperspace drain still to come. */
-  public get hyperspaceLoopsLeft(): number {
-    return this.hyperspaceLoops;
+  /** One hyperspace loop: −10 (R: HYPERWARP "DEC WARPENERGY", DECENERGY). */
+  public hyperspaceLoop(): void {
+    this.take(COST.hyperspacePerLoop);
   }
 
   /** TRANSFER COMPLETE: energy back to 9999. */
@@ -149,7 +138,6 @@ export class EnergySim {
     if (after < 0) {
       this.host.energy = 0;
       this.zeroEnergy = true;
-      this.hyperspaceLoops = 0;
       this.callbacks.onZeroEnergy?.();
       return false;
     }

@@ -37,7 +37,6 @@ export class ControlPanel {
   private phi = '+00';
   private range = '+000';
   private trackDigit = 0;
-  private warpMarker: { dx: number; dy: number } | null = null;
 
   private readonly gameState: GameState;
 
@@ -75,19 +74,6 @@ export class ControlPanel {
   /** The target digit after T:/C: (0/1 Zylon, 2 starbase, 3 hyperwarp marker; Phase 6 and 8). */
   public setTrackDigit(digit: number): void {
     this.trackDigit = Math.max(0, Math.min(3, Math.floor(digit)));
-  }
-
-  public setHyperwarpMarkerVisible(visible: boolean): void {
-    this.warpMarker = visible ? (this.warpMarker ?? { dx: 0, dy: 0 }) : null;
-  }
-
-  /** Marker offset from the playfield centre, in playfield pixels. */
-  public updateHyperwarpMarker(dx: number, dy: number): void {
-    if (this.warpMarker) this.warpMarker = { dx, dy };
-  }
-
-  public getWarpMarker(): { dx: number; dy: number } | null {
-    return this.warpMarker;
   }
 
   /** The title-line text now, or '' while it is hidden. */

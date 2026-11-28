@@ -15,7 +15,8 @@ import { MissionScore, rateMission, type MissionRating } from '../sim/rating';
 import { approachVelocity, KM_PER_UNIT, moveInShipFrame, STICK_CENTERED, type Stick } from '../sim/motion';
 import type { MissionOutcome } from '../rules/rating';
 import { VELOCITY_TAB } from '../rules/speed';
-import { calcWarpSectors } from '../rules/warp';
+import { WARP_NEW_VELOCITY } from '../sim/hyperwarp';
+import { Hyperwarp, type WarpEvent } from '../sim/hyperwarp';
 import { type Subsystem, type SubsystemStatus } from '../rules/damage';
 import { DamageControl, STATUS_BITS, computerFunctions, computerReadoutsLive, engineKeyFor, jitterVelocity, scanState } from '../sim/damage';
 import { MSG, PHRASE, endOfMissionPhrase } from '../rules/messages';
@@ -37,6 +38,7 @@ export interface GameDebugApi {
   step(n?: number): void;
   resume(): void;
   hyperwarp(x: number, y: number): void;
+  warp(): Record<string, unknown>;
   dock(): void;
   setEnergy(units: number): void;
   setSpeed(key: number): void;
@@ -67,12 +69,6 @@ type GameOverCallback = (rating: MissionRating) => void;
 const HIT_FLASH_LOOPS = 16;
 /** R: REDALERTLIFE on entering a Zylon sector. */
 const RED_ALERT_LOOPS = 255;
-/** Ship velocity (KM/loop) when it drops out of hyperspace; it slows by 1 per loop (R: UPDPANEL). */
-const WARP_EXIT_VELOCITY = 120;
-/** Velocity used for the streaming stars while hyperwarping (Phase 8 brings the ROM's 254 and trails). */
-const HYPERWARP_VELOCITY = 112;
-/** Fraction of the placeholder hyperwarp after which the ship counts as in hyperspace (Phase 8 replaces it). */
-const HYPERSPACE_FROM = 0.5;
 
 /** Speed key whose velocity the ship has reached (for rules that read a key, e.g. docking). */
 function keyForVelocity(v: number): number {
@@ -115,8 +111,6 @@ export class Game {
   private controlPanel: ControlPanel;
   private galacticChart: GalacticChart;
   private longRangeScan: LongRangeScan;
-  /** Hyperwarp destination dot on the chart (§8); kept between visits. */
-  private chartCursor: SectorPos = { x: 8, y: 4 };
 
   // Space objects
   private currentStarbase: Starbase | null = null;
@@ -137,13 +131,8 @@ export class Game {
   private gameOverCallback: GameOverCallback | null;
   private hasTriggeredGameOver: boolean = false;
 
-  // Hyperwarp state
-  private isHyperwarping: boolean = false;
-  private hyperwarpProgress: number = 0;
-  private hyperwarpTarget: { x: number; y: number } | null = null;
-  /** Marker offset from the playfield centre, in playfield pixels. */
-  private hyperwarpAlignment: { x: number; y: number } = { x: 0, y: 0 };
-  private hyperwarpDifficulty: number = 1;
+  /** Hyperwarp: chart positions, phases, the target marker and the landing (sim/hyperwarp.ts, §9, §17.5). */
+  private hyperwarp = new Hyperwarp();
 
   // Docking state
   private isDocking: boolean = false;
@@ -187,7 +176,8 @@ export class Game {
       y: this.gameState.sectorY,
     });
     this.radioFeed = new RadioFeed(this.galaxy);
-    this.chartCursor = { x: this.gameState.sectorX, y: this.gameState.sectorY };
+    this.hyperwarp.setDepartureSector(this.gameState.sectorX, this.gameState.sectorY);
+    this.hyperwarp.setArrivalSector(this.gameState.sectorX, this.gameState.sectorY);
 
     this.zylons = new ZylonSim(random);
     this.soundManager = new SoundManager();
@@ -211,6 +201,16 @@ export class Game {
 
     this.gameLoop.setUpdateCallback(this.update);
     this.gameLoop.setRenderCallback(this.render);
+  }
+
+  /** WARPSTATE ≠ 0: hyperwarp engaged (acceleration, star trails or hyperspace). */
+  private get isHyperwarping(): boolean {
+    return this.hyperwarp.engaged;
+  }
+
+  /** The chart's hyperwarp destination dot as a sector (§8). */
+  private get chartCursor(): SectorPos {
+    return this.hyperwarp.arrivalSector;
   }
 
   private starCount(s: Settings): number {
@@ -279,11 +279,6 @@ export class Game {
       return;
     }
 
-    if (this.isHyperwarping) {
-      this.updateHyperwarp(deltaTime);
-      return;
-    }
-
     for (const action of actions) this.handleAction(action);
     if (this.gameState.isGameOver) return;
 
@@ -308,7 +303,7 @@ export class Game {
       engineKey: this.gameState.targetEngineSpeed,
       shields: this.gameState.shieldsActive,
       computer: this.gameState.attackComputerOn,
-      hyperwarp: this.isHyperwarping,
+      hyperwarp: this.hyperwarp.phase === 'accel', // CLEANUPWARP clears the engine drain in hyperspace
     });
     this.radioFeed.sync(this.gameState.damage.radio);
     if (events.fleetMoveTick) {
@@ -333,27 +328,30 @@ export class Game {
     this.stick = stick;
     const view = this.gameState.currentView;
 
-    // Velocity steps 1 KM/loop toward the chosen key (R: UPDPANEL).
-    const target = this.isHyperwarping ? HYPERWARP_VELOCITY : VELOCITY_TAB[this.gameState.targetEngineSpeed];
+    // Velocity steps 1 KM/loop toward the chosen key, or 255 while hyperwarp is engaged (R: UPDPANEL).
+    const target = this.isHyperwarping ? WARP_NEW_VELOCITY : VELOCITY_TAB[this.gameState.targetEngineSpeed];
     this.shipVelocity = approachVelocity(this.shipVelocity, target);
     // §17.3: damaged or destroyed engines make the speed jitter (R: UPDPANEL L9784).
     const jitter = jitterVelocity(this.gameState.damage.engines, target, this.isHyperwarping, () => Math.floor(random() * 256));
     if (jitter !== null) this.shipVelocity = jitter;
     this.gameState.engineSpeed = keyForVelocity(this.shipVelocity);
 
-    // The ROM does not rotate in the Galactic Chart view; in hyperwarp the stick steers the marker.
-    const turn: Stick = view === ViewMode.GALACTIC_CHART || this.isHyperwarping || this.isDocking ? STICK_CENTERED : stick;
-    const dzUnits = this.shipVelocity / KM_PER_UNIT;
+    // The ROM does not rotate in the Galactic Chart view. In hyperwarp the turn moves the
+    // target marker like every other space object: that is how the pilot steers it (§9).
+    const turn: Stick = view === ViewMode.GALACTIC_CHART || this.isDocking ? STICK_CENTERED : stick;
+    // R: INITTRAIL's VELOCITYHI adds 256 KM/loop while the star trails run.
+    const flyVelocity = this.shipVelocity + this.hyperwarp.velocityBoost;
+    const dzUnits = flyVelocity / KM_PER_UNIT;
     if (this.currentStarbase) moveInShipFrame(this.currentStarbase.getObject().position, turn, dzUnits);
     this.wrapSectorObjects();
 
-    this.starfield.loop(turn, this.shipVelocity, this.spaceView(), this.clock.loops & 7);
+    this.starfield.loop(turn, flyVelocity, this.spaceView(), this.clock.loops & 7);
 
     // Zylons, torpedoes, meteors and explosions (R: GAMELOOP steps 8–12, 21, 23, 25–27).
     const { sectorX: sx, sectorY: sy } = this.gameState;
     const events = this.zylons.loop({
       turn,
-      velocity: this.shipVelocity,
+      velocity: flyVelocity,
       view: this.simView(),
       level: this.gameState.difficulty,
       sectorZylons: this.galaxy.zylonsAt(sx, sy),
@@ -365,6 +363,16 @@ export class Game {
     });
     for (const e of events) this.zylonEvent(e);
     this.computerLoop();
+
+    // GAMELOOP step 30: HYPERWARP.
+    const warpEvents = this.hyperwarp.loop({
+      velocity: this.shipVelocity,
+      front: view === ViewMode.FRONT,
+      level: this.gameState.difficulty,
+      turn,
+      randomByte: () => Math.floor(random() * 256),
+    });
+    for (const e of warpEvents) this.warpEvent(e);
 
     if (this.redAlertLife > 0) this.redAlertLife--;
     if (this.hitFlash > 0) this.hitFlash--;
@@ -381,7 +389,7 @@ export class Game {
    * computer flipping between the Front and Aft views to keep the target in sight.
    */
   private computerLoop(): void {
-    if (this.isHyperwarping) this.zylons.trackDigit = 3;
+    if (this.hyperwarp.markerShown) this.zylons.trackDigit = 3;
     if (this.currentStarbase) this.zylons.trackDigit = 2;
     if (!this.computerWorking()) return;
     const view = this.gameState.currentView;
@@ -410,14 +418,13 @@ export class Game {
   }
 
   /**
-   * T=3 hook: the hyperwarp marker in the ship frame (KM), or null outside hyperwarp. The ROM's
-   * marker (PLAYER3) sits far ahead, so R reads ∞. Phase 8 replaces this placeholder with the
-   * real marker's position.
+   * T=3: the hyperwarp target marker (PLAYER3) in the ship frame (KM), 7936..8191 KM ahead,
+   * or null when it is not shown (§5.8, §17.5).
    */
   private warpMarkerPosition(): TrackedObject | null {
-    if (!this.isHyperwarping) return null;
-    const m = this.hyperwarpAlignment;
-    return { x: Math.round(m.x) * 256, y: -Math.round(m.y) * 256, z: 0xffff };
+    if (!this.hyperwarp.markerShown) return null;
+    const m = this.hyperwarp.marker;
+    return { x: m.x, y: m.y, z: m.z };
   }
 
   /** The ROM's SHIPVIEW for the Zylon simulation. */
@@ -558,19 +565,24 @@ export class Game {
       sectors: () => this.radioFeed.sectors(),
       player: { x: sectorX, y: sectorY },
       cursor: c,
-      warpEnergy: calcWarpSectors(sectorX, sectorY, c.x, c.y).units,
+      warpEnergy: this.hyperwarp.chartWarpEnergy,
       targets: this.radioFeed.targets(c.x, c.y),
       starDate: this.gameState.starDate,
       damage: this.gameState.damage,
     });
   }
 
-  /** Move the hyperwarp destination dot by whole sectors, clamped to the chart. */
+  /**
+   * Move the hyperwarp destination dot by whole sectors, clamped to the chart. It stays put
+   * while hyperwarp is engaged (R: SELECTWARP).
+   */
   private moveChartCursor(dx: number, dy: number): void {
-    this.chartCursor = {
-      x: Math.max(0, Math.min(GALAXY_COLUMNS - 1, this.chartCursor.x + dx)),
-      y: Math.max(0, Math.min(GALAXY_ROWS - 1, this.chartCursor.y + dy)),
-    };
+    if (this.isHyperwarping) return;
+    const c = this.chartCursor;
+    this.hyperwarp.setArrivalSector(
+      Math.max(0, Math.min(GALAXY_COLUMNS - 1, c.x + dx)),
+      Math.max(0, Math.min(GALAXY_ROWS - 1, c.y + dy))
+    );
     this.renderChart();
   }
 
@@ -669,98 +681,72 @@ export class Game {
   }
 
   /**
-   * Initiate hyperwarp to cursor position
+   * R: KEYBOARD 'H' — engage hyperwarp toward the chart's destination dot (§9, §17.5). The
+   * ROM never refuses a jump for lack of energy: hyperspace drains 10 per loop and can run the
+   * tank dry. A jump within the sector (the dot on our own sector) costs 100, as in §12.3.
    */
-  private initiateHyperwarp(): void {
-    const cursor = this.chartCursor;
-
-    if (cursor.x === this.gameState.sectorX && cursor.y === this.gameState.sectorY) return;
-
-    // CALCWARP (§12.3, §17.5). The ROM never refuses a jump for lack of energy:
-    // hyperspace drains 10 per loop and can run the tank dry.
-    const cost = calcWarpSectors(this.gameState.sectorX, this.gameState.sectorY, cursor.x, cursor.y);
-
-    this.clearSectorContents();
-    this.galacticChart.hide();
-    this.longRangeScan.hide();
-    this.isHyperwarping = true;
-    this.hyperwarpProgress = 0;
-    this.hyperwarpTarget = { x: cursor.x, y: cursor.y };
-
-    // Start with some misalignment of the marker (playfield pixels from the centre).
-    this.hyperwarpAlignment = { x: (random() - 0.5) * 20, y: (random() - 0.5) * 20 };
-
-    const dist = Math.hypot(cursor.x - this.gameState.sectorX, cursor.y - this.gameState.sectorY);
-    this.hyperwarpDifficulty = 1 + dist * 0.5;
-    if (this.gameState.difficulty === 'WARRIOR' || this.gameState.difficulty === 'COMMANDER') {
-      this.hyperwarpDifficulty *= 1.5;
-    }
-
-    this.controlPanel.setHyperwarpMarkerVisible(true);
-    this.controlPanel.updateHyperwarpMarker(this.hyperwarpAlignment.x, this.hyperwarpAlignment.y);
-
-    // Hyperspace drain: 10 units per loop for WARPENERGY - 1 loops
-    this.energy.beginHyperspace(cost.warpEnergy);
-
+  private engageHyperwarp(): void {
+    if (!this.hyperwarp.engage(this.gameState.difficulty)) return;
+    this.starfield.clearTrails();
     this.controlPanel.setTitle(PHRASE.HYPERWARP_ENGAGED);
-    if (this.gameState.currentView !== ViewMode.FRONT) {
-      this.gameState.currentView = ViewMode.FRONT;
-      this.starfield.resetFor('FRONT');
+  }
+
+  /** R: ABORTWARP — a 0–9 key while hyperwarp is engaged: −100, HYPERWARP ABORTED, stop (§9). */
+  private abortHyperwarp(): void {
+    const phase = this.hyperwarp.phase;
+    if (!this.hyperwarp.abort()) return;
+    this.energy.abortHyperwarp();
+    this.endWarp();
+    this.controlPanel.setTitle(PHRASE.HYPERWARP_ABORTED);
+    // Aborted in hyperspace: we are still in the departure sector, whose ships were cleared.
+    if (phase === 'hyperspace') this.spawnSectorContents();
+  }
+
+  /** R: ENDWARP + CLEANUPWARP — engines stopped, trails gone. */
+  private endWarp(): void {
+    this.gameState.targetEngineSpeed = 0;
+    this.starfield.clearTrails();
+    if (this.zylons.trackDigit === 3) this.zylons.trackDigit = 0;
+  }
+
+  /** React to one hyperwarp event (§9, §17.5). */
+  private warpEvent(e: WarpEvent): void {
+    switch (e.type) {
+      case 'trail':
+        this.starfield.addTrail();
+        break;
+      case 'hyperspace':
+        // CLEANUPWARP: the sector's ships, shots and explosion are gone; T back to 0.
+        this.gameState.targetEngineSpeed = 0;
+        this.starfield.clearTrails();
+        this.clearSectorContents();
+        this.zylons.trackDigit = 0;
+        this.isDocking = false;
+        this.soundManager.playHyperwarpTransit();
+        this.controlPanel.setTitle(PHRASE.HYPERSPACE);
+        break;
+      case 'charge':
+        this.energy.hyperspaceLoop(); // −10 per hyperspace loop
+        break;
+      case 'complete':
+        this.arrive(e.sector.x, e.sector.y, e.vicinityIndex);
+        break;
     }
   }
 
   /**
-   * Update hyperwarp: the stick steers the marker (PILOT and up), then arrival.
-   * (Phase 8 replaces this with the ROM's phases, costs and landing rules.)
+   * DECELERATION (R: HYPERWARP SKIP069): HYPERWARP COMPLETE, the engines stop, the arrival sector
+   * becomes ours with its vicinity mask, and a Zylon sector flashes RED ALERT for 255 loops.
    */
-  private updateHyperwarp(deltaTime: number): void {
-    const WARP_DURATION = 5.0;
-    const before = this.hyperwarpProgress;
-    this.hyperwarpProgress += deltaTime / WARP_DURATION;
-    // In hyperspace (the second half here) the panel shows V ∞ and the title HYPERSPACE (§17.5).
-    if (before <= HYPERSPACE_FROM && this.hyperwarpProgress > HYPERSPACE_FROM) this.controlPanel.setTitle(PHRASE.HYPERSPACE);
-
-    if (this.gameState.difficulty !== 'NOVICE') {
-      const driftStrength = 15 * this.hyperwarpDifficulty * deltaTime;
-      this.hyperwarpAlignment.x += (random() - 0.5) * driftStrength;
-      this.hyperwarpAlignment.y += (random() - 0.5) * driftStrength;
-      // Steering toward the marker moves it back toward the centre.
-      const steer = 30 * deltaTime;
-      this.hyperwarpAlignment.x -= this.stick.x * steer;
-      this.hyperwarpAlignment.y += this.stick.y * steer;
-    } else {
-      this.hyperwarpAlignment.x *= 0.95;
-      this.hyperwarpAlignment.y *= 0.95;
-    }
-    this.controlPanel.updateHyperwarpMarker(this.hyperwarpAlignment.x, this.hyperwarpAlignment.y);
-
-    if (this.hyperwarpProgress < 1) return;
-
-    this.isHyperwarping = false;
-    this.controlPanel.setHyperwarpMarkerVisible(false);
-    if (!this.hyperwarpTarget) return;
-
-    const alignmentError = Math.hypot(this.hyperwarpAlignment.x, this.hyperwarpAlignment.y);
-    const TOLERANCE = 10;
-    let arrivalX = this.hyperwarpTarget.x;
-    let arrivalY = this.hyperwarpTarget.y;
-    if (alignmentError > TOLERANCE && this.gameState.difficulty !== 'NOVICE') {
-      arrivalX = Math.max(0, Math.min(GALAXY_COLUMNS - 1, arrivalX + Math.floor(random() * 3) - 1));
-      arrivalY = Math.max(0, Math.min(GALAXY_ROWS - 1, arrivalY + Math.floor(random() * 3) - 1));
-    }
-    this.gameState.sectorX = arrivalX;
-    this.gameState.sectorY = arrivalY;
-    this.hyperwarpTarget = null;
-
-    // Drop out of hyperspace fast and slow down to the chosen speed.
-    this.shipVelocity = WARP_EXIT_VELOCITY;
-    // R: VICINITYMASK from bits 3..1 of the arrival marker's PM row (Phase 8 brings the real marker).
-    this.zylons.vicinityMask = VICINITY_MASK_TABLE[((122 + 2 * Math.round(this.hyperwarpAlignment.y)) >> 1) & 7];
-    this.spawnSectorContents();
+  private arrive(x: number, y: number, vicinityIndex: number): void {
     this.controlPanel.setTitle(PHRASE.HYPERWARP_COMPLETE);
-
-    // R: "Flash red alert if Zylon sector entered" (255 loops).
-    if (this.galaxy.zylonsAt(arrivalX, arrivalY) > 0) {
+    this.endWarp();
+    this.gameState.sectorX = x;
+    this.gameState.sectorY = y;
+    // §17.5: landing nearer the sector's vertical middle keeps the targets closer.
+    this.zylons.vicinityMask = VICINITY_MASK_TABLE[vicinityIndex];
+    this.spawnSectorContents();
+    if (this.galaxy.zylonsAt(x, y) > 0 && !this.galaxy.hasStarbase(x, y)) {
       this.redAlertLife = RED_ALERT_LOOPS;
       this.controlPanel.setTitle(PHRASE.RED_ALERT);
       this.soundManager.playAlert();
@@ -771,7 +757,9 @@ export class Game {
   private handleAction(action: Action): void {
     const view = this.gameState.currentView;
     if (action.startsWith('SPEED_')) {
-      this.setEngineSpeed(Number(action.slice(6)));
+      // R: KEYBOARD — 0–9 aborts an engaged hyperwarp instead of setting the speed (§9).
+      if (this.isHyperwarping) this.abortHyperwarp();
+      else this.setEngineSpeed(Number(action.slice(6)));
       return;
     }
     switch (action) {
@@ -796,8 +784,8 @@ export class Game {
         if (view === ViewMode.GALACTIC_CHART) this.moveChartCursor(0, 1);
         return;
       case 'HYPERWARP':
-        // §9: from the chart's destination dot, or from the front view.
-        if (view === ViewMode.GALACTIC_CHART || view === ViewMode.FRONT) this.initiateHyperwarp();
+        // §9: "Make sure you are in the front view (F), then press H."
+        if (view === ViewMode.FRONT) this.engageHyperwarp();
         return;
       // R: the T, S and C keys toggle their switch whatever the damage and say ON or OFF.
       case 'SHIELDS':
@@ -875,7 +863,7 @@ export class Game {
 
   /** The panel as drawn now; V shows ∞ in hyperspace (§17.2). */
   private panelData() {
-    return this.controlPanel.panelData(this.shipVelocity, this.isHyperwarping && this.hyperwarpProgress > HYPERSPACE_FROM);
+    return this.controlPanel.panelData(this.shipVelocity, this.hyperwarp.phase === 'hyperspace');
   }
 
   /** What the renderer draws for the Front/Aft views this frame. */
@@ -889,22 +877,34 @@ export class Game {
       const p = this.currentStarbase.getObject().position;
       objects.push({ kind: 'starbase', x: p.x * KM_PER_UNIT, y: p.y * KM_PER_UNIT, z: p.z * KM_PER_UNIT });
     }
+    const warp = this.hyperwarp;
+    if (warp.markerShown) objects.push({ kind: 'warpMarker', x: warp.marker.x, y: warp.marker.y, z: warp.marker.z });
 
     return {
       view: this.spaceView(),
-      stars: this.starfield.stars,
+      // R: GAMELOOP "Skip during hyperspace": no stars drawn in hyperspace (§17.5).
+      stars: warp.phase === 'hyperspace' ? [] : this.starfield.all,
       objects,
       fragments: z.explosion?.fragments ?? [],
       count256: this.controlPanel.colors.count256,
-      crosshair: this.computerWorking(),
+      crosshair: this.crosshairShown(),
       attackComputer: this.attackDisplay(),
       shields: this.controlPanel.colors.shieldsUp,
       redAlertLife: this.redAlertLife,
       hitFlash: this.hitFlash,
       title: this.controlPanel.titleText(),
       panel: this.panelData(),
-      warpMarker: this.controlPanel.getWarpMarker(),
     };
+  }
+
+  /**
+   * Cross hairs: the attack computer's (§5.3). Bend (§9 diagram): while the hyperwarp marker
+   * is up they show even with C off, so the marker always sits "between the cross hairs" as
+   * the manual draws it; a destroyed computer still takes them away (§7).
+   */
+  private crosshairShown(): boolean {
+    if (this.computerWorking()) return true;
+    return this.hyperwarp.markerShown && computerFunctions(this.gameState.damage.computer);
   }
 
   /** The Attack Computer Display: Front view only, computer on and not destroyed (§5.3, §11). */
@@ -931,9 +931,8 @@ export class Game {
         loops: this.clock.loops,
         starDateTicks: this.clock.starDateTicks,
         fleetMoveTicks: this.clock.fleetMoveTicks,
-        hyperspaceLoopsLeft: this.energy.hyperspaceLoopsLeft,
         isHyperwarping: this.isHyperwarping,
-        hyperwarpProgress: this.hyperwarpProgress,
+        warpPhase: this.hyperwarp.phase,
         isDocking: this.isDocking,
         dockingProgress: this.dockingProgress,
         enemiesInSector: this.zylons.liveShips,
@@ -963,6 +962,7 @@ export class Game {
         this.clearSectorContents();
         this.gameState.sectorX = x;
         this.gameState.sectorY = y;
+        this.hyperwarp.setDepartureSector(x, y);
         this.spawnSectorContents();
       },
       spawn: (type: DebugSpawnType, distance = 4096, x = 0, y = 0) => {
@@ -981,8 +981,31 @@ export class Game {
       },
       resume: () => this.gameLoop.start(),
       hyperwarp: (x: number, y: number) => {
+        // As the manual does it: dot on the chart, then F, then H (§9).
         this.moveChartCursor(x - this.chartCursor.x, y - this.chartCursor.y);
-        this.initiateHyperwarp();
+        this.switchView(ViewMode.FRONT);
+        this.engageHyperwarp();
+      },
+      warp: () => {
+        const w = this.hyperwarp;
+        return JSON.parse(
+          JSON.stringify({
+            phase: w.phase,
+            departure: w.departure,
+            arrival: w.arrival,
+            chosen: w.chosen,
+            arrivalSector: w.arrivalSector,
+            warpEnergy: w.warpEnergy,
+            veerMask: w.veerMask,
+            charges: w.charges,
+            marker: w.marker,
+            markerShown: w.markerShown,
+            trailStars: this.starfield.trails.length,
+            velocityBoost: w.velocityBoost,
+            transitBeeps: this.soundManager.beeperPatterns.hyperwarpTransit,
+            redAlertBeeps: this.soundManager.beeperPatterns.redAlert,
+          })
+        );
       },
       dock: () => {
         if (!this.currentStarbase) this.currentStarbase = new Starbase(new Vec3());

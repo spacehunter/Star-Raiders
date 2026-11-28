@@ -13,7 +13,9 @@
  *   __sr.setView('FRONT'|'AFT'|'GALACTIC_CHART'|'LONG_RANGE_SCAN')   switch view instantly
  *   __sr.step(n)                   stop the real-time loop and run n fixed 1/60 s frames
  *   __sr.resume()                  go back to the real-time loop
- *   __sr.hyperwarp(x, y)           start a hyperwarp to a sector, as if chosen on the chart
+ *   __sr.hyperwarp(x, y)           put the chart's dot on a sector, switch to the front view and press H
+ *   __sr.warp()                    hyperwarp state: phase, departure/arrival chart points (PM pixels),
+ *                                  WARPENERGY, VEERMASK, hyperspace charges, the marker (KM, PM col/row)
  *   __sr.dock()                    put a starbase in docking range at speed 0 and begin docking
  *   __sr.setEnergy(n)              set the ENERGY readout (e.g. to test the zero-energy abort)
  *   __sr.setSpeed(key)             press engine key 0..9
@@ -87,6 +89,7 @@ export function installDebugHook(host: DebugHost): void {
     step: (n = 1) => api().step(n),
     resume: () => api().resume(),
     hyperwarp: (x: number, y: number) => api().hyperwarp(x, y),
+    warp: () => api().warp(),
     dock: () => api().dock(),
     setEnergy: (units: number) => api().setEnergy(units),
     setSpeed: (key: number) => api().setSpeed(key),
