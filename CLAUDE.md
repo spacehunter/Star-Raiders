@@ -31,8 +31,8 @@ npm run capture -- --seed 1979   # 8 standard screenshots into captures/seed-197
 - **Randomness:** never call `Math.random()`. Use `random()` from `src/core/rng.ts` (or `createRng(seed)`
   for an independent stream) so games replay from `?seed=<n>`.
 - **Debug hook:** `?debug=1` exposes `window.__sr` (`src/core/debug.ts`): `seed`, `state`, `start`,
-  `galaxy`, `teleport`, `spawn`, `setView`, `step`, `resume`, `hyperwarp`, `dock`. Extend it when a
-  phase needs a new way to reach a game state.
+  `galaxy`, `teleport`, `spawn`, `setView`, `step`, `resume`, `hyperwarp`, `dock`, `zylons`, `meteor` and
+  more (see the file). Extend it when a phase needs a new way to reach a game state.
 - **Screenshots:** reuse `scripts/capture.mjs` for evidence; add shots to its `SHOTS` list instead of
   writing a new harness. It freezes the page clock and advances the game only with `__sr.step()`, so
   keep new game logic driven by the update `deltaTime`, not wall-clock time.

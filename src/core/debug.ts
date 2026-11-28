@@ -8,7 +8,8 @@
  *   __sr.galaxy()                  all 16x8 sectors
  *   __sr.teleport({x, y}) / (x, y) jump to a sector at once (no hyperwarp, no energy cost)
  *   __sr.spawn('fighter'|'cruiser'|'basestar'|'starbase', distance?, x?, y?)  place one ahead of the ship
- *                                  (x, y: sideways and vertical offset, in the same units as distance)
+ *                                  (KM; x, y: sideways and vertical offset). A Zylon takes a free
+ *                                  ship slot (else slot 0), heads straight in, and is not on the map
  *   __sr.setView('FRONT'|'AFT'|'GALACTIC_CHART'|'LONG_RANGE_SCAN')   switch view instantly
  *   __sr.step(n)                   stop the real-time loop and run n fixed 1/60 s frames
  *   __sr.resume()                  go back to the real-time loop
@@ -33,6 +34,8 @@
  *   __sr.settings(patch?)          read or change the bend settings {stars, crt, wasd, mouse}
  *   __sr.redAlert(loops?)          start a red-alert flash (255 loops) or stop it with 0
  *   __sr.stars()                   the starfield: ship-frame KM position, pixel and colour register
+ *   __sr.zylons()                  Zylon ships, PLAYER2 (torpedo/meteor), photons, barrel, explosion
+ *   __sr.meteor(x, y, z)           put a meteor at a ship-frame KM position (flying in at −8 KM/loop)
  */
 import type { Game, DebugSpawnType } from '../game/Game';
 import type { Action } from '../input/Input';
@@ -94,6 +97,8 @@ export function installDebugHook(host: DebugHost): void {
     settings: (patch?: Partial<Settings>) => api().settings(patch),
     redAlert: (loops?: number) => api().redAlert(loops),
     stars: () => api().stars(),
+    zylons: () => api().zylons(),
+    meteor: (x: number, y: number, z: number) => api().meteor(x, y, z),
   };
 
   (window as unknown as { __sr: typeof sr }).__sr = sr;

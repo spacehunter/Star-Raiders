@@ -21,8 +21,9 @@
 import { drawPanelText, drawText, GLYPH_COLUMNS } from './font';
 import { ROM_RGB, atariColor } from './palette';
 import { CENTER_COL, CENTER_ROW, PLAYFIELD_H, PLAYFIELD_W, projectPoint, type SpaceView } from './projection';
-import type { Star } from './starfield';
+import { starColor, type Star } from './starfield';
 import { random } from '../core/rng';
+import { placeSprite, SHAPE, shapeColor, STARBASE_WING_DROP, STARBASE_WING_OFFSET, type ShapeType, type SpritePlacement } from './sprites';
 
 export const FRAME_W = PLAYFIELD_W;
 export const PANEL_LINES = 23;
@@ -62,7 +63,7 @@ export function frameRect(viewW: number, viewH: number): { x: number; y: number;
   return { x: Math.floor((viewW - w) / 2), y: Math.floor((viewH - h) / 2), w, h, k };
 }
 
-export type SpaceObjectKind = 'zylon' | 'starbase' | 'photon' | 'zylonTorpedo';
+export type SpaceObjectKind = 'fighter' | 'cruiser' | 'basestar' | 'starbase' | 'photon' | 'zylonTorpedo' | 'meteor';
 
 export interface SpaceObject {
   kind: SpaceObjectKind;
@@ -71,6 +72,24 @@ export interface SpaceObject {
   y: number;
   z: number;
 }
+
+/** A point in the ship frame (KM): an explosion fragment. */
+export interface SpacePoint {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** The ROM shape type each object is drawn with (§18.3; the Zylon torpedo uses the photon shape). */
+export const OBJECT_SHAPE: Readonly<Record<SpaceObjectKind, ShapeType>> = {
+  fighter: SHAPE.FIGHTER,
+  cruiser: SHAPE.CRUISER,
+  basestar: SHAPE.BASESTAR,
+  starbase: SHAPE.STARBASE_CENTER,
+  photon: SHAPE.PHOTON,
+  zylonTorpedo: SHAPE.PHOTON,
+  meteor: SHAPE.METEOR,
+};
 
 /** The panel's fields as text (sim/panel.ts) plus the band colour. */
 export interface PanelData {
@@ -91,6 +110,10 @@ export interface SpaceFrame {
   view: SpaceView;
   stars: readonly Star[];
   objects: readonly SpaceObject[];
+  /** Explosion fragments: single playfield pixels coloured like stars (§17.7, R step 17). */
+  fragments: readonly SpacePoint[];
+  /** R: COUNT256 (starbase pulse) and COUNT8 (star/fragment colours). */
+  count256: number;
   /** Attack computer on: front cross hairs or aft dashes (§5.3, §17.6). */
   crosshair: boolean;
   /** Shields up and working: background $A0 (§17.13). */
@@ -137,27 +160,41 @@ export function crosshairRects(view: SpaceView): Array<[number, number, number, 
   return bars;
 }
 
-/** Placeholder blob size (playfield pixels) by distance; the ROM sprites arrive in Phase 5. */
-export function blobSize(distanceKm: number): number {
-  const d = Math.abs(distanceKm);
-  if (d < 1024) return 4;
-  if (d < 2560) return 3;
-  if (d < 5120) return 2;
-  return 1;
+/**
+ * One sprite drawn in Atari colours (R step 15): hue by type, luminance by range. The basestar's
+ * colour is XORed with a random byte every frame (it flickers); the starbase pulses with COUNT256;
+ * photon torpedo rows are ANDed with random bits (they sparkle, R step 6).
+ */
+export interface DrawnSprite extends SpritePlacement {
+  color: number;
 }
 
-const OBJECT_RGB: Record<SpaceObjectKind, (d: number) => string> = {
-  // §17.13: Zylons grey/white, brightness falling with distance.
-  zylon: (d) => (d < 2560 ? ROM_RGB.$0E : ROM_RGB.$06),
-  starbase: () => ROM_RGB.$28,
-  photon: () => ROM_RGB.$58,
-  zylonTorpedo: () => ROM_RGB.$0E,
-};
+/** Sprites for one object (three for a starbase: centre and wings), or [] when not on screen. */
+export function objectSprites(o: SpaceObject, view: SpaceView, count256: number, rng: () => number): DrawnSprite[] {
+  const place = placeSprite(OBJECT_SHAPE[o.kind], o.x, o.y, o.z, view);
+  if (!place) return [];
+  const byte = () => Math.floor(rng() * 256) & 0xff;
+  let color = shapeColor(place.type, place.range);
+  if (o.kind === 'basestar') color ^= byte();
+  if (o.kind === 'starbase') color ^= count256 & 0x0f;
+  if (o.kind === 'photon' || o.kind === 'zylonTorpedo') place.rows = place.rows.map((r) => r & byte());
+  const out: DrawnSprite[] = [{ ...place, color }];
+  if (o.kind === 'starbase') {
+    for (const [type, dx] of [[SHAPE.STARBASE_LEFT, -STARBASE_WING_OFFSET], [SHAPE.STARBASE_RIGHT, STARBASE_WING_OFFSET]] as const) {
+      const wing = placeSprite(type, o.x, o.y, o.z, view);
+      if (wing) out.push({ ...wing, col: place.col + dx, line: place.line + STARBASE_WING_DROP, color: shapeColor(type, place.range) ^ (count256 & 0x0f) });
+    }
+  }
+  return out;
+}
 
 export class Renderer {
   public readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
-  /** The frame at native resolution, 160 × 120. */
+  /**
+   * The frame at native resolution, 160 × 123, stored with two lines per row so sprites can use
+   * the Player/Missile scanline (half a playfield row). Drawing uses playfield coordinates.
+   */
   private readonly frame: HTMLCanvasElement;
   private readonly fctx: CanvasRenderingContext2D;
   private crt = false;
@@ -170,8 +207,9 @@ export class Renderer {
     this.ctx = this.canvas.getContext('2d')!;
     this.frame = document.createElement('canvas');
     this.frame.width = FRAME_W;
-    this.frame.height = FRAME_LINES;
+    this.frame.height = FRAME_LINES * 2;
     this.fctx = this.frame.getContext('2d')!;
+    this.fctx.setTransform(1, 0, 0, 2, 0, 0);
   }
 
   /** Random source for the hit flash (the game's seeded stream keeps captures deterministic). */
@@ -222,15 +260,12 @@ export class Renderer {
       this.pf(s.pixel.col, s.pixel.row, 1, 1, s.color === 3 ? pf2 : STAR_RGB[s.color]);
     }
 
-    // Objects: placeholder blobs, far ones first.
-    const objs = [...f.objects].sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
-    for (const o of objs) {
-      const px = projectPoint(o.x, o.y, o.z, f.view);
+    // Explosion fragments: playfield pixels coloured by distance like the stars (R step 17).
+    for (const p of f.fragments) {
+      const px = projectPoint(p.x, p.y, p.z, f.view);
       if (!px) continue;
-      const d = Math.hypot(o.x, o.y, o.z);
-      const size = o.kind === 'photon' || o.kind === 'zylonTorpedo' ? Math.min(2, blobSize(d)) : blobSize(d);
-      const half = Math.floor(size / 2);
-      this.pf(px.col - half, px.row - half, size, size, OBJECT_RGB[o.kind](d));
+      const c = starColor(p.z, px.col, f.count256 & 7);
+      if (c) this.pf(px.col, px.row, 1, 1, c === 3 ? pf2 : STAR_RGB[c]);
     }
 
     if (f.warpMarker) this.drawWarpMarker(f.warpMarker.dx, f.warpMarker.dy);
@@ -246,7 +281,26 @@ export class Renderer {
       drawText((x, y, w, h) => this.fctx.fillRect(x, y, w, h), title.slice(0, TEXT_COLUMNS), 0, zone.textLine, 1);
     }
 
+    // PLAYER sprites lie over the playfield and the title line (§18.3), far ones first.
+    const objs = [...f.objects].sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
+    for (const o of objs) for (const s of objectSprites(o, f.view, f.count256, this.rng)) this.drawSprite(s);
+
     this.drawPanel(f.panel);
+  }
+
+  /** One sprite, one scanline (half a playfield row) per byte, clipped to the playfield. */
+  private drawSprite(s: DrawnSprite): void {
+    this.fctx.fillStyle = atariColor(s.color);
+    s.rows.forEach((bits, i) => {
+      const line = s.line + i;
+      if (line < 0 || line >= PLAYFIELD_H * 2) return;
+      for (let b = 0; b < 8; b++) {
+        if (!(bits & (0x80 >> b))) continue;
+        const col = s.col + b;
+        if (col < 0 || col >= PLAYFIELD_W) continue;
+        this.fctx.fillRect(col, line / 2, 1, 0.5);
+      }
+    });
   }
 
   /** §18.3 hyperwarp target marker, sky blue, around an offset from the centre. */
@@ -309,7 +363,7 @@ export class Renderer {
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, cw, ch);
-    ctx.drawImage(this.frame, 0, 0, FRAME_W, FRAME_LINES, r.x, r.y, r.w, r.h);
+    ctx.drawImage(this.frame, 0, 0, FRAME_W, FRAME_LINES * 2, r.x, r.y, r.w, r.h);
     if (this.crt && r.k >= 2) {
       // Two scanlines per pixel row like the Atari's: darken the bottom of each half row.
       ctx.fillStyle = 'rgba(0,0,0,0.42)';

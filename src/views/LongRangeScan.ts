@@ -1,6 +1,4 @@
 import { GameState } from '../game/GameState';
-import { CombatSystem } from '../systems/CombatSystem';
-import { Starbase } from '../entities/Starbase';
 import { random } from '../core/rng';
 
 /**
@@ -12,9 +10,8 @@ export class LongRangeScan {
   private scanElement: HTMLElement;
   private gameState: GameState;
 
-  // Real world data access
-  private combatSystem: CombatSystem;
-  private getStarbase: () => Starbase | null;
+  /** Ship-frame positions (KM) of the Zylons, meteor and starbase (Game.scanBlips). */
+  private getBlips: () => Array<{ x: number; z: number; kind: 'enemy' | 'starbase' }>;
 
   private isVisible: boolean = false;
   private animationId: number | null = null;
@@ -27,13 +24,11 @@ export class LongRangeScan {
   constructor(
     container: HTMLElement,
     gameState: GameState,
-    combatSystem: CombatSystem,
-    getStarbase: () => Starbase | null
+    getBlips: () => Array<{ x: number; z: number; kind: 'enemy' | 'starbase' }>
   ) {
     this.container = container;
     this.gameState = gameState;
-    this.combatSystem = combatSystem;
-    this.getStarbase = getStarbase;
+    this.getBlips = getBlips;
 
     this.scanElement = this.createScan();
     this.container.appendChild(this.scanElement);
@@ -379,8 +374,8 @@ export class LongRangeScan {
     if (layer) {
       layer.innerHTML = ''; // Clear
 
-      // Map scale: range +/- 500 units
-      const RANGE = 500;
+      // Map scale: ±40,000 KM (MANUAL_SPEC §10; Phase 9 redraws the scan).
+      const RANGE = 40000;
 
       // Shared Projection: Transform World Coords directly to Screen Coords (Heads-Up)
       const renderObj = (worldX: number, worldZ: number, _type: string, _extraStyle: string = '') => {
@@ -405,7 +400,7 @@ export class LongRangeScan {
       // 1. Update Stars (already in DOM, just move them)
       const starElements = this.scanElement.querySelectorAll('.scan-star');
       this.stars.forEach((star, index) => {
-        const result = renderObj(star.x, star.y, 'star');
+        const result = renderObj(star.x * (RANGE / 500), star.y * (RANGE / 500), 'star'); // stars live in ±500
         const el = starElements[index] as HTMLElement;
         if (el) {
           if (result.visible) {
@@ -431,18 +426,7 @@ export class LongRangeScan {
         }
       };
 
-      const enemies = this.combatSystem.getEnemies();
-      for (const enemy of enemies) {
-        if (!enemy.isActive) continue;
-        const pos = enemy.getPosition();
-        createBlip(pos.x, -pos.z, 'enemy');
-      }
-
-      const starbase = this.getStarbase();
-      if (starbase) {
-        const pos = starbase.getObject().position;
-        createBlip(pos.x, -pos.z, 'starbase');
-      }
+      for (const b of this.getBlips()) createBlip(b.x, -b.z, b.kind);
     }
   }
 
