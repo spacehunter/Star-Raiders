@@ -247,6 +247,17 @@ export class SoundManager {
     osc.stop(this.audioContext.currentTime + 0.08);
   }
 
+  /** How many DAMAGE REPORT beeps were asked for (for the debug hook). */
+  public damageReportBeeps = 0;
+
+  /**
+   * Hook for the DAMAGE REPORT beeper pattern (MANUAL_SPEC §17.12: ≈490→970 Hz, 3×; R: DAMAGE
+   * L6826, BEEP $12). Silent until the POKEY synth arrives in Phase 12.
+   */
+  public playDamageReport(): void {
+    this.damageReportBeeps++;
+  }
+
   /**
    * Play player hit sound - impact with damage indication
    */

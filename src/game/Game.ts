@@ -16,8 +16,9 @@ import { approachVelocity, KM_PER_UNIT, moveInShipFrame, STICK_CENTERED, type St
 import type { MissionOutcome } from '../rules/rating';
 import { VELOCITY_TAB } from '../rules/speed';
 import { calcWarpSectors } from '../rules/warp';
-import { SUBSYSTEMS, type Subsystem, type SubsystemStatus } from '../rules/damage';
-import { MSG, PHRASE, endOfMissionPhrase, subsystemPhrase } from '../rules/messages';
+import { type Subsystem, type SubsystemStatus } from '../rules/damage';
+import { DamageControl, STATUS_BITS, computerFunctions, computerReadoutsLive, engineKeyFor, jitterVelocity, scanState } from '../sim/damage';
+import { MSG, PHRASE, endOfMissionPhrase } from '../rules/messages';
 import { Galaxy, RadioFeed, GALAXY_COLUMNS, GALAXY_ROWS, type GalaxyEvent, type SectorPos } from '../sim/galaxy';
 import { Renderer, type SpaceFrame, type SpaceObject } from '../render/Renderer';
 import { resolveShipHit, VICINITY_MASK_TABLE, ZylonSim, type SimView, type ZylonEvent, type ZylonType } from '../sim/zylons';
@@ -42,6 +43,9 @@ export interface GameDebugApi {
   setShields(on: boolean): void;
   setDamage(system: Subsystem, status: SubsystemStatus): void;
   damageReport(system: Subsystem, status: 'damaged' | 'destroyed'): void;
+  damage(): Record<string, unknown>;
+  repairAll(): void;
+  scan(): Record<string, unknown>;
   setKills(n: number): void;
   moveCursor(x: number, y: number): void;
   surround(): SectorPos | null;
@@ -101,6 +105,8 @@ export class Game {
   private zylons: ZylonSim;
   /** The Attack Computer Display, lock-on markers and lock flag (sim/attackComputer.ts, §11, §17.6). */
   private attackComputer = new AttackComputer();
+  /** Subsystem states, DAMAGE CONTROL reports and repair (sim/damage.ts, §7, §17.3). */
+  private damageControl: DamageControl;
   private soundManager: SoundManager;
   private gameState: GameState;
   private unsubscribeSettings: () => void;
@@ -187,6 +193,14 @@ export class Game {
     this.soundManager = new SoundManager();
 
     this.controlPanel = new ControlPanel(this.gameState, random);
+    this.damageControl = new DamageControl(this.gameState, this.controlPanel.title, {
+      beep: () => this.soundManager.playDamageReport(),
+      computerDestroyed: () => {
+        // R: DAMAGE — "Switch Attack Computer off" and clear the playfield.
+        this.gameState.attackComputerOn = false;
+        this.attackComputer.reset();
+      },
+    });
     this.galacticChart = new GalacticChart(container);
     this.longRangeScan = new LongRangeScan(container, this.gameState, () => this.scanBlips());
 
@@ -322,6 +336,9 @@ export class Game {
     // Velocity steps 1 KM/loop toward the chosen key (R: UPDPANEL).
     const target = this.isHyperwarping ? HYPERWARP_VELOCITY : VELOCITY_TAB[this.gameState.targetEngineSpeed];
     this.shipVelocity = approachVelocity(this.shipVelocity, target);
+    // §17.3: damaged or destroyed engines make the speed jitter (R: UPDPANEL L9784).
+    const jitter = jitterVelocity(this.gameState.damage.engines, target, this.isHyperwarping, () => Math.floor(random() * 256));
+    if (jitter !== null) this.shipVelocity = jitter;
     this.gameState.engineSpeed = keyForVelocity(this.shipVelocity);
 
     // The ROM does not rotate in the Galactic Chart view; in hyperwarp the stick steers the marker.
@@ -355,7 +372,7 @@ export class Game {
 
   /** The attack computer is switched on (C) and not destroyed (§5.3, §17.3). */
   private computerWorking(): boolean {
-    return this.gameState.attackComputerOn && this.gameState.damage.computer !== 'destroyed';
+    return this.gameState.attackComputerOn && computerFunctions(this.gameState.damage.computer);
   }
 
   /**
@@ -607,7 +624,7 @@ export class Game {
 
     if (this.dockingProgress >= 1) {
       this.energy.refill();
-      for (const sys of SUBSYSTEMS) this.gameState.damage[sys] = 'ok';
+      this.repairAll();
       this.isDocking = false;
       this.dockingCooldown = 5;
       this.controlPanel.setTitle(PHRASE.TRANSFER_COMPLETE);
@@ -632,11 +649,23 @@ export class Game {
     // Losing every starbase does not end the game (§17.4). Zero energy ends it from sim/energy.ts.
   }
 
-  /** R: DAMAGE — DAMAGE CONTROL now; the subsystem phrase waits in the queue and repeats until docking. */
+  /**
+   * R: DAMAGE — DAMAGE CONTROL now; the subsystem phrase waits in the queue and repeats until
+   * docking; the damage-report beep (§7, §17.3).
+   */
   private reportDamage(system: Subsystem, status: 'damaged' | 'destroyed'): void {
-    this.gameState.damage[system] = status;
-    this.controlPanel.setTitle(PHRASE.DAMAGE_CONTROL);
-    this.controlPanel.enqueueTitle(subsystemPhrase(system, status));
+    this.damageControl.report(system, status);
+    this.radioFeed.sync(this.gameState.damage.radio);
+  }
+
+  /**
+   * Repair all six subsystems. Docking (TRANSFER COMPLETE) is the only repair (§13, §17.9);
+   * Phase 10's docking sequence calls this.
+   */
+  public repairAll(): void {
+    this.damageControl.repairAll();
+    this.radioFeed.sync(this.gameState.damage.radio);
+    this.renderChart();
   }
 
   /**
@@ -839,9 +868,9 @@ export class Game {
     this.soundManager.playTorpedoFire();
   }
 
+  /** A speed key 0–9 (§5.1); destroyed engines cap it at key 5 (§17.3, R: KEYBOARD L7202). */
   private setEngineSpeed(speed: number): void {
-    const maxSpeed = this.gameState.damage.engines !== 'ok' ? 5 : 9;
-    this.gameState.targetEngineSpeed = Math.min(speed, maxSpeed);
+    this.gameState.targetEngineSpeed = engineKeyFor(speed, this.gameState.damage.engines);
   }
 
   /** The panel as drawn now; V shows ∞ in hyperspace (§17.2). */
@@ -972,14 +1001,39 @@ export class Game {
         this.gameState.shieldsActive = on;
       },
       setDamage: (system: Subsystem, status: SubsystemStatus) => {
-        this.gameState.damage[system] = status;
+        this.damageControl.force(system, status);
         this.radioFeed.sync(this.gameState.damage.radio);
         this.renderChart();
       },
       damageReport: (system: Subsystem, status: 'damaged' | 'destroyed') => {
         this.reportDamage(system, status);
-        this.radioFeed.sync(this.gameState.damage.radio);
+        this.renderChart();
       },
+      damage: () => {
+        const d = this.gameState.damage;
+        const bits: Record<string, number> = {};
+        for (const [sys, st] of Object.entries(d)) bits[sys] = STATUS_BITS[st];
+        return {
+          status: this.damageControl.snapshot(),
+          bits,
+          reports: this.damageControl.reports,
+          beeps: this.soundManager.damageReportBeeps,
+          effects: {
+            photonBarrels: d.photons === 'ok' ? 2 : d.photons === 'damaged' ? 1 : 0,
+            speedJitter: d.engines !== 'ok',
+            maxSpeedKey: engineKeyFor(9, d.engines),
+            shieldsFlicker: d.shields === 'damaged',
+            shieldsAlwaysOff: d.shields === 'destroyed',
+            readoutsLive: computerReadoutsLive(d.computer),
+            crosshairs: computerFunctions(d.computer),
+            scan: scanState(d.sectorScan, d.computer),
+            chartLive: this.radioFeed.radio === 'ok',
+            radioMessages: this.radioFeed.relaysMessages,
+          },
+        };
+      },
+      repairAll: () => this.repairAll(),
+      scan: () => this.longRangeScan.lastDrawn(),
       setKills: (n: number) => {
         this.gameState.enemiesDestroyed = Math.max(0, Math.floor(n));
       },

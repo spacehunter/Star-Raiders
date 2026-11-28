@@ -13,6 +13,7 @@ import {
   type PanelBand,
 } from '../sim/panel';
 import { TitleLine } from '../sim/title';
+import { computerReadoutsLive } from '../sim/damage';
 
 const BAND_RGB: Record<PanelBand, string> = { 0x90: ROM_RGB.$90, 0x44: ROM_RGB.$44, 0x26: ROM_RGB.$26 };
 
@@ -54,7 +55,7 @@ export class ControlPanel {
     const s = this.gameState;
     this.colors.loop({ energy: s.energy, shieldsOn: s.shieldsActive, shieldsStatus: s.damage.shields });
     this.title.loop();
-    if (s.damage.computer === 'ok' && tracked) {
+    if (computerReadoutsLive(s.damage.computer) && tracked) {
       this.theta = angleReadout(tracked.x);
       this.phi = angleReadout(tracked.y);
       this.range = rangeReadout(tracked.z);

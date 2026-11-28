@@ -18,6 +18,8 @@
  *   05-long-range-scan  06-attack-computer  06a-attack-lock  06b-starbase-t2  07-hyperwarp  08-docking  10-panel-hud  10a-panel-tracking-c
  *   10b-panel-low-energy  10c-panel-shields-out  10d-panel-hyperspace  11-fighter-approach  11a-fighter-hit
  *   11b-explosion  12-meteor  12a-meteor-shot  13-fighter  13a-cruiser  13b-basestar
+ *   14-dc-photons  14a-dc-engines  14b-dc-shields  14c-dc-computer  14d-dc-scan-mirror  14e-dc-scan-destroyed
+ *   14f-dc-radio-frozen  14g-dc-radio-repaired  14h-chart-dc-colours  14i-repaired
  *   09-zero-energy (last: mission end)
  *
  * plus manifest.json with each file's SHA-256. Later phases reuse this script; add new
@@ -292,6 +294,130 @@ const SHOTS = [
         window.__sr.step(1);
       }, type),
   })),
+  // Phase 7 (MANUAL_SPEC §7, §17.3): damage control. Each shot reports the damage as a hit does,
+  // runs until the title line shows the subsystem phrase, and shows the effect; then repairs.
+  {
+    // Photons damaged: two presses, one torpedo, always from the same barrel.
+    name: '14-dc-photons',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.setView('FRONT');
+        window.__sr.damageReport('photons', 'damaged');
+        for (let i = 0; i < 200 && !/PHOTONS/.test(window.__sr.state.title); i++) window.__sr.step(1);
+        window.__sr.press('FIRE');
+        window.__sr.press('FIRE'); // blocked: the same barrel has to wait 23 loops
+        window.__sr.step(4);
+      }),
+  },
+  {
+    // Engines destroyed: key 9 gives key 5, and V jitters (16 AND RANDOM: 00 or 06).
+    name: '14a-dc-engines',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.repairAll();
+        window.__sr.damageReport('engines', 'destroyed');
+        window.__sr.setSpeed(9);
+        for (let i = 0; i < 200 && !/ENGINES/.test(window.__sr.state.title); i++) window.__sr.step(1);
+        for (let i = 0; i < 40 && window.__sr.state.shipVelocity !== 16; i++) window.__sr.step(1);
+      }),
+  },
+  {
+    // Shields damaged and switched on: caught in a flicker off (black space, orange band).
+    name: '14b-dc-shields',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.repairAll();
+        window.__sr.setSpeed(0);
+        if (!window.__sr.state.shieldsActive) window.__sr.press('SHIELDS');
+        window.__sr.step(1);
+        window.__sr.damageReport('shields', 'damaged');
+        for (let i = 0; i < 200 && !/SHIELDS/.test(window.__sr.state.title); i++) window.__sr.step(1);
+        for (let i = 0; i < 400 && window.__sr.state.panel.band !== '#B06818'; i++) window.__sr.step(1);
+      }),
+  },
+  {
+    // Computer destroyed: switched off, no cross hairs and no display even with C on; θ Φ R frozen.
+    name: '14c-dc-computer',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.repairAll(); // shields stay up: the fighter shoots back
+        if (!window.__sr.state.attackComputerOn) window.__sr.press('COMPUTER');
+        window.__sr.spawn('fighter', 3000, 600, 300);
+        window.__sr.step(20);
+        window.__sr.damageReport('computer', 'destroyed');
+        window.__sr.press('COMPUTER'); // back on: still nothing
+        for (let i = 0; i < 200 && !/COMPUTER DESTROYED/.test(window.__sr.state.title); i++) window.__sr.step(1);
+      }),
+  },
+  {
+    // Sector scan damaged: each object shows at its place or mirrored through our ship, at random.
+    name: '14d-dc-scan-mirror',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.repairAll();
+        if (window.__sr.state.attackComputerOn) window.__sr.press('COMPUTER');
+        const s = window.__sr.state;
+        window.__sr.teleport(s.sectorX, s.sectorY);
+        window.__sr.spawn('fighter', 20000, -12000, 0);
+        window.__sr.spawn('cruiser', 9000, 15000, 0);
+        window.__sr.setView('LONG_RANGE_SCAN');
+        window.__sr.damageReport('sectorScan', 'damaged');
+        for (let i = 0; i < 200 && !/SECTOR SCAN/.test(window.__sr.state.title); i++) window.__sr.step(1);
+        // A frame where at least one object is drawn at its mirror image.
+        for (let i = 0; i < 30 && !window.__sr.scan().blips.some((b) => Math.sign(b.z) !== Math.sign(window.__sr.zylons().ships.find((z) => z.alive && Math.abs(z.x - b.x) < 1)?.z ?? b.z)); i++) window.__sr.step(1);
+      }),
+  },
+  {
+    // Sector scan destroyed: only our ship.
+    name: '14e-dc-scan-destroyed',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.damageReport('sectorScan', 'destroyed');
+        for (let i = 0; i < 200 && !/SECTOR SCAN/.test(window.__sr.state.title); i++) window.__sr.step(1);
+      }),
+  },
+  {
+    // Radio damaged: the chart keeps the map from the moment of damage while the fleets move.
+    name: '14f-dc-radio-frozen',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.repairAll();
+        const s = window.__sr.state;
+        window.__sr.teleport(s.sectorX, s.sectorY);
+        window.__sr.setView('GALACTIC_CHART');
+        window.__sr.damageReport('radio', 'damaged');
+        window.__sr.toFleetTick(3); // the fleets move; the chart does not
+        for (let i = 0; i < 200 && !/SUB-SPACE RADIO/.test(window.__sr.state.title); i++) window.__sr.step(1);
+      }),
+  },
+  {
+    // Docking repairs: the chart catches up with the fleets at once.
+    name: '14g-dc-radio-repaired',
+    run: async (sr) => sr(() => { window.__sr.repairAll(); window.__sr.step(1); }),
+  },
+  {
+    // §7: DC letters in all three colours — blue OK, yellow damaged, red destroyed.
+    name: '14h-chart-dc-colours',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.setDamage('photons', 'destroyed');
+        window.__sr.setDamage('engines', 'damaged');
+        window.__sr.setDamage('computer', 'damaged');
+        window.__sr.setDamage('sectorScan', 'destroyed');
+        window.__sr.setDamage('radio', 'damaged');
+        window.__sr.step(1);
+      }),
+  },
+  {
+    name: '14i-repaired',
+    run: async (sr) =>
+      sr(() => {
+        window.__sr.repairAll();
+        window.__sr.setView('FRONT');
+        window.__sr.setSpeed(0);
+        window.__sr.step(30);
+      }),
+  },
   {
     // Phase 1: energy really runs out and aborts the mission (MANUAL_SPEC §12, §17.1, §17.10).
     name: '09-zero-energy',
@@ -352,6 +478,48 @@ const SEQUENCES = {
       }
     },
   },
+};
+
+// Phase 7 (MANUAL_SPEC §17.3; R: DAMAGE): a hit reports ENGINES DESTROYED. The title line shows a
+// blank segment, DAMAGE CONTROL, then the queued subsystem phrase, which comes back every time the
+// line goes blank until docking. Key 9 gives key 5 and V jitters.
+SEQUENCES['damage-control'] = {
+  setup: (d) => {
+    window.__sr.start(d.difficulty, d.seed);
+    window.__sr.step(130); // past the opening title
+  },
+  frames: 80,
+  every: 5,
+  at: {
+    0: () => {
+      window.__sr.damageReport('engines', 'destroyed');
+      window.__sr.setSpeed(9);
+    },
+  },
+  probe: () => ({ v: window.__sr.state.panel.v, key: window.__sr.state.targetEngineSpeed, beeps: window.__sr.damage().beeps }),
+};
+
+// Phase 7 (MANUAL_SPEC §7, §17.3): the damaged sector scan draws each object at its place or
+// mirrored through our ship, at random each loop, so every target shows with its reflection.
+SEQUENCES['scan-mirror'] = {
+  setup: (d) => {
+    window.__sr.start(d.difficulty, d.seed);
+    window.__sr.step(10);
+    const s = window.__sr.state;
+    const empty = window.__sr.galaxy().find((g) => !g.zylons && !g.starbase && (g.x !== s.sectorX || g.y !== s.sectorY));
+    window.__sr.teleport(empty);
+    window.__sr.press('SHIELDS');
+    window.__sr.setSpeed(0);
+    window.__sr.step(40);
+    window.__sr.spawn('fighter', 20000, -12000, 0);
+    window.__sr.spawn('cruiser', 9000, 15000, 0);
+    window.__sr.setDamage('sectorScan', 'damaged');
+    window.__sr.setView('LONG_RANGE_SCAN');
+  },
+  frames: 24,
+  every: 1,
+  at: {},
+  probe: () => window.__sr.scan(),
 };
 
 // Phase 6 (MANUAL_SPEC §11, §17.6): a fighter closes in, the marks go A, B, C, the locked salvo
