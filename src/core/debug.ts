@@ -35,6 +35,8 @@
  *   __sr.redAlert(loops?)          start a red-alert flash (255 loops) or stop it with 0
  *   __sr.stars()                   the starfield: ship-frame KM position, pixel and colour register
  *   __sr.zylons()                  Zylon ships, PLAYER2 (torpedo/meteor), photons, barrel, explosion
+ *   __sr.attack()                  attack computer: blip place and rows, marks (0 none, 1 A, 2 B,
+ *                                  3 C), lock flag, lock-on lifetime, target digit and position
  *   __sr.meteor(x, y, z)           put a meteor at a ship-frame KM position (flying in at −8 KM/loop)
  */
 import type { Game, DebugSpawnType } from '../game/Game';
@@ -99,6 +101,7 @@ export function installDebugHook(host: DebugHost): void {
     stars: () => api().stars(),
     zylons: () => api().zylons(),
     meteor: (x: number, y: number, z: number) => api().meteor(x, y, z),
+    attack: () => api().attack(),
   };
 
   (window as unknown as { __sr: typeof sr }).__sr = sr;

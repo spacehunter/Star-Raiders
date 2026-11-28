@@ -102,6 +102,22 @@ export const EXPLOSION_LIFE = 128;
 /** R step 26: we are hit when the torpedo or meteor is within −256..+255 KM on every axis. */
 export const SHIP_HIT_KM = 256;
 
+/**
+ * R: HOMVELTAB — a homing photon's x or y velocity (KM/loop) by its distance to the target in
+ * PM pixels (0..7+), MANUAL_SPEC §17.6.
+ */
+export const HOMING_VELOCITY_TABLE: readonly number[] = [0, 8, 16, 24, 40, 48, 56, 64];
+
+/**
+ * R: HOMINGVEL — velocity for a PM pixel difference d = (photon − target): d ≥ 0 moves the
+ * photon toward lower values, d < 0 toward higher ones. The ROM's one's-complement makes
+ * −1 a zero step (|d| − 1 indexes the table on that side).
+ */
+export function homingVelocity(d: number): number {
+  if (d >= 0) return -HOMING_VELOCITY_TABLE[Math.min(7, d)];
+  return HOMING_VELOCITY_TABLE[Math.min(7, -d - 1)];
+}
+
 /** R: VICINITYMASKTAB, indexed by bits 3..1 of the hyperwarp arrival marker's PM row. */
 export const VICINITY_MASK_TABLE: readonly number[] = [0xff, 0xff, 0x3f, 0x0f, 0x3f, 0x7f, 0xff, 0xff];
 
@@ -172,7 +188,17 @@ export interface ZylonLoopInput {
   count256: number;
   /** Attack computer on and not destroyed (the tracked target follows the attacker only then). */
   computer: boolean;
+  /** Photon damage (the automatic second torpedo uses the barrels like a press). */
+  photonStatus?: SubsystemStatus;
 }
+
+/** What a trigger press did (R: TRIGGER). */
+export type FireResult =
+  /** Hyperwarp, or the barrel's last torpedo is younger than 23 loops: nothing happens. */
+  | 'blocked'
+  /** The press counted (lock-on set up) but the photons are destroyed: no launch. */
+  | 'noLaunch'
+  | 'launched';
 
 export type ZylonEvent =
   | { type: 'zylonDestroyed'; slot: number; zylon: ZylonType; debug: boolean; torpedoAge: number }
@@ -181,6 +207,8 @@ export type ZylonEvent =
   | { type: 'zylonSpawned'; slot: number; zylon: ZylonType }
   | { type: 'zylonFired'; slot: number }
   | { type: 'meteorSpawned' }
+  /** The second torpedo of a locked-on salvo left its barrel on its own (R: OLDTRIG0 := $A0). */
+  | { type: 'autoFired' }
   | { type: 'shipHit'; by: 'torpedo' | 'meteor'; torpedoLife: number };
 
 // ---------------------------------------------------------------------------------------------
@@ -279,6 +307,12 @@ export class ZylonSim {
   private attacker: number | null = null;
   /** R: VICINITYMASK — confines a new Zylon's y coordinate. */
   public vicinityMask = 0;
+  /** R: ISTRACKING — our photons home in on PLTRACKED (set by a locked-on press). */
+  public homing = false;
+  /** R: PLTRACKED — the target slot copied from TRACKDIGIT when the trigger was pressed. */
+  public homingTarget = 0;
+  /** R: OLDTRIG0 = $A0 — launch the other barrel's torpedo on the next loop. */
+  public autoFirePending = false;
 
   /** Sprites drawn this loop (R step 15), for the hit tests and the attack-pattern switch. */
   private shown: {
@@ -326,12 +360,14 @@ export class ZylonSim {
     for (const p of this.photons) p.life = 0;
     this.explosion = null;
     this.attacker = null;
+    this.homing = false;
+    this.autoFirePending = false;
     this.shown = { ships: [null, null], pl2: null };
   }
 
-  /** M: toggle the tracked Zylon between T:0 and T:1 (R: KEYBOARD 'M'). */
+  /** M: toggle the tracked Zylon between T:0 and T:1 (R: KEYBOARD 'M': EOR #1, AND #1). */
   public toggleTarget(): void {
-    this.trackDigit ^= 1;
+    this.trackDigit = (this.trackDigit ^ 1) & 1;
   }
 
   /** Put a ship in play (debug hook): the first free slot, else slot 0. */
@@ -358,16 +394,27 @@ export class ZylonSim {
   }
 
   /**
-   * TRIGGER: launch one photon torpedo (§17.7). Returns true when a torpedo left the barrel
-   * (the caller charges 10 energy and plays the launch sound).
-   *  - The barrel about to fire must have its last torpedo at least 23 loops old.
+   * TRIGGER: a new trigger press (§17.6, §17.7).
+   *  - Nothing happens in hyperwarp or while the barrel about to fire has its last torpedo
+   *    younger than 23 loops ('blocked').
+   *  - Otherwise the press sets up homing: PLTRACKED := TRACKDIGIT and ISTRACKING := lock-on.
+   *    In full lock-on the other barrel fires by itself on the next loop.
    *  - Photons destroyed: no launch. Damaged: always the same barrel. OK: barrels alternate.
+   * On 'launched' the caller charges 10 energy and plays the launch sound.
    */
-  public fire(view: SimView, photons: SubsystemStatus, hyperwarp: boolean): boolean {
-    if (hyperwarp) return false;
-    const b = this.barrel;
-    if (this.photons[b].life >= PHOTON_REFIRE_LIFE) return false;
+  public fire(view: SimView, photons: SubsystemStatus, hyperwarp: boolean, lockedOn = false): FireResult {
+    if (hyperwarp) return 'blocked';
+    if (this.photons[this.barrel].life >= PHOTON_REFIRE_LIFE) return 'blocked';
+    this.homingTarget = this.trackDigit;
+    this.homing = lockedOn;
+    this.autoFirePending = lockedOn;
+    return this.launch(view, photons) ? 'launched' : 'noLaunch';
+  }
+
+  /** TRIGGER SKIP127: put a torpedo in the barrel's slot (no refire check). */
+  private launch(view: SimView, photons: SubsystemStatus): boolean {
     if (photons === 'destroyed') return false;
+    const b = this.barrel;
     if (photons === 'ok') this.barrel = b ^ 1;
     const p = this.photons[b];
     p.life = PHOTON_LIFE;
@@ -383,6 +430,11 @@ export class ZylonSim {
   /** One game loop of every PLAYER object and the explosion. Returns what happened. */
   public loop(inp: ZylonLoopInput): ZylonEvent[] {
     const events: ZylonEvent[] = [];
+    // R: TRIGGER — the "virtually pressed" trigger launches the locked salvo's second torpedo.
+    if (this.autoFirePending) {
+      this.autoFirePending = false;
+      if (!inp.hyperwarp && this.launch(inp.view, inp.photonStatus ?? 'ok')) events.push({ type: 'autoFired' });
+    }
     this.move(inp);
     this.updateShown(inp.view);
     this.collision(inp.view, events);
@@ -455,6 +507,7 @@ export class ZylonSim {
           events.push({ type: 'basestarHit', slot: target, torpedoAge: age });
         } else {
           ship.alive = false;
+          this.homing = false; // R: a Zylon kill clears ISTRACKING
           events.push({ type: 'zylonDestroyed', slot: target, zylon: ship.type, debug: ship.debug, torpedoAge: age });
         }
       }
@@ -462,10 +515,14 @@ export class ZylonSim {
     }
   }
 
-  /** GAMELOOP step 23: the tracked Zylon follows the attacker, or the other ship when it dies. */
+  /**
+   * GAMELOOP step 23: the tracked Zylon follows the attacker, or the other ship when it dies.
+   * T=2 (starbase) and T=3 (hyperwarp marker) are set by the game and kept here.
+   */
   private trackTarget(computer: boolean): void {
     if (!computer) return;
-    let x = this.trackDigit;
+    if (this.trackDigit >= 2 && this.attacker === null) return;
+    let x = this.trackDigit & 1;
     if (this.attacker !== null) {
       x = this.attacker;
       this.attacker = null;
@@ -489,6 +546,9 @@ export class ZylonSim {
         s.followTimer[axis] = (idx < 8 ? idx : idx ^ 0x0f) * 2;
       }
     }
+
+    // (1) Our photons home in on the target of a locked-on salvo (R: HOMINGVEL).
+    if (this.homing) this.homePhotons(inp.view);
 
     // (3) The Zylon torpedo homes toward our axis at the level's rate (§17.7).
     if (this.pl2.kind === 'torpedo') {
@@ -554,6 +614,27 @@ export class ZylonSim {
 
     // (11) Launch the Zylon torpedo?
     this.tryLaunch(slot, inp.level, events);
+  }
+
+  /**
+   * MANEUVER (1): the y velocity of both photons from the row difference between the target and
+   * photon 0 (only ever upward: a target below gives 0), and each photon's x velocity from its
+   * column difference, in PM pixels (R L5529–5553). Objects not drawn this loop keep their speed.
+   */
+  private homePhotons(view: SimView): void {
+    const slot = this.homingTarget;
+    if (slot > 1) return;
+    const target = this.shown.ships[slot];
+    if (!target) return;
+    const placed = this.photons.map((p) => (p.life > 0 ? ZylonSim.place(SHAPE.PHOTON, p, view) : null));
+    if (placed[0]) {
+      const dRow = target.line - placed[0].line;
+      const vy = dRow < 0 ? homingVelocity(dRow) : 0;
+      for (const p of this.photons) p.vel.y = vy;
+    }
+    placed.forEach((ps, i) => {
+      if (ps) this.photons[i].vel.x = homingVelocity(ps.col - target.col);
+    });
   }
 
   /** (6) Create a Zylon ship: type 4/8 fighter, 3/8 cruiser, 1/8 basestar, ≥ 28928 KM ahead. */

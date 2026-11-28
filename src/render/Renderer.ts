@@ -23,6 +23,7 @@ import { ROM_RGB, atariColor } from './palette';
 import { CENTER_COL, CENTER_ROW, PLAYFIELD_H, PLAYFIELD_W, projectPoint, type SpaceView } from './projection';
 import { starColor, type Star } from './starfield';
 import { random } from '../core/rng';
+import { ATTACK_COMPUTER_LINES, BLIP_SHAPE, LOCK_MARKS, type AttackDisplay } from '../sim/attackComputer';
 import { placeSprite, SHAPE, shapeColor, STARBASE_WING_DROP, STARBASE_WING_OFFSET, type ShapeType, type SpritePlacement } from './sprites';
 
 export const FRAME_W = PLAYFIELD_W;
@@ -116,6 +117,8 @@ export interface SpaceFrame {
   count256: number;
   /** Attack computer on: front cross hairs or aft dashes (§5.3, §17.6). */
   crosshair: boolean;
+  /** The Attack Computer Display (Front view, computer on and working), or null (§11, §17.6). */
+  attackComputer?: AttackDisplay | null;
   /** Shields up and working: background $A0 (§17.13). */
   shields: boolean;
   /** R: REDALERTLIFE, loops left of a red alert (0 = none). */
@@ -158,6 +161,43 @@ export function crosshairRects(view: SpaceView): Array<[number, number, number, 
     bars.push([80, 54, 1, 7]); // rows 54–60
   }
   return bars;
+}
+
+/** Every playfield pixel of the Attack Computer Display frame, as `col,row` keys (R: DRAWLINESTAB). */
+export const ATTACK_FRAME_PIXELS: ReadonlySet<string> = (() => {
+  const set = new Set<string>();
+  for (const l of ATTACK_COMPUTER_LINES) {
+    for (let i = 0; i < l.length; i++) set.add(l.down ? `${l.col},${l.row + i}` : `${l.col + i},${l.row}`);
+  }
+  return set;
+})();
+
+/**
+ * The Attack Computer Display as coloured playfield pixels (§11, §17.6, §17.13): the frame in
+ * COLOR1 ($A6), the blip and lock-on markers in COLOR2 ($AA), and COLOR3 (PF2, $AF) where the
+ * blip crosses a frame line (R: DRAWLINE's transparent drawing, COLOR1 + COLOR2 = COLOR3).
+ * Returns [col, row, register] with register 1, 2 or 3.
+ */
+export function attackComputerPixels(a: AttackDisplay): Array<[number, number, 1 | 2 | 3]> {
+  const px = new Map<string, 1 | 2 | 3>();
+  for (const key of ATTACK_FRAME_PIXELS) px.set(key, 1);
+  for (let r = 0; r < a.blipRows; r++) {
+    for (let b = 0; b < 8; b++) {
+      if (!(BLIP_SHAPE[r] & (0x80 >> b))) continue;
+      const key = `${a.blipCol + b},${a.blipRow + r}`;
+      px.set(key, px.get(key) === 1 ? 3 : 2);
+    }
+  }
+  // The markers are stored over whatever was there (STA, not blended).
+  for (let m = 0; m < a.marks; m++) {
+    for (const [c, r, w, h] of LOCK_MARKS[m]) {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) px.set(`${c + x},${r + y}`, 2);
+    }
+  }
+  return [...px].map(([key, reg]) => {
+    const [c, r] = key.split(',').map(Number);
+    return [c, r, reg];
+  });
 }
 
 /**
@@ -271,6 +311,10 @@ export class Renderer {
     if (f.warpMarker) this.drawWarpMarker(f.warpMarker.dx, f.warpMarker.dy);
 
     if (f.crosshair) for (const [c, r, w, h] of crosshairRects(f.view)) this.pf(c, r, w, h, ROM_RGB.$A6);
+    if (f.attackComputer && f.view === 'FRONT') {
+      const rgb = { 1: ROM_RGB.$A6, 2: ROM_RGB.$AA, 3: pf2 } as const;
+      for (const [c, r, reg] of attackComputerPixels(f.attackComputer)) this.pf(c, r, 1, 1, rgb[reg]);
+    }
 
     // Title line / view header: the display list shows text there, not playfield (§18.1).
     this.rect(0, zone.firstRow, FRAME_W, zone.rows, bg);

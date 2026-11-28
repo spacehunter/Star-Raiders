@@ -15,7 +15,7 @@
  *
  *   01-title  02-front  02a-front-crosshair  02b-shields  02c-red-alert  03-aft  04-galactic-chart  04a-chart-surrounded
  *   04b-chart-surround-holding  04c-chart-starbase-destroyed  04d-chart-damage
- *   05-long-range-scan  06-attack-computer  07-hyperwarp  08-docking  10-panel-hud  10a-panel-tracking-c
+ *   05-long-range-scan  06-attack-computer  06a-attack-lock  06b-starbase-t2  07-hyperwarp  08-docking  10-panel-hud  10a-panel-tracking-c
  *   10b-panel-low-energy  10c-panel-shields-out  10d-panel-hyperspace  11-fighter-approach  11a-fighter-hit
  *   11b-explosion  12-meteor  12a-meteor-shot  13-fighter  13a-cruiser  13b-basestar
  *   09-zero-energy (last: mission end)
@@ -122,12 +122,37 @@ const SHOTS = [
       }),
   },
   {
+    // Phase 6 (MANUAL_SPEC §5.3, §11, §17.6): the Attack Computer Display with the blip and the
+    // A and B marks (x and y locked, not yet in range).
     name: '06-attack-computer',
     run: async (sr) =>
       sr(() => {
         window.__sr.setView('FRONT');
-        window.__sr.spawn('fighter', 2000); // KM ahead
-        window.__sr.step(20);
+        window.__sr.spawn('fighter', 5000, 300, 200); // KM ahead: A and B, too far for C
+        window.__sr.step(1);
+        // Run to a finished blip with its marks up (a display cycle is 11 loops).
+        for (let i = 0; i < 30 && !(window.__sr.attack().blipRows === 5 && window.__sr.attack().marks > 0); i++) window.__sr.step(1);
+      }),
+  },
+  {
+    // §11: all three mark pairs, A B and C: full lock-on.
+    name: '06a-attack-lock',
+    run: async (sr) =>
+      sr(() => {
+        const s = window.__sr.state;
+        window.__sr.teleport(s.sectorX, s.sectorY); // empty the slots
+        window.__sr.spawn('fighter', 2400, 200, 100);
+        for (let i = 0; i < 40 && !(window.__sr.attack().blipRows === 5 && window.__sr.attack().marks === 3); i++) window.__sr.step(1);
+      }),
+  },
+  {
+    // §5.8 / §17.9: a starbase sector tracks the starbase as T=2.
+    name: '06b-starbase-t2',
+    run: async (sr) =>
+      sr(() => {
+        const base = window.__sr.galaxy().find((g) => g.starbase);
+        if (base) window.__sr.teleport(base);
+        window.__sr.step(12);
       }),
   },
   {
@@ -144,6 +169,8 @@ const SHOTS = [
     run: async (sr) =>
       sr(() => {
         window.__sr.step(300); // let the hyperwarp finish
+        if (window.__sr.state.attackComputerOn) window.__sr.press('COMPUTER'); // no display over the docking shot
+        window.__sr.step(1);
         window.__sr.dock();
         window.__sr.step(50);
       }),
@@ -327,6 +354,67 @@ const SEQUENCES = {
   },
 };
 
+// Phase 6 (MANUAL_SPEC §11, §17.6): a fighter closes in, the marks go A, B, C, the locked salvo
+// homes in and kills it.
+SEQUENCES['lock-on'] = {
+  setup: (d) => {
+    window.__sr.start(d.difficulty, d.seed);
+    window.__sr.step(30);
+    const s = window.__sr.state;
+    const empty = window.__sr.galaxy().find((g) => !g.zylons && !g.starbase && (g.x !== s.sectorX || g.y !== s.sectorY));
+    window.__sr.teleport(empty);
+    window.__sr.press('COMPUTER');
+    window.__sr.press('SHIELDS');
+    window.__sr.setSpeed(0);
+    window.__sr.step(40); // come to a stop
+    window.__sr.spawn('fighter', 7200, 2000, 1200); // up and to the right, far out
+    window.__fired = false;
+  },
+  frames: 75,
+  every: 2,
+  at: {},
+  // The pilot steers the blip into the middle: x first (A), then y (B); C comes with range.
+  each: () => {
+    const a = window.__sr.attack();
+    if (window.__fired || !a.target) {
+      window.__sr.stick(0, 0);
+      return;
+    }
+    const t = a.target;
+    const sx = t.x > 160 ? 1 : t.x < -160 ? -1 : 0;
+    const sy = sx === 0 && a.marks >= 1 ? (t.y > 160 ? 1 : t.y < -160 ? -1 : 0) : 0;
+    window.__sr.stick(sx, sy);
+    if (a.marks === 3 && a.blipRows >= 3) {
+      window.__fired = true;
+      window.__sr.stick(0, 0);
+      window.__sr.press('FIRE'); // one press: the second torpedo follows by itself
+    }
+  },
+  probe: () => ({ ...window.__sr.attack(), photons: window.__sr.zylons().photons.filter((p) => p.life > 0).length, kills: window.__sr.state.enemiesDestroyed }),
+};
+
+// Phase 6 (MANUAL_SPEC §5.10): the tracking computer flips to the Aft view as a fighter passes.
+SEQUENCES['tracking-aft'] = {
+  setup: (d) => {
+    window.__sr.start(d.difficulty, d.seed);
+    window.__sr.step(10);
+    const s = window.__sr.state;
+    const empty = window.__sr.galaxy().find((g) => !g.zylons && !g.starbase && (g.x !== s.sectorX || g.y !== s.sectorY));
+    window.__sr.teleport(empty);
+    window.__sr.press('COMPUTER');
+    window.__sr.press('SHIELDS');
+    window.__sr.setSpeed(9);
+    window.__sr.step(90); // reach speed 9 (112 KM/loop)
+    window.__sr.press('TRACKING');
+    window.__sr.step(1);
+    window.__sr.spawn('fighter', 4600, 700, 500); // we overtake it
+  },
+  frames: 70,
+  every: 2,
+  at: {},
+  probe: () => ({ view: window.__sr.state.currentView, ...window.__sr.attack() }),
+};
+
 async function startServer() {
   const { createServer } = await import('vite');
   const server = await createServer({
@@ -386,18 +474,20 @@ async function main() {
       await mkdir(dir, { recursive: true });
       await sr(seq.setup, { seed: opts.seed, difficulty: opts.difficulty });
       const titles = [];
+      const probes = [];
       for (let i = 0; i < seq.frames; i++) {
         if (seq.at[i]) await sr(seq.at[i]);
         if (seq.each) await sr(seq.each);
         await sr(() => window.__sr.step(1));
         await page.screenshot({ path: join(dir, `${String(i).padStart(3, '0')}.png`), animations: 'disabled', caret: 'hide' });
         titles.push(await sr(() => window.__sr.state.title));
+        if (seq.probe) probes.push(await sr(seq.probe));
         for (let k = 1; k < seq.every; k++) {
           if (seq.each) await sr(seq.each);
           await sr(() => window.__sr.step(1));
         }
       }
-      await writeFile(join(dir, 'titles.json'), JSON.stringify({ every: seq.every, titles }, null, 2) + '\n');
+      await writeFile(join(dir, 'titles.json'), JSON.stringify({ every: seq.every, titles, probes }, null, 2) + '\n');
       console.log(`Wrote ${seq.frames} frames to ${dir}`);
       return;
     }
